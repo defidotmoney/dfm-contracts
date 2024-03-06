@@ -109,7 +109,7 @@ BORROWED_PRECISION: immutable(uint256)
 COLLATERAL_TOKEN: immutable(ERC20)  # y
 COLLATERAL_PRECISION: immutable(uint256)
 BASE_PRICE: immutable(uint256)
-FACTORY: immutable(address)
+CONTROLLER: immutable(address)
 MARKET_OPERATOR: public(immutable(address))
 
 A: public(immutable(uint256))
@@ -162,7 +162,7 @@ def __init__(
         fee: uint256,
         admin_fee: uint256,
         _price_oracle_contract: address,
-        factory: address
+        controller: address
     ):
     """
     @notice LLAMMA constructor
@@ -179,7 +179,7 @@ def __init__(
            which both return current price of collateral multiplied by 1e18
     """
     MARKET_OPERATOR = msg.sender
-    FACTORY = factory
+    CONTROLLER = controller
 
     BORROWED_TOKEN = ERC20(_borrowed_token)
     BORROWED_PRECISION = _borrowed_precision
@@ -212,8 +212,8 @@ def __init__(
         pow = unsafe_div(pow * A, Aminus1)
     MAX_ORACLE_DN_POW = pow
 
-    ERC20(_borrowed_token).approve(factory, max_value(uint256), default_return_value=True)
-    ERC20(_collateral_token).approve(factory, max_value(uint256), default_return_value=True)
+    ERC20(_borrowed_token).approve(controller, max_value(uint256), default_return_value=True)
+    ERC20(_collateral_token).approve(controller, max_value(uint256), default_return_value=True)
 
 
 @internal
@@ -1677,7 +1677,7 @@ def set_rate(rate: uint256) -> uint256:
     @param rate New rate in units of int(fraction * 1e18) per second
     @return rate_mul multiplier (e.g. 1.0 + integral(rate, dt))
     """
-    assert msg.sender == FACTORY
+    assert msg.sender == CONTROLLER
     rate_mul: uint256 = self._rate_mul()
     self.rate_mul = rate_mul
     self.rate_time = block.timestamp
@@ -1738,7 +1738,7 @@ def set_liquidity_mining_hook(lm_hook: LMGauge):
 
 @external
 def set_exchange_hook(hook: address) -> bool:
-    assert msg.sender == FACTORY
+    assert msg.sender == CONTROLLER
     old_hook: address = self.exchange_hook
     if old_hook != empty(address):
         AmmHooks(old_hook).on_remove_hook()

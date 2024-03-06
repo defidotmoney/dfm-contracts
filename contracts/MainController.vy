@@ -1,6 +1,6 @@
 # @version 0.3.10
 """
-@title crvUSD ControllerFactory
+@title crvUSD Main Controller
 @author Curve.Fi
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 """
@@ -180,9 +180,6 @@ peg_keeper_debt_ceiling: public(uint256)
 
 @external
 def __init__(core: ICoreOwner, stable: ERC20, monetary_policies: DynArray[address, 10]):
-    """
-    @notice Factory which creates both operators and AMMs from blueprints
-    """
     CORE_OWNER = core
     STABLECOIN = stable
 
@@ -218,12 +215,6 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
         return initial - convert(-adjustment, uint256)
     else:
         return initial + convert(adjustment, uint256)
-
-
-@external
-@view
-def stablecoin() -> ERC20:
-    return STABLECOIN
 
 
 @external

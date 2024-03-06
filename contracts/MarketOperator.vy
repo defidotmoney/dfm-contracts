@@ -44,8 +44,8 @@ interface ERC20:
 interface MonetaryPolicy:
     def rate_write() -> uint256: nonpayable
 
-interface Factory:
-    def stablecoin() -> ERC20: view
+interface Controller:
+    def STABLECOIN() -> ERC20: view
 
 interface ICoreOwner:
     def owner() -> address: view
@@ -88,7 +88,7 @@ struct CallbackData:
     collateral: uint256
 
 
-FACTORY: public(immutable(address))
+CONTROLLER: public(immutable(address))
 CORE_OWNER: public(immutable(ICoreOwner))
 STABLECOIN: public(immutable(ERC20))
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
@@ -144,7 +144,7 @@ def __init__(
         _price_oracle_contract: address
         ):
     """
-    @notice Controller constructor deployed by the factory from blueprint
+    @notice Market Operator constructor deployed by the controller from blueprint
     @param collateral_token Token to use for collateral
     @param loan_discount Discount of the maximum loan size compare to get_x_down() value
     @param liquidation_discount Discount of the maximum loan size compare to
@@ -152,9 +152,9 @@ def __init__(
     @param amm_implementation AMM address (Already deployed from blueprint)
     """
 
-    FACTORY = msg.sender
+    CONTROLLER = msg.sender
     CORE_OWNER = core
-    STABLECOIN = Factory(msg.sender).stablecoin()
+    STABLECOIN = Controller(msg.sender).STABLECOIN()
 
     self.debt_ceiling = debt_ceiling
     self.liquidation_discount = liquidation_discount
@@ -527,7 +527,7 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, nu
     @param num_bands Number of bands to deposit into (to do autoliquidation-deliquidation),
            can be from MIN_TICKS to MAX_TICKS
     """
-    assert msg.sender == FACTORY
+    assert msg.sender == CONTROLLER
 
     assert self.loan[account].initial_debt == 0, "Loan already created"
     assert num_bands > MIN_TICKS-1, "Need more ticks"
@@ -558,7 +558,7 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, nu
 @external
 @nonreentrant('lock')
 def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_active_band: int256) -> int256:
-    assert msg.sender == FACTORY
+    assert msg.sender == CONTROLLER
 
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
@@ -602,7 +602,7 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
     @notice Close an existing loan
     @param account The account to close the loan for
     """
-    assert msg.sender == FACTORY
+    assert msg.sender == CONTROLLER
 
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
@@ -883,7 +883,7 @@ def user_state(account: address) -> uint256[4]:
 @external
 def set_amm_fee(fee: uint256):
     """
-    @notice Set the AMM fee (factory admin only)
+    @notice Set the AMM fee
     @param fee The fee which should be no higher than MAX_FEE
     """
     assert msg.sender == CORE_OWNER.owner()
@@ -947,7 +947,7 @@ def collect_fees() -> (uint256, uint256[2]):
     """
     @notice Collect the fees charged as interest
     """
-    assert msg.sender == FACTORY
+    assert msg.sender == CONTROLLER
 
     # AMM-based fees
     xy: uint256[2] = AMM.reset_admin_fees()

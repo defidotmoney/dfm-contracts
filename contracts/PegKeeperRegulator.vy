@@ -88,14 +88,14 @@ max_debt: public(uint256)
 owed_debt: public(uint256)
 
 CORE_OWNER: immutable(CoreOwner)
-FACTORY: immutable(address)
+CONTROLLER: immutable(address)
 
 
 @external
-def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, factory: address):
+def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, controller: address):
     CORE_OWNER = core
     STABLECOIN = _stablecoin
-    FACTORY = factory
+    CONTROLLER = controller
     self.aggregator = _agg
 
     self.worst_price_threshold = 3 * 10 ** (18 - 4)  # 0.0003
@@ -317,7 +317,7 @@ def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
 
 @external
 def recall_debt(burn_amount: uint256):
-    assert msg.sender == FACTORY
+    assert msg.sender == CONTROLLER
     owed_debt: uint256 = self.owed_debt + burn_amount
     self.owed_debt = owed_debt
     self._repay_owed_debt(owed_debt)

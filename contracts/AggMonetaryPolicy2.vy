@@ -9,15 +9,15 @@ interface PriceOracle:
     def price() -> uint256: view
     def price_w() -> uint256: nonpayable
 
-interface ControllerFactory:
+interface Controller:
     def total_debt() -> uint256: view
     def peg_keeper_debt() -> uint256: view
 
-interface Market:
+interface MarketOperator:
     def total_debt() -> uint256: view
     def debt_ceiling() -> uint256: view
 
-interface ICoreOwner:
+interface CoreOwner:
     def owner() -> address: view
 
 
@@ -36,8 +36,8 @@ sigma: public(int256)  # 2 * 10**16 for example
 target_debt_fraction: public(uint256)
 
 PRICE_ORACLE: public(immutable(PriceOracle))
-CONTROLLER_FACTORY: public(immutable(ControllerFactory))
-CORE_OWNER: public(immutable(ICoreOwner))
+CONTROLLER: public(immutable(Controller))
+CORE_OWNER: public(immutable(CoreOwner))
 
 MAX_TARGET_DEBT_FRACTION: constant(uint256) = 10**18
 MAX_SIGMA: constant(uint256) = 10**18
@@ -48,15 +48,15 @@ TARGET_REMAINDER: constant(uint256) = 10**17  # rate is x2 when 10% left before 
 
 
 @external
-def __init__(core: ICoreOwner,
+def __init__(core: CoreOwner,
              price_oracle: PriceOracle,
-             controller_factory: ControllerFactory,
+             controller: Controller,
              rate: uint256,
              sigma: uint256,
              target_debt_fraction: uint256):
     CORE_OWNER = core
     PRICE_ORACLE = price_oracle
-    CONTROLLER_FACTORY = controller_factory
+    CONTROLLER = controller
 
     assert sigma >= MIN_SIGMA
     assert sigma <= MAX_SIGMA
@@ -111,11 +111,11 @@ def calculate_rate(market: address, _price: uint256) -> uint256:
     target_debt_fraction: uint256 = self.target_debt_fraction
 
     p: int256 = convert(_price, int256)
-    pk_debt: uint256 = CONTROLLER_FACTORY.peg_keeper_debt()
+    pk_debt: uint256 = CONTROLLER.peg_keeper_debt()
 
     power: int256 = (10**18 - p) * 10**18 / sigma  # high price -> negative pow -> low rate
     if pk_debt > 0:
-        total_debt: uint256 = CONTROLLER_FACTORY.total_debt()
+        total_debt: uint256 = CONTROLLER.total_debt()
         if total_debt == 0:
             return 0
         else:
@@ -125,9 +125,9 @@ def calculate_rate(market: address, _price: uint256) -> uint256:
     rate: uint256 = self.rate0 * min(self.exp(power), MAX_EXP) / 10**18
 
     # Account for individual debt ceiling to dynamically tune rate depending on filling the market
-    ceiling: uint256 = Market(market).debt_ceiling()
+    ceiling: uint256 = MarketOperator(market).debt_ceiling()
     if ceiling > 0:
-        f: uint256 = min(Market(market).total_debt() * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
+        f: uint256 = min(MarketOperator(market).total_debt() * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
         rate = min(rate * ((10**18 - TARGET_REMAINDER) + TARGET_REMAINDER * 10**18 / (10**18 - f)) / 10**18, MAX_RATE)
 
     return rate
