@@ -179,9 +179,19 @@ peg_keeper_debt_ceiling: public(uint256)
 
 
 @external
-def __init__(core: ICoreOwner, stable: ERC20, monetary_policies: DynArray[address, 10]):
+def __init__(
+    core: ICoreOwner,
+    stable: ERC20,
+    market_impl: address,
+    amm_impl: address,
+    monetary_policies: DynArray[address, 10]
+):
     CORE_OWNER = core
     STABLECOIN = stable
+
+    self.market_operator_implementation = market_impl
+    self.amm_implementation = amm_impl
+    log SetImplementations(amm_impl, market_impl)
 
     idx: uint256 = 0
     for mp in monetary_policies:
