@@ -114,7 +114,7 @@ event CollectAmmFees:
     amm_coll_fees: uint256
     amm_debt_fees: uint256
 
-event CollectOperatorFees:
+event CollectFees:
     minted: uint256
     redeemed: uint256
     total_debt: uint256
@@ -140,9 +140,9 @@ MAX_MARKETS: constant(uint256) = 50000
 MAX_ACTIVE_BAND: constant(int256) = 2**255-1
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(ICoreOwner))
-operators: public(address[MAX_MARKETS])
+markets: public(address[MAX_MARKETS])
 amms: public(address[MAX_MARKETS])
-operator_implementation: public(address)
+market_operator_implementation: public(address)
 amm_implementation: public(address)
 
 n_collaterals: public(uint256)
@@ -251,7 +251,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     assert PriceOracle(_price_oracle_contract).price_w() == p
 
     market: address = create_from_blueprint(
-        self.operator_implementation,
+        self.market_operator_implementation,
         CORE_OWNER.address,
         token,
         self.amm_implementation,
@@ -274,8 +274,8 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
         if self.collaterals_index[token][i] == 0:
             self.collaterals_index[token][i] = 2**128 + N
             break
-        assert i != 999, "Too many operators for same collateral"
-    self.operators[N] = market
+        assert i != 999, "Too many markets for same collateral"
+    self.markets[N] = market
     self.amms[N] = amm
     self.n_collaterals = N + 1
 
@@ -287,13 +287,13 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
 
 @external
 @view
-def get_operator(collateral: address, i: uint256 = 0) -> address:
+def get_market(collateral: address, i: uint256 = 0) -> address:
     """
     @notice Get market address for collateral
     @param collateral Address of collateral token
-    @param i Iterate over several operators for collateral if needed
+    @param i Iterate over several markets for collateral if needed
     """
-    return self.operators[self.collaterals_index[collateral][i] - 2**128]
+    return self.markets[self.collaterals_index[collateral][i] - 2**128]
 
 
 @external
@@ -327,7 +327,7 @@ def set_implementations(market: address, amm: address):
     assert msg.sender == CORE_OWNER.owner()
     assert market != empty(address)
     assert amm != empty(address)
-    self.operator_implementation = market
+    self.market_operator_implementation = market
     self.amm_implementation = amm
     log SetImplementations(amm, market)
 
@@ -374,7 +374,7 @@ def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
 
 
 @external
-def change_operator_monetary_policy(market: address, mp_idx: uint256):
+def change_market_monetary_policy(market: address, mp_idx: uint256):
     assert msg.sender == CORE_OWNER.owner()
     assert mp_idx < self.n_monetary_policies
     self.market_contracts[market].mp_idx = mp_idx
@@ -610,15 +610,15 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
 
 @external
 @nonreentrant('lock')
-def collect_fees(operator_list: DynArray[address, 255]) -> uint256:
+def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     receiver: address = CORE_OWNER.feeReceiver()
 
     debt_increase_total: uint256 = 0
     for i in range(255):
-        if i == len(operator_list):
+        if i == len(market_list):
             break
 
-        market: address = operator_list[i]
+        market: address = market_list[i]
         c: MarketContracts = self._get_contracts(market)
 
         debt_increase: uint256 = 0
@@ -649,7 +649,7 @@ def collect_fees(operator_list: DynArray[address, 255]) -> uint256:
         mint_total = unsafe_sub(to_be_redeemed, minted)  # Now this is the fees to charge
         STABLECOIN.mint(receiver, mint_total)
 
-    log CollectOperatorFees(minted, redeemed, total_debt, mint_total)
+    log CollectFees(minted, redeemed, total_debt, mint_total)
     return mint_total
 
 
