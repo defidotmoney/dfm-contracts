@@ -147,7 +147,7 @@ amm_implementation: public(address)
 
 n_collaterals: public(uint256)
 collaterals: public(address[MAX_MARKETS])
-collaterals_index: public(HashMap[address, uint256[1000]])
+collaterals_index: public(HashMap[address, DynArray[uint256, 255]])
 monetary_policies: public(address[MAX_MARKETS])
 n_monetary_policies: public(uint256)
 
@@ -171,8 +171,6 @@ isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 global_hooks: uint256
 market_hooks: HashMap[address, uint256]
 amm_hooks: HashMap[address, address]
-
-MAX_ETH_GAS: constant(uint256) = 10000  # Forward this much gas to ETH transfers (2300 is what send() does)
 
 peg_keeper_regulator: public(PegKeeperRegulator)
 peg_keeper_debt_ceiling: public(uint256)
@@ -280,11 +278,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
 
     N: uint256 = self.n_collaterals
     self.collaterals[N] = token
-    for i in range(1000):
-        if self.collaterals_index[token][i] == 0:
-            self.collaterals_index[token][i] = 2**128 + N
-            break
-        assert i != 999, "Too many markets for same collateral"
+    self.collaterals_index[token].append(N)
     self.markets[N] = market
     self.amms[N] = amm
     self.n_collaterals = N + 1
@@ -303,7 +297,7 @@ def get_market(collateral: address, i: uint256 = 0) -> address:
     @param collateral Address of collateral token
     @param i Iterate over several markets for collateral if needed
     """
-    return self.markets[self.collaterals_index[collateral][i] - 2**128]
+    return self.markets[self.collaterals_index[collateral][i]]
 
 
 @external
@@ -314,7 +308,7 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
     @param collateral Address of collateral token
     @param i Iterate over several amms for collateral if needed
     """
-    return self.amms[self.collaterals_index[collateral][i] - 2**128]
+    return self.amms[self.collaterals_index[collateral][i]]
 
 
 @view
