@@ -307,7 +307,7 @@ def loan_exists(account: address) -> bool:
 @view
 def total_debt() -> uint256:
     """
-    @notice Total debt of this controller
+    @notice Total debt of this market
     """
     rate_mul: uint256 = AMM.get_rate_mul()
     loan: Loan = self._total_debt

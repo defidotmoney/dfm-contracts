@@ -19,11 +19,10 @@ interface PriceOracle:
     def price_w() -> uint256: nonpayable
 
 interface AMM:
-    def set_controller(_controller: address): nonpayable
     def set_exchange_hook(hook: address) -> bool: nonpayable
     def set_rate(rate: uint256) -> uint256: nonpayable
 
-interface Controller:
+interface MarketOperator:
     def total_debt() -> uint256: view
     def minted() -> uint256: view
     def redeemed() -> uint256: view
@@ -36,7 +35,7 @@ interface Controller:
     def AMM() -> address: view
 
 interface MonetaryPolicy:
-    def rate_write(controller: address) -> uint256: nonpayable
+    def rate_write(market: address) -> uint256: nonpayable
 
 interface PegKeeperRegulator:
     def max_debt() -> uint256: view
@@ -50,13 +49,13 @@ interface ICoreOwner:
     def feeReceiver() -> address: view
 
 interface ControllerHooks:
-    def on_create_loan(account: address, controller: address, coll_amount: uint256, debt_amount: uint256) -> int256: nonpayable
-    def on_adjust_loan(account: address, controller: address, coll_change: int256, debt_changet: int256) -> int256: nonpayable
-    def on_close_loan(account: address, controller: address, account_debt: uint256) -> int256: nonpayable
-    def on_liquidation(caller: address, controller: address, target: address, debt_liquidated: uint256) -> int256: nonpayable
+    def on_create_loan(account: address, market: address, coll_amount: uint256, debt_amount: uint256) -> int256: nonpayable
+    def on_adjust_loan(account: address, market: address, coll_change: int256, debt_changet: int256) -> int256: nonpayable
+    def on_close_loan(account: address, market: address, account_debt: uint256) -> int256: nonpayable
+    def on_liquidation(caller: address, market: address, target: address, debt_liquidated: uint256) -> int256: nonpayable
 
 interface AmmHooks:
-    def on_add_hook(controller: address, amm: address) -> bool: nonpayable
+    def on_add_hook(market: address, amm: address) -> bool: nonpayable
     def on_remove_hook() -> bool: nonpayable
     def before_collateral_out(amount: uint256) -> bool: nonpayable
     def after_collateral_in(amount: uint256) -> bool: nonpayable
@@ -64,7 +63,7 @@ interface AmmHooks:
 
 event AddMarket:
     collateral: indexed(address)
-    controller: address
+    market: address
     amm: address
     monetary_policy: address
     ix: uint256
@@ -79,16 +78,16 @@ event RemoveFromMarket:
 
 event SetImplementations:
     amm: address
-    controller: address
+    market: address
 
 event CreateLoan:
-    controller: indexed(address)
+    market: indexed(address)
     account: indexed(address)
     coll_amount: uint256
     debt_amount: uint256
 
 event AdjustLoan:
-    controller: indexed(address)
+    market: indexed(address)
     account: indexed(address)
     coll_increase: uint256
     coll_decrease: uint256
@@ -96,14 +95,14 @@ event AdjustLoan:
     debt_decrease: uint256
 
 event CloseLoan:
-    controller: indexed(address)
+    market: indexed(address)
     account: indexed(address)
     coll_withdrawn: uint256
     debt_withdrawn: uint256
     debt_repaid: uint256
 
 event LiquidateLoan:
-    controller: indexed(address)
+    market: indexed(address)
     liquidator: indexed(address)
     account: indexed(address)
     coll_received: uint256
@@ -111,18 +110,18 @@ event LiquidateLoan:
     debt_repaid: uint256
 
 event CollectAmmFees:
-    controller: indexed(address)
+    market: indexed(address)
     amm_coll_fees: uint256
     amm_debt_fees: uint256
 
-event CollectControllerFees:
+event CollectOperatorFees:
     minted: uint256
     redeemed: uint256
     total_debt: uint256
     fee: uint256
 
 
-struct ControllerContracts:
+struct MarketContracts:
     collateral: address
     amm: address
     mp_idx: uint256
@@ -137,19 +136,19 @@ enum HookId:
 
 NUM_HOOK_IDS: constant(uint256) = 4
 
-MAX_CONTROLLERS: constant(uint256) = 50000
+MAX_MARKETS: constant(uint256) = 50000
 MAX_ACTIVE_BAND: constant(int256) = 2**255-1
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(ICoreOwner))
-controllers: public(address[MAX_CONTROLLERS])
-amms: public(address[MAX_CONTROLLERS])
-controller_implementation: public(address)
+operators: public(address[MAX_MARKETS])
+amms: public(address[MAX_MARKETS])
+operator_implementation: public(address)
 amm_implementation: public(address)
 
 n_collaterals: public(uint256)
-collaterals: public(address[MAX_CONTROLLERS])
+collaterals: public(address[MAX_MARKETS])
 collaterals_index: public(HashMap[address, uint256[1000]])
-monetary_policies: public(address[MAX_CONTROLLERS])
+monetary_policies: public(address[MAX_MARKETS])
 n_monetary_policies: public(uint256)
 
 # Limits
@@ -161,7 +160,7 @@ MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16
 
-controller_contracts: public(HashMap[address, ControllerContracts])
+market_contracts: public(HashMap[address, MarketContracts])
 
 total_debt: public(uint256)
 minted: public(uint256)
@@ -170,7 +169,7 @@ redeemed: public(uint256)
 isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 
 global_hooks: uint256
-controller_hooks: HashMap[address, uint256]
+market_hooks: HashMap[address, uint256]
 amm_hooks: HashMap[address, address]
 
 MAX_ETH_GAS: constant(uint256) = 10000  # Forward this much gas to ETH transfers (2300 is what send() does)
@@ -182,7 +181,7 @@ peg_keeper_debt_ceiling: public(uint256)
 @external
 def __init__(core: ICoreOwner, stable: ERC20, monetary_policies: DynArray[address, 10]):
     """
-    @notice Factory which creates both controllers and AMMs from blueprints
+    @notice Factory which creates both operators and AMMs from blueprints
     """
     CORE_OWNER = core
     STABLECOIN = stable
@@ -234,7 +233,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
                mp_idx: uint256, loan_discount: uint256, liquidation_discount: uint256,
                debt_ceiling: uint256) -> address[2]:
     """
-    @notice Add a new market, creating an AMM and a Controller from a blueprint
+    @notice Add a new market, creating an AMM and a MarketOperator from a blueprint
     @param token Collateral token address
     @param A Amplification coefficient; one band size is 1/A
     @param fee AMM fee in the market's AMM
@@ -244,7 +243,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     @param loan_discount Loan discount: allowed to borrow only up to x_down * (1 - loan_discount)
     @param liquidation_discount Discount which defines a bad liquidation threshold
     @param debt_ceiling Debt ceiling for this market
-    @return (Controller, AMM)
+    @return (MarketOperator, AMM)
     """
     assert msg.sender == CORE_OWNER.owner(), "Only admin"
     assert A >= MIN_A and A <= MAX_A, "Wrong A"
@@ -260,8 +259,8 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     assert p > 0
     assert PriceOracle(_price_oracle_contract).price_w() == p
 
-    controller: address = create_from_blueprint(
-        self.controller_implementation,
+    market: address = create_from_blueprint(
+        self.operator_implementation,
         CORE_OWNER.address,
         token,
         self.amm_implementation,
@@ -275,8 +274,8 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
         _price_oracle_contract,
         code_offset=3
     )
-    # `AMM` is deployed in constructor of `Controller`
-    amm: address = Controller(controller).AMM()
+    # `AMM` is deployed in constructor of `MarketOperator`
+    amm: address = MarketOperator(market).AMM()
 
     N: uint256 = self.n_collaterals
     self.collaterals[N] = token
@@ -284,26 +283,26 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
         if self.collaterals_index[token][i] == 0:
             self.collaterals_index[token][i] = 2**128 + N
             break
-        assert i != 999, "Too many controllers for same collateral"
-    self.controllers[N] = controller
+        assert i != 999, "Too many operators for same collateral"
+    self.operators[N] = market
     self.amms[N] = amm
     self.n_collaterals = N + 1
 
-    self.controller_contracts[controller] = ControllerContracts({collateral: token, amm: amm, mp_idx: mp_idx})
+    self.market_contracts[market] = MarketContracts({collateral: token, amm: amm, mp_idx: mp_idx})
 
-    # log AddMarket(token, controller, amm, mp_idx, N)
-    return [controller, amm]
+    # log AddMarket(token, market, amm, mp_idx, N)
+    return [market, amm]
 
 
 @external
 @view
-def get_controller(collateral: address, i: uint256 = 0) -> address:
+def get_operator(collateral: address, i: uint256 = 0) -> address:
     """
-    @notice Get controller address for collateral
+    @notice Get market address for collateral
     @param collateral Address of collateral token
-    @param i Iterate over several controllers for collateral if needed
+    @param i Iterate over several operators for collateral if needed
     """
-    return self.controllers[self.collaterals_index[collateral][i] - 2**128]
+    return self.operators[self.collaterals_index[collateral][i] - 2**128]
 
 
 @external
@@ -328,22 +327,22 @@ def peg_keeper_debt() -> uint256:
 
 @external
 @nonreentrant('lock')
-def set_implementations(controller: address, amm: address):
+def set_implementations(market: address, amm: address):
     """
-    @notice Set new implementations (blueprints) for controller and amm. Doesn't change existing ones
-    @param controller Address of the controller blueprint
+    @notice Set new implementations (blueprints) for market and amm. Doesn't change existing ones
+    @param market Address of the market blueprint
     @param amm Address of the AMM blueprint
     """
     assert msg.sender == CORE_OWNER.owner()
-    assert controller != empty(address)
+    assert market != empty(address)
     assert amm != empty(address)
-    self.controller_implementation = controller
+    self.operator_implementation = market
     self.amm_implementation = amm
-    log SetImplementations(amm, controller)
+    log SetImplementations(amm, market)
 
 
 @external
-def set_controller_hooks(controller: address, hooks: address, hooks_bitfield: uint256):
+def set_market_hooks(market: address, hooks: address, hooks_bitfield: uint256):
     """
     @param hooks_bitfield Bitfield indicating which hook IDs are active. The bit offset
                           is equal to the values in the HookId enum, counting from 0.
@@ -354,16 +353,16 @@ def set_controller_hooks(controller: address, hooks: address, hooks_bitfield: ui
     assert hooks_bitfield >> NUM_HOOK_IDS == 0
 
     hookdata: uint256 = (convert(hooks, uint256) << 96) + hooks_bitfield
-    if controller == empty(address):
+    if market == empty(address):
         self.global_hooks = hookdata
     else:
-        self.controller_hooks[controller] = hookdata
+        self.market_hooks[market] = hookdata
 
 
 @external
-def set_amm_hook(controller: address, hook: address):
+def set_amm_hook(market: address, hook: address):
     assert msg.sender == CORE_OWNER.owner()
-    amm: address = self._get_contracts(controller).amm
+    amm: address = self._get_contracts(market).amm
     AMM(amm).set_exchange_hook(hook)
     self.amm_hooks[amm] = hook
 
@@ -384,10 +383,10 @@ def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
 
 
 @external
-def change_controller_monetary_policy(controller: address, mp_idx: uint256):
+def change_operator_monetary_policy(market: address, mp_idx: uint256):
     assert msg.sender == CORE_OWNER.owner()
     assert mp_idx < self.n_monetary_policies
-    self.controller_contracts[controller].mp_idx = mp_idx
+    self.market_contracts[market].mp_idx = mp_idx
 
 
 @external
@@ -419,10 +418,10 @@ def set_peg_keeper_debt_ceiling(debt_ceiling: uint256):
 
 @view
 @internal
-def _get_contracts(controller: address) -> ControllerContracts:
-    c: ControllerContracts = self.controller_contracts[controller]
+def _get_contracts(market: address) -> MarketContracts:
+    c: MarketContracts = self.market_contracts[market]
 
-    assert c.collateral != empty(address), "Invalid controller"
+    assert c.collateral != empty(address), "Invalid market"
 
     return c
 
@@ -455,33 +454,33 @@ def _call_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int2
 
 
 @internal
-def _call_hooks(controller: address, hook_id: HookId, calldata: Bytes[255]) -> int256:
+def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int256:
     debt_adjustment: int256 = 0
 
-    debt_adjustment += self._call_hook(self.controller_hooks[controller], hook_id, calldata)
+    debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata)
     debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata)
 
     return debt_adjustment
 
 
 @internal
-def _update_rate(controller: address, amm: address, mp_idx: uint256):
-    mp_rate: uint256 = MonetaryPolicy(self.monetary_policies[mp_idx]).rate_write(controller)
+def _update_rate(market: address, amm: address, mp_idx: uint256):
+    mp_rate: uint256 = MonetaryPolicy(self.monetary_policies[mp_idx]).rate_write(market)
     AMM(amm).set_rate(mp_rate)
 
 
 @external
 @nonreentrant('lock')
-def create_loan(account: address, controller: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256):
+def create_loan(account: address, market: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256):
     self._assert_caller_or_approved_delegate(account)
-    c: ControllerContracts = self._get_contracts(controller)
+    c: MarketContracts = self._get_contracts(market)
 
     hook_adjust: int256 = self._call_hooks(
-        controller,
+        market,
         HookId.ON_CREATE_LOAN,
         _abi_encode(
             account,
-            controller,
+            market,
             coll_amount,
             debt_amount,
             method_id=method_id("on_create_loan(address,address,uint256,uint256)")
@@ -490,39 +489,39 @@ def create_loan(account: address, controller: address, coll_amount: uint256, deb
     debt_amount_final: uint256 = self._uint_plus_int(debt_amount, hook_adjust)
 
     self._deposit_collateral(msg.sender, c.collateral, c.amm, coll_amount)
-    debt_increase: uint256 = Controller(controller).create_loan(account, coll_amount, debt_amount_final, n_bands)
-    self._update_rate(controller, c.amm, c.mp_idx)
+    debt_increase: uint256 = MarketOperator(market).create_loan(account, coll_amount, debt_amount_final, n_bands)
+    self._update_rate(market, c.amm, c.mp_idx)
 
     self.total_debt += debt_increase
     self.minted += debt_amount
 
     STABLECOIN.mint(msg.sender, debt_amount)
 
-    log CreateLoan(controller, account, coll_amount, debt_amount_final)
+    log CreateLoan(market, account, coll_amount, debt_amount_final)
 
 
 @external
 @nonreentrant('lock')
-def adjust_loan(account: address, controller: address, coll_change: int256, debt_change: int256, max_active_band: int256 = 2**255-1):
+def adjust_loan(account: address, market: address, coll_change: int256, debt_change: int256, max_active_band: int256 = 2**255-1):
     assert coll_change != 0 or debt_change != 0
 
     self._assert_caller_or_approved_delegate(account)
-    c: ControllerContracts = self._get_contracts(controller)
+    c: MarketContracts = self._get_contracts(market)
 
     debt_change_final: int256 = self._call_hooks(
-        controller,
+        market,
         HookId.ON_ADJUST_LOAN,
         _abi_encode(
             account,
-            controller,
+            market,
             coll_change,
             debt_change,
             method_id=method_id("on_adjust_loan(address,address,int256,int256)")
         )
     ) + debt_change
 
-    debt_adjustment: int256 = Controller(controller).adjust_loan(account, coll_change, debt_change_final, max_active_band)
-    self._update_rate(controller, c.amm, c.mp_idx)
+    debt_adjustment: int256 = MarketOperator(market).adjust_loan(account, coll_change, debt_change_final, max_active_band)
+    self._update_rate(market, c.amm, c.mp_idx)
 
     self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
 
@@ -545,20 +544,20 @@ def adjust_loan(account: address, controller: address, coll_change: int256, debt
 
 @external
 @nonreentrant('lock')
-def close_loan(account: address, controller: address):
+def close_loan(account: address, market: address):
     self._assert_caller_or_approved_delegate(account)
-    c: ControllerContracts = self._get_contracts(controller)
+    c: MarketContracts = self._get_contracts(market)
 
     debt_adjustment: int256 = 0
     burn_amount: uint256 = 0
     xy: uint256[2] = empty(uint256[2])
-    debt_adjustment, burn_amount, xy = Controller(controller).close_loan(account)
-    self._update_rate(controller, c.amm, c.mp_idx)
+    debt_adjustment, burn_amount, xy = MarketOperator(market).close_loan(account)
+    self._update_rate(market, c.amm, c.mp_idx)
 
     burn_adjust: int256 = self._call_hooks(
-        controller,
+        market,
         HookId.ON_CLOSE_LOAN,
-        _abi_encode(account, controller, burn_amount, method_id=method_id("on_close_loan(address,address,uint256)"))
+        _abi_encode(account, market, burn_amount, method_id=method_id("on_close_loan(address,address,uint256)"))
     )
     burn_amount = self._uint_plus_int(burn_amount, burn_adjust)
 
@@ -571,27 +570,27 @@ def close_loan(account: address, controller: address):
     if xy[1] > 0:
         self._withdraw_collateral(msg.sender, c.collateral, c.amm, xy[1])
 
-    log CloseLoan(controller, account, xy[1], xy[0], burn_amount)
+    log CloseLoan(market, account, xy[1], xy[0], burn_amount)
 
 
 @external
 @nonreentrant('lock')
-def liquidate(controller: address, target: address, min_x: uint256, frac: uint256 = 10**18):
+def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 10**18):
     assert frac <= 10**18
-    c: ControllerContracts = self._get_contracts(controller)
+    c: MarketContracts = self._get_contracts(market)
 
     debt_adjustment: int256 = 0
     debt_amount: uint256 = 0
     xy: uint256[2] = empty(uint256[2])
-    debt_adjustment, debt_amount, xy = Controller(controller).liquidate(msg.sender, target, min_x, frac)
-    self._update_rate(controller, c.amm, c.mp_idx)
+    debt_adjustment, debt_amount, xy = MarketOperator(market).liquidate(msg.sender, target, min_x, frac)
+    self._update_rate(market, c.amm, c.mp_idx)
 
     burn_adjust: int256 = self._call_hooks(
-        controller,
+        market,
         HookId.ON_LIQUIDATION,
         _abi_encode(
             msg.sender,
-            controller,
+            market,
             target,
             debt_amount,
             method_id=method_id("on_liquidation(address,address,address,uint256)")
@@ -615,27 +614,27 @@ def liquidate(controller: address, target: address, min_x: uint256, frac: uint25
     if xy[1] > 0:
         self._withdraw_collateral(msg.sender, c.collateral, c.amm, xy[1])
 
-    log LiquidateLoan(controller, msg.sender, target, xy[1], xy[0], debt_amount)
+    log LiquidateLoan(market, msg.sender, target, xy[1], xy[0], debt_amount)
 
 
 @external
 @nonreentrant('lock')
-def collect_fees(controller_list: DynArray[address, 255]) -> uint256:
+def collect_fees(operator_list: DynArray[address, 255]) -> uint256:
     receiver: address = CORE_OWNER.feeReceiver()
 
     debt_increase_total: uint256 = 0
     for i in range(255):
-        if i == len(controller_list):
+        if i == len(operator_list):
             break
 
-        controller: address = controller_list[i]
-        c: ControllerContracts = self._get_contracts(controller)
+        market: address = operator_list[i]
+        c: MarketContracts = self._get_contracts(market)
 
         debt_increase: uint256 = 0
         xy: uint256[2] = empty(uint256[2])
 
-        debt_increase, xy = Controller(controller).collect_fees()
-        self._update_rate(controller, c.amm, c.mp_idx)
+        debt_increase, xy = MarketOperator(market).collect_fees()
+        self._update_rate(market, c.amm, c.mp_idx)
         debt_increase_total += debt_increase
 
         if xy[0] > 0:
@@ -643,7 +642,7 @@ def collect_fees(controller_list: DynArray[address, 255]) -> uint256:
         if xy[1] > 0:
             self._withdraw_collateral(receiver, c.collateral, c.amm, xy[1])
 
-        log CollectAmmFees(controller, xy[1], xy[0])
+        log CollectAmmFees(market, xy[1], xy[0])
 
     total_debt: uint256 = self.total_debt + debt_increase_total
     self.total_debt = total_debt
@@ -659,7 +658,7 @@ def collect_fees(controller_list: DynArray[address, 255]) -> uint256:
         mint_total = unsafe_sub(to_be_redeemed, minted)  # Now this is the fees to charge
         STABLECOIN.mint(receiver, mint_total)
 
-    log CollectControllerFees(minted, redeemed, total_debt, mint_total)
+    log CollectOperatorFees(minted, redeemed, total_debt, mint_total)
     return mint_total
 
 

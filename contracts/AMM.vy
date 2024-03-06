@@ -49,7 +49,7 @@ interface LMGauge:
     def callback_user_shares(user: address, n: int256, user_shares: DynArray[uint256, MAX_TICKS_UINT]): nonpayable
 
 interface AmmHooks:
-    def on_add_hook(controller: address, amm: address): nonpayable
+    def on_add_hook(market: address, amm: address): nonpayable
     def on_remove_hook(): nonpayable
     def before_collateral_out(amount: uint256): nonpayable
     def after_collateral_in(amount: uint256): nonpayable
@@ -110,7 +110,7 @@ COLLATERAL_TOKEN: immutable(ERC20)  # y
 COLLATERAL_PRECISION: immutable(uint256)
 BASE_PRICE: immutable(uint256)
 FACTORY: immutable(address)
-CONTROLLER: public(immutable(address))
+MARKET_OPERATOR: public(immutable(address))
 
 A: public(immutable(uint256))
 Aminus1: immutable(uint256)
@@ -178,7 +178,7 @@ def __init__(
     @param _price_oracle_contract External price oracle which has price() and price_w() methods
            which both return current price of collateral multiplied by 1e18
     """
-    CONTROLLER = msg.sender
+    MARKET_OPERATOR = msg.sender
     FACTORY = factory
 
     BORROWED_TOKEN = ERC20(_borrowed_token)
@@ -664,20 +664,20 @@ def save_user_shares(user: address, user_shares: DynArray[uint256, MAX_TICKS_UIN
 @nonreentrant('lock')
 def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
     """
-    @notice Deposit for a user in a range of bands. Only admin contract (Controller) can do it
+    @notice Deposit for a user in a range of bands. Only admin contract (Operator) can do it
     @param user User address
     @param amount Amount of collateral to deposit
     @param n1 Lower band in the deposit range
     @param n2 Upper band in the deposit range
     """
-    assert msg.sender == CONTROLLER
+    assert msg.sender == MARKET_OPERATOR
 
     user_shares: DynArray[uint256, MAX_TICKS_UINT] = []
     collateral_shares: DynArray[uint256, MAX_TICKS_UINT] = []
 
     n0: int256 = self.active_band
 
-    # We assume that n1,n2 area already sorted (and they are in Controller)
+    # We assume that n1,n2 area already sorted (and they are in Operator)
     assert n2 < 2**127
     assert n1 > -2**127
 
@@ -750,7 +750,7 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
     @param frac Fraction to withdraw (1e18 being 100%)
     @return Amount of [stablecoins, collateral] withdrawn
     """
-    assert msg.sender == CONTROLLER
+    assert msg.sender == MARKET_OPERATOR
 
     lm: LMGauge = self.lm_hook
 
@@ -1693,7 +1693,7 @@ def set_fee(fee: uint256):
     @notice Set AMM fee
     @param fee Fee where 1e18 == 100%
     """
-    assert msg.sender == CONTROLLER
+    assert msg.sender == MARKET_OPERATOR
     self.fee = fee
     log SetFee(fee)
 
@@ -1705,7 +1705,7 @@ def set_admin_fee(fee: uint256):
     @notice Set admin fee - fraction of the AMM fee to go to admin
     @param fee Admin fee where 1e18 == 100%
     """
-    assert msg.sender == CONTROLLER
+    assert msg.sender == MARKET_OPERATOR
     self.admin_fee = fee
     log SetAdminFee(fee)
 
@@ -1716,7 +1716,7 @@ def reset_admin_fees() -> uint256[2]:
     """
     @notice Zero out AMM fees collected
     """
-    assert msg.sender == CONTROLLER
+    assert msg.sender == MARKET_OPERATOR
 
     xy: uint256[2] = [self.admin_fees_x, self.admin_fees_y]
     self.admin_fees_x = 0
@@ -1725,14 +1725,14 @@ def reset_admin_fees() -> uint256[2]:
     return xy
 
 
-# nonreentrant decorator is in Controller which is admin
+# nonreentrant decorator is in Operator which is admin
 @external
 def set_liquidity_mining_hook(lm_hook: LMGauge):
     """
     @notice Set a gauge address with callbacks for liquidity mining for collateral
     @param lm_hook Gauge address
     """
-    assert msg.sender == CONTROLLER
+    assert msg.sender == MARKET_OPERATOR
     self.lm_hook = lm_hook
 
 
@@ -1746,7 +1746,7 @@ def set_exchange_hook(hook: address) -> bool:
 
     if hook != empty(address):
         assert COLLATERAL_TOKEN.approve(hook, MAX_UINT256, default_return_value=True)
-        AmmHooks(hook).on_add_hook(CONTROLLER, self)
+        AmmHooks(hook).on_add_hook(MARKET_OPERATOR, self)
 
     self.exchange_hook = hook
 

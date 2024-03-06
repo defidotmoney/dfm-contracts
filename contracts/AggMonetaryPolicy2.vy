@@ -13,7 +13,7 @@ interface ControllerFactory:
     def total_debt() -> uint256: view
     def peg_keeper_debt() -> uint256: view
 
-interface Controller:
+interface Market:
     def total_debt() -> uint256: view
     def debt_ceiling() -> uint256: view
 
@@ -106,7 +106,7 @@ def exp(power: int256) -> uint256:
 
 @internal
 @view
-def calculate_rate(controller: address, _price: uint256) -> uint256:
+def calculate_rate(market: address, _price: uint256) -> uint256:
     sigma: int256 = self.sigma
     target_debt_fraction: uint256 = self.target_debt_fraction
 
@@ -125,9 +125,9 @@ def calculate_rate(controller: address, _price: uint256) -> uint256:
     rate: uint256 = self.rate0 * min(self.exp(power), MAX_EXP) / 10**18
 
     # Account for individual debt ceiling to dynamically tune rate depending on filling the market
-    ceiling: uint256 = Controller(controller).debt_ceiling()
+    ceiling: uint256 = Market(market).debt_ceiling()
     if ceiling > 0:
-        f: uint256 = min(Controller(controller).total_debt() * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
+        f: uint256 = min(Market(market).total_debt() * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
         rate = min(rate * ((10**18 - TARGET_REMAINDER) + TARGET_REMAINDER * 10**18 / (10**18 - f)) / 10**18, MAX_RATE)
 
     return rate
@@ -135,15 +135,15 @@ def calculate_rate(controller: address, _price: uint256) -> uint256:
 
 @view
 @external
-def rate(controller: address) -> uint256:
-    return self.calculate_rate(controller, PRICE_ORACLE.price())
+def rate(market: address) -> uint256:
+    return self.calculate_rate(market, PRICE_ORACLE.price())
 
 
 @external
-def rate_write(controller: address) -> uint256:
+def rate_write(market: address) -> uint256:
     # Not needed here but useful for more automated policies
     # which change rate0 - for example rate0 targeting some fraction pl_debt/total_debt
-    return self.calculate_rate(controller, PRICE_ORACLE.price_w())
+    return self.calculate_rate(market, PRICE_ORACLE.price_w())
 
 
 @external
