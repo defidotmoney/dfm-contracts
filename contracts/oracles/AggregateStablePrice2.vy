@@ -54,9 +54,9 @@ last_price: public(uint256)
 
 
 @external
-def __init__(core: ICoreOwner, sigma: uint256):
+def __init__(core: ICoreOwner, stable: address, sigma: uint256):
     CORE_OWNER = core
-    STABLECOIN = core.stableCoin()
+    STABLECOIN = stable
     SIGMA = sigma  # The change is so rare that we can change the whole thing altogether
 
     self.last_price = 10**18

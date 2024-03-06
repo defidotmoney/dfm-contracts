@@ -42,7 +42,7 @@ interface PegKeeperRegulator:
     def max_debt() -> uint256: view
     def owed_debt() -> uint256: view
     def total_debt() -> uint256: view
-    def recall_debt(amount: uint256) -> uint256: nonpayable
+    def recall_debt(amount: uint256): nonpayable
 
 interface ICoreOwner:
     def owner() -> address: view
@@ -180,16 +180,15 @@ peg_keeper_debt_ceiling: public(uint256)
 
 
 @external
-def __init__(core: ICoreOwner,
-             _monetary_policies: DynArray[address, 10]):
+def __init__(core: ICoreOwner, stable: ERC20, monetary_policies: DynArray[address, 10]):
     """
     @notice Factory which creates both controllers and AMMs from blueprints
     """
     CORE_OWNER = core
-    STABLECOIN = core.stableCoin()
+    STABLECOIN = stable
 
     idx: uint256 = 0
-    for mp in _monetary_policies:
+    for mp in monetary_policies:
         self.monetary_policies[idx] = mp
         idx += 1
     self.n_monetary_policies = idx

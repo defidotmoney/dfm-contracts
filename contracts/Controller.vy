@@ -45,11 +45,10 @@ interface MonetaryPolicy:
     def rate_write() -> uint256: nonpayable
 
 interface Factory:
-    def WETH() -> address: view
+    def stablecoin() -> ERC20: view
 
 interface ICoreOwner:
     def owner() -> address: view
-    def stableCoin() -> ERC20: view
 
 interface PriceOracle:
     def price() -> uint256: view
@@ -155,7 +154,7 @@ def __init__(
 
     FACTORY = msg.sender
     CORE_OWNER = core
-    STABLECOIN = core.stableCoin()
+    STABLECOIN = Factory(msg.sender).stablecoin()
 
     self.debt_ceiling = debt_ceiling
     self.liquidation_discount = liquidation_discount
