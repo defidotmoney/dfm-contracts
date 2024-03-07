@@ -412,6 +412,17 @@ def set_peg_keeper_debt_ceiling(debt_ceiling: uint256):
 
 
 @view
+@external
+def get_monetary_policy_for_market(market: address) -> address:
+    c: MarketContracts = self.market_contracts[market]
+
+    if c.collateral == empty(address):
+        return empty(address)
+
+    return self.monetary_policies[c.mp_idx]
+
+
+@view
 @internal
 def _get_contracts(market: address) -> MarketContracts:
     c: MarketContracts = self.market_contracts[market]
@@ -467,6 +478,7 @@ def _update_rate(market: address, amm: address, mp_idx: uint256):
 @external
 @nonreentrant('lock')
 def create_loan(account: address, market: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256):
+    assert coll_amount > 0 and debt_amount > 0
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_contracts(market)
 
