@@ -303,15 +303,22 @@ def loan_exists(account: address) -> bool:
 
 
 # No decorator because used in monetary policy
+@internal
+@view
+def _get_total_debt() -> uint256:
+    rate_mul: uint256 = AMM.get_rate_mul()
+    loan: Loan = self._total_debt
+    return loan.initial_debt * rate_mul / loan.rate_mul
+
+
+
 @external
 @view
 def total_debt() -> uint256:
     """
     @notice Total debt of this market
     """
-    rate_mul: uint256 = AMM.get_rate_mul()
-    loan: Loan = self._total_debt
-    return loan.initial_debt * rate_mul / loan.rate_mul
+    return self._get_total_debt()
 
 
 @internal
@@ -446,12 +453,16 @@ def max_borrowable(collateral: uint256, N: uint256, current_debt: uint256 = 0) -
     # When n1 -= 1:
     # p_oracle_up *= A / (A - 1)
 
-    # TODO refactor this function based on mint/burn changes
-    y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, N, self.loan_discount)
+    total_debt: uint256 = self._get_total_debt()
+    debt_ceiling: uint256 = self.debt_ceiling
+    if total_debt < debt_ceiling:
+        y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, N, self.loan_discount)
 
-    x: uint256 = unsafe_sub(max(unsafe_div(y_effective * self.max_p_base(), 10**18), 1), 1)
-    x = unsafe_div(x * (10**18 - 10**14), 10**18)  # Make it a bit smaller
-    return min(x, STABLECOIN.balanceOf(self) + current_debt)  # Cannot borrow beyond the amount of coins Controller has
+        x: uint256 = unsafe_sub(max(unsafe_div(y_effective * self.max_p_base(), 10**18), 1), 1)
+        x = unsafe_div(x * (10**18 - 10**14), 10**18)  # Make it a bit smaller
+        return min(x, debt_ceiling - total_debt)
+    else:
+        return 0
 
 
 @external
