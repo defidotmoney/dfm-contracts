@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 import boa
 import pytest
-from hypothesis import settings
+from hypothesis import settings, Phase
 
 
 PRICE = 3000
