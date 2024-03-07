@@ -564,6 +564,9 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
     rate_mul: uint256 = 0
     account_debt, rate_mul = self._debt(account)
     assert account_debt > 0, "Loan doesn't exist"
+    account_debt = self._uint_plus_int(account_debt, debt_change)
+    assert account_debt > 0, "Use close_loan to fully repay"
+
     ns: int256[2] = AMM.read_user_tick_numbers(account)
     size: uint256 = convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)
 
@@ -575,7 +578,6 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
         coll_amount: uint256 = AMM.withdraw(account, 10**18)[1]
 
         coll_amount = self._uint_plus_int(coll_amount, coll_change)
-        account_debt = self._uint_plus_int(account_debt, debt_change)
 
         n1: int256 = self._calculate_debt_n1(coll_amount, account_debt, size)
         n2: int256 = n1 + unsafe_sub(ns[1], ns[0])
