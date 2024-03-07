@@ -630,11 +630,7 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     receiver: address = CORE_OWNER.feeReceiver()
 
     debt_increase_total: uint256 = 0
-    for i in range(255):
-        if i == len(market_list):
-            break
-
-        market: address = market_list[i]
+    for market in market_list:
         c: MarketContracts = self._get_contracts(market)
 
         debt_increase: uint256 = 0
