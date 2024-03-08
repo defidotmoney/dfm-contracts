@@ -68,3 +68,101 @@ def price_oracle(admin):
     with boa.env.prank(admin):
         oracle = boa.load("contracts/testing/DummyPriceOracle.vy", PRICE * 10**18)
         return oracle
+
+
+@pytest.fixture(scope="module")
+def core(admin):
+    with boa.env.prank(admin):
+        return boa.load("contracts/testing/CoreOwner.vy")
+
+
+@pytest.fixture(scope="module")
+def stablecoin(admin):
+    with boa.env.prank(admin):
+        return boa.load("contracts/testing/ERC20Mock.vy", "Curve USD", "crvUSD", 18)
+
+
+@pytest.fixture(scope="module")
+def operator_interface():
+    return boa.load_partial("contracts/MarketOperator.vy")
+
+
+@pytest.fixture(scope="module")
+def amm_interface():
+    return boa.load_partial("contracts/AMM.vy")
+
+
+@pytest.fixture(scope="module")
+def operator_impl(operator_interface, admin):
+    with boa.env.prank(admin):
+        return operator_interface.deploy_as_blueprint()
+
+
+@pytest.fixture(scope="module")
+def amm_impl(amm_interface, admin):
+    with boa.env.prank(admin):
+        return amm_interface.deploy_as_blueprint()
+
+
+@pytest.fixture(scope="module")
+def controller(core, amm_impl, operator_impl, stablecoin, admin, monetary_policy):
+    with boa.env.prank(admin):
+        contract = boa.load(
+            "contracts/MainController.vy",
+            core.address,
+            stablecoin.address,
+            operator_impl,
+            amm_impl,
+            [monetary_policy.address],
+        )
+        stablecoin.setMinter(contract.address, True)
+    return contract
+
+
+@pytest.fixture(scope="module")
+def monetary_policy(admin):
+    with boa.env.prank(admin):
+        policy = boa.load("contracts/testing/ConstantMonetaryPolicy.vy", admin)
+        policy.set_rate(0)
+        return policy
+
+
+@pytest.fixture(scope="module")
+def market(
+    admin, controller, price_oracle, accounts, stablecoin, operator_interface, collateral_token
+):
+    with boa.env.prank(admin):
+
+        controller.add_market(
+            collateral_token.address,
+            100,
+            10**16,
+            0,
+            price_oracle.address,
+            0,
+            5 * 10**16,
+            2 * 10**16,
+            10**6 * 10**18,
+        )
+        amm = controller.get_amm(collateral_token.address)
+        market = controller.get_market(collateral_token.address)
+        for acc in accounts:
+            with boa.env.prank(acc):
+                collateral_token.approve(amm, 2**256 - 1)
+                stablecoin.approve(amm, 2**256 - 1)
+                collateral_token.approve(controller, 2**256 - 1)
+                stablecoin.approve(controller, 2**256 - 1)
+        return operator_interface.at(market)
+
+
+@pytest.fixture(scope="module")
+def amm(market, collateral_token, amm_interface, controller):
+    return amm_interface.at(controller.get_amm(collateral_token.address))
+
+
+@pytest.fixture(scope="module")
+def fee_receiver(core, admin):
+    addr = "0x1234123412341234123412341234123412341234"
+    with boa.env.prank(admin):
+        core.setFeeReceiver(addr)
+    return addr
