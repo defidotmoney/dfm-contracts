@@ -55,10 +55,8 @@ interface ControllerHooks:
     def on_liquidation(caller: address, market: address, target: address, debt_liquidated: uint256) -> int256: nonpayable
 
 interface AmmHooks:
-    def on_add_hook(market: address, amm: address) -> bool: nonpayable
-    def on_remove_hook() -> bool: nonpayable
-    def before_collateral_out(amount: uint256) -> bool: nonpayable
-    def after_collateral_in(amount: uint256) -> bool: nonpayable
+    def before_collateral_out(amount: uint256): nonpayable
+    def after_collateral_in(amount: uint256): nonpayable
 
 
 event AddMarket:
