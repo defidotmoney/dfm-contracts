@@ -206,6 +206,16 @@ def owner() -> address:
 
 @external
 def setDelegateApproval(delegate: address, is_approved: bool):
+    """
+    @dev Functions that supports delegation include an `account` input allowing
+         the delegated caller to indicate who they are calling on behalf of.
+         In executing the call, all internal state updates are applied for
+         `account` and all value transfers occur to or from the caller.
+
+        For example: a delegated call to `create_loan` will transfer collateral
+        from the caller, create the debt position for `account`, and send newly
+        minted stablecoins to the caller.
+    """
     self.isApprovedDelegate[msg.sender][delegate] = is_approved
 
 
