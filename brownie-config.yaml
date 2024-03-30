@@ -8,3 +8,7 @@ compiler:
 
 dependencies:
   - OpenZeppelin/openzeppelin-contracts@5.0.2
+
+
+networks:
+  default: hardhat
