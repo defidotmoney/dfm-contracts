@@ -349,7 +349,7 @@ def set_market_hooks(market: address, hooks: address, hooks_bitfield: uint256):
     """
     @param hooks_bitfield Bitfield indicating which hook IDs are active. The bit offset
                           is equal to the values in the HookId enum, counting from 0.
-                          For example, a bitfield of 0b0101 indicates that ON_ADJUST_LOAN
+                          For example, a bitfield of 0b1010 indicates that ON_ADJUST_LOAN
                           and ON_LIQUIDATION hooks are active.
     """
     assert msg.sender == CORE_OWNER.owner()
@@ -461,7 +461,7 @@ def _withdraw_collateral(account: address, collateral: address, amm: address, am
 
 @internal
 def _call_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int256:
-    if (hookdata >> (convert(hook_id, uint256) - 1)) & 1 == 0:
+    if hookdata & convert(hook_id, uint256) == 0:
         return 0
     hook: address = convert(hookdata >> 96, address)
     return convert(raw_call(hook, calldata, max_outsize=32), int256)
