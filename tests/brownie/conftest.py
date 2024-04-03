@@ -142,6 +142,9 @@ def hooks(deployer):
 response: public(int256)
 is_reverting: public(bool)
 
+event HookFired:
+    pass
+
 @external
 def set_response(response: int256):
     self.response = response
@@ -154,6 +157,8 @@ def set_is_reverting(is_reverting: bool):
 def _get_response() -> int256:
     if self.is_reverting:
         raise "Hook is reverting"
+
+    log HookFired()
     return self.response
 
 @external
