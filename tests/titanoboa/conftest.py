@@ -40,6 +40,11 @@ def admin():
     return boa.env.generate_address()
 
 
+@pytest.fixture(scope="module")
+def fee_receiver():
+    return "000000000000000000000000000000000000fee5"
+
+
 @pytest.fixture(scope="session")
 def get_collateral_token(admin) -> Callable[[int], Any]:
     def f(digits):
@@ -71,9 +76,9 @@ def price_oracle(admin):
 
 
 @pytest.fixture(scope="module")
-def core(admin):
+def core(admin, fee_receiver):
     with boa.env.prank(admin):
-        return boa.load("contracts/testing/CoreOwner.vy")
+        return boa.load("contracts/testing/CoreOwner.vy", fee_receiver)
 
 
 @pytest.fixture(scope="module")
@@ -158,11 +163,3 @@ def market(
 @pytest.fixture(scope="module")
 def amm(market, collateral_token, amm_interface, controller):
     return amm_interface.at(controller.get_amm(collateral_token.address))
-
-
-@pytest.fixture(scope="module")
-def fee_receiver(core, admin):
-    addr = "0x1234123412341234123412341234123412341234"
-    with boa.env.prank(admin):
-        core.setFeeReceiver(addr)
-    return addr

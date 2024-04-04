@@ -13,7 +13,7 @@ MARKET_DEBT_CAP = 10_000_000 * 10**18
 
 market_A = 100
 market_fee = 6 * 10**15  # 0.6%
-market_admin_fee = 0
+market_admin_fee = 5 * 10**17  # 50% of the market fee
 market_loan_discount = 9 * 10**16  # 9%; +2% from 4x 1% bands = 100% - 11% = 89% LTV
 market_liquidation_discount = 6 * 10**16  # 6%
 
@@ -39,16 +39,13 @@ def bob(accounts):
 
 
 @pytest.fixture(scope="module")
-def fee_receiver(core, deployer):
-    acct = "0x1234123412341234123412341234123412341234"
-    core.setFeeReceiver(acct, {"from": deployer})
-
-    return acct
+def fee_receiver():
+    return "000000000000000000000000000000000000fee5"
 
 
 @pytest.fixture(scope="module")
-def core(CoreOwner, deployer):
-    return CoreOwner.deploy({"from": deployer})
+def core(CoreOwner, deployer, fee_receiver):
+    return CoreOwner.deploy(fee_receiver, {"from": deployer})
 
 
 @pytest.fixture(scope="module")
@@ -135,46 +132,10 @@ def amm(AMM, controller, market):
 
 
 @pytest.fixture(scope="module")
-def hooks(deployer):
-    HOOKS_SOURCE = """
-# @version 0.3.7
+def hooks(ControllerHookTester, deployer):
+    return ControllerHookTester.deploy({"from": deployer})
 
-response: public(int256)
-is_reverting: public(bool)
 
-event HookFired:
-    pass
-
-@external
-def set_response(response: int256):
-    self.response = response
-
-@external
-def set_is_reverting(is_reverting: bool):
-    self.is_reverting = is_reverting
-
-@internal
-def _get_response() -> int256:
-    if self.is_reverting:
-        raise "Hook is reverting"
-
-    log HookFired()
-    return self.response
-
-@external
-def on_create_loan(account: address, controller: address, coll_amount: uint256, debt_amount: uint256) -> int256:
-    return self._get_response()
-
-@external
-def on_adjust_loan(account: address, controller: address, coll_change: int256, debt_changet: int256) -> int256:
-    return self._get_response()
-
-@external
-def on_close_loan(account: address, controller: address, account_debt: uint256) -> int256:
-    return self._get_response()
-
-@external
-def on_liquidation(sender: address, controller: address, target: address, debt_liquidated: uint256) -> int256:
-    return self._get_response()
-"""
-    return compile_source(HOOKS_SOURCE).Vyper.deploy({"from": deployer})
+@pytest.fixture(scope="module")
+def amm_hook(AmmHookTester, collateral, amm, deployer):
+    return AmmHookTester.deploy(collateral, amm, {"from": deployer})

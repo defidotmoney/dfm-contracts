@@ -6,8 +6,9 @@ owner: public(address)
 
 
 @external
-def __init__():
+def __init__(fee_receiver: address):
     self.owner = msg.sender
+    self.feeReceiver = fee_receiver
 
 
 @external
