@@ -9,6 +9,10 @@ compiler:
 dependencies:
   - OpenZeppelin/openzeppelin-contracts@5.0.2
 
-
 networks:
   default: hardhat
+
+project_structure:
+  tests: tests/brownie
+
+autofetch_sources: true
