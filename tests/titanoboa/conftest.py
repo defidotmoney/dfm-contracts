@@ -119,6 +119,7 @@ def controller(core, amm_impl, operator_impl, stablecoin, admin, monetary_policy
             operator_impl,
             amm_impl,
             [monetary_policy.address],
+            2**256 - 1,
         )
         stablecoin.setMinter(contract.address, True)
     return contract

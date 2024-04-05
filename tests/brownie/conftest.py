@@ -73,7 +73,7 @@ def controller(MainController, MarketOperator, AMM, core, stable, policy, deploy
     market_impl = deploy_blueprint(MarketOperator, deployer)
     amm_impl = deploy_blueprint(AMM, deployer)
     contract = MainController.deploy(
-        core, stable, market_impl, amm_impl, [policy], {"from": deployer}
+        core, stable, market_impl, amm_impl, [policy], 2**256 - 1, {"from": deployer}
     )
     stable.setMinter(contract, True, {"from": deployer})
     return contract
@@ -105,30 +105,73 @@ def peg_keepers(PegKeeper, Stableswap, core, stable, deployer, regulator, agg_st
 
 
 @pytest.fixture(scope="module")
+def pk(peg_keepers):
+    return peg_keepers[0]
+
+
+@pytest.fixture(scope="module")
 def collateral():
     return ERC20()
 
 
 @pytest.fixture(scope="module")
-def market(MarketOperator, controller, collateral, oracle, deployer):
-    controller.add_market(
-        collateral,
-        market_A,
-        market_fee,
-        market_admin_fee,
-        oracle,
-        0,
-        market_loan_discount,
-        market_liquidation_discount,
-        MARKET_DEBT_CAP,
-        {"from": deployer},
-    )
-    return MarketOperator.at(controller.get_market(collateral))
+def collateral2():
+    return ERC20()
+
+
+@pytest.fixture(scope="module")
+def collateral3():
+    return ERC20()
+
+
+@pytest.fixture(scope="module")
+def _deploy_market(MarketOperator, controller, oracle, deployer):
+    def fn(collateral):
+        controller.add_market(
+            collateral,
+            market_A,
+            market_fee,
+            market_admin_fee,
+            oracle,
+            0,
+            market_loan_discount,
+            market_liquidation_discount,
+            MARKET_DEBT_CAP,
+            {"from": deployer},
+        )
+        return MarketOperator.at(controller.get_market(collateral))
+
+    return fn
+
+
+@pytest.fixture(scope="module")
+def market(_deploy_market, collateral):
+    return _deploy_market(collateral)
+
+
+@pytest.fixture(scope="module")
+def market2(_deploy_market, collateral2):
+    return _deploy_market(collateral2)
+
+
+@pytest.fixture(scope="module")
+def market3(_deploy_market, collateral3):
+    return _deploy_market(collateral3)
 
 
 @pytest.fixture(scope="module")
 def amm(AMM, controller, market):
     return AMM.at(controller.market_contracts(market)["amm"])
+
+
+@pytest.fixture(scope="module")
+def amm2(AMM, controller, market2):
+    return AMM.at(controller.market_contracts(market2)["amm"])
+
+
+@pytest.fixture(scope="module")
+def amm3(AMM, controller, market3):
+    return AMM.at(controller.market_contracts(market3)["amm"])
 
 
 @pytest.fixture(scope="module")

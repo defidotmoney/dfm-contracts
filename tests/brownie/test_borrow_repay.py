@@ -17,6 +17,7 @@ def test_create_loan(market, amm, collateral, stable, controller, alice):
     assert collateral.balanceOf(amm) == 50 * 10**18
 
     assert market.user_state(alice)[:3] == (50 * 10**18, 0, 1000 * 10**18)
+    assert market.total_debt() == 1000 * 10**18
 
 
 def test_add_collateral(market, amm, collateral, stable, controller, alice):
@@ -30,6 +31,7 @@ def test_add_collateral(market, amm, collateral, stable, controller, alice):
     assert collateral.balanceOf(amm) == 75 * 10**18
 
     assert market.user_state(alice)[:3] == (75 * 10**18, 0, 1000 * 10**18)
+    assert market.total_debt() == 1000 * 10**18
 
 
 def test_remove_collateral(market, amm, collateral, stable, controller, alice):
@@ -43,6 +45,7 @@ def test_remove_collateral(market, amm, collateral, stable, controller, alice):
     assert collateral.balanceOf(amm) == 40 * 10**18
 
     assert market.user_state(alice)[:3] == (40 * 10**18, 0, 1000 * 10**18)
+    assert market.total_debt() == 1000 * 10**18
 
 
 def test_borrow_more(market, amm, collateral, stable, controller, alice):
@@ -56,6 +59,7 @@ def test_borrow_more(market, amm, collateral, stable, controller, alice):
     assert collateral.balanceOf(amm) == 70 * 10**18
 
     assert market.user_state(alice)[:3] == (70 * 10**18, 0, 1500 * 10**18)
+    assert market.total_debt() == 1500 * 10**18
 
 
 def test_repay(market, amm, collateral, stable, controller, alice):
@@ -68,6 +72,7 @@ def test_repay(market, amm, collateral, stable, controller, alice):
     assert collateral.balanceOf(amm) == 0
 
     assert market.user_state(alice)[:3] == (0, 0, 0)
+    assert market.total_debt() == 0
 
 
 def test_repay_partial(market, amm, collateral, stable, controller, alice):
@@ -81,3 +86,4 @@ def test_repay_partial(market, amm, collateral, stable, controller, alice):
     assert collateral.balanceOf(amm) == 50 * 10**18
 
     assert market.user_state(alice)[:3] == (50 * 10**18, 0, 400 * 10**18)
+    assert market.total_debt() == 400 * 10**18
