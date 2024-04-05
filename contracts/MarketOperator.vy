@@ -321,6 +321,15 @@ def total_debt() -> uint256:
     return self._get_total_debt()
 
 
+@external
+@view
+def pending_debt() -> uint256:
+    """
+    @notice Market debt which has not been stored in `MainController.total_debt`
+    """
+    return self._get_total_debt() - self._total_debt.initial_debt
+
+
 @internal
 @view
 def get_y_effective(collateral: uint256, N: uint256, discount: uint256) -> uint256:
@@ -431,12 +440,13 @@ def max_p_base() -> uint256:
 @external
 @view
 @nonreentrant('lock')
-def max_borrowable(collateral: uint256, N: uint256, current_debt: uint256 = 0) -> uint256:
+def max_borrowable(collateral: uint256, N: uint256) -> uint256:
     """
     @notice Calculation of maximum which can be borrowed (details in comments)
+    @dev End users should instead call `MainController.max_borrowable`, which
+         also considers the global debt ceiling
     @param collateral Collateral amount against which to borrow
     @param N number of bands to have the deposit into
-    @param current_debt Current debt of the account (if any)
     @return Maximum amount of stablecoin to borrow
     """
     # Calculation of maximum which can be borrowed.

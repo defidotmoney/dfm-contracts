@@ -24,6 +24,8 @@ interface AMM:
 
 interface MarketOperator:
     def total_debt() -> uint256: view
+    def pending_debt() -> uint256: view
+    def max_borrowable(collateral: uint256, N: uint256) -> uint256: view
     def minted() -> uint256: view
     def redeemed() -> uint256: view
     def collect_fees() -> (uint256, uint256[2]): nonpayable
@@ -77,6 +79,9 @@ event RemoveFromMarket:
 event SetImplementations:
     amm: address
     market: address
+
+event SetGlobalMarketDebtCeiling:
+    debt_ceiling: uint256
 
 event CreateLoan:
     market: indexed(address)
@@ -160,6 +165,7 @@ MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16
 
 market_contracts: public(HashMap[address, MarketContracts])
 
+global_market_debt_ceiling: public(uint256)
 total_debt: public(uint256)
 minted: public(uint256)
 redeemed: public(uint256)
@@ -180,7 +186,8 @@ def __init__(
     stable: ERC20,
     market_impl: address,
     amm_impl: address,
-    monetary_policies: DynArray[address, 10]
+    monetary_policies: DynArray[address, 10],
+    debt_ceiling: uint256
 ):
     CORE_OWNER = core
     STABLECOIN = stable
@@ -194,6 +201,9 @@ def __init__(
         self.monetary_policies[idx] = mp
         idx += 1
     self.n_monetary_policies = idx
+
+    self.global_market_debt_ceiling = debt_ceiling
+    log SetGlobalMarketDebtCeiling(debt_ceiling)
 
 
 @view
@@ -328,6 +338,29 @@ def peg_keeper_debt() -> uint256:
     return regulator.total_debt()
 
 
+@view
+@external
+def max_borrowable(market: MarketOperator, coll_amount: uint256, N: uint256) -> uint256:
+    debt_ceiling: uint256 = self.global_market_debt_ceiling
+    total_debt: uint256 = self.total_debt + market.pending_debt()
+    if total_debt >= debt_ceiling:
+        return 0
+
+    global_max: uint256 = debt_ceiling - total_debt
+    market_max: uint256 = market.max_borrowable(coll_amount, N)
+
+    return min(global_max, market_max)
+
+
+@external
+@nonreentrant('lock')
+def set_global_market_debt_ceiling(debt_ceiling: uint256):
+    assert msg.sender == CORE_OWNER.owner()
+    self.global_market_debt_ceiling = debt_ceiling
+
+    log SetGlobalMarketDebtCeiling(debt_ceiling)
+
+
 @external
 @nonreentrant('lock')
 def set_implementations(market: address, amm: address):
@@ -440,6 +473,12 @@ def _get_contracts(market: address) -> MarketContracts:
     return c
 
 
+@view
+@internal
+def _check_debt_ceiling(total_debt: uint256):
+    assert total_debt <= self.global_market_debt_ceiling, "Exceeds global debt ceiling"
+
+
 @internal
 def _deposit_collateral(account: address, collateral: address, amm: address, amount: uint256):
     assert ERC20(collateral).transferFrom(account, amm, amount, default_return_value=True)
@@ -507,7 +546,10 @@ def create_loan(account: address, market: address, coll_amount: uint256, debt_am
     debt_increase: uint256 = MarketOperator(market).create_loan(account, coll_amount, debt_amount_final, n_bands)
     self._update_rate(market, c.amm, c.mp_idx)
 
-    self.total_debt += debt_increase
+    total_debt: uint256 = self.total_debt + debt_increase
+    self._check_debt_ceiling(total_debt)
+
+    self.total_debt = total_debt
     self.minted += debt_amount
 
     STABLECOIN.mint(msg.sender, debt_amount)
@@ -538,11 +580,13 @@ def adjust_loan(account: address, market: address, coll_change: int256, debt_cha
     debt_adjustment: int256 = MarketOperator(market).adjust_loan(account, coll_change, debt_change_final, max_active_band)
     self._update_rate(market, c.amm, c.mp_idx)
 
-    self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
+    total_debt: uint256 = self._uint_plus_int(self.total_debt, debt_adjustment)
+    self.total_debt = total_debt
 
     if debt_change != 0:
         debt_change_abs: uint256 = convert(abs(debt_change), uint256)
         if debt_change > 0:
+            self._check_debt_ceiling(total_debt)
             self.minted += debt_change_abs
             STABLECOIN.mint(msg.sender, debt_change_abs)
         else:
