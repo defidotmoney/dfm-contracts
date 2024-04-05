@@ -182,6 +182,24 @@ def __init__(
     AMM = LLAMMA(amm)
 
 
+@view
+@external
+def owner() -> address:
+    return CORE_OWNER.owner()
+
+
+@view
+@internal
+def _assert_only_owner():
+    assert msg.sender == CORE_OWNER.owner(), "MarketOperator: Only owner"
+
+
+@view
+@internal
+def _assert_only_controller():
+    assert msg.sender == CONTROLLER, "MarketOperator: Only controller"
+
+
 @internal
 @pure
 def log2(_x: uint256) -> int256:
@@ -548,7 +566,7 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, nu
     @param num_bands Number of bands to deposit into (to do autoliquidation-deliquidation),
            can be from MIN_TICKS to MAX_TICKS
     """
-    assert msg.sender == CONTROLLER
+    self._assert_only_controller()
 
     assert self.loan[account].initial_debt == 0, "Loan already created"
     assert num_bands > MIN_TICKS-1, "Need more ticks"
@@ -579,7 +597,7 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, nu
 @external
 @nonreentrant('lock')
 def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_active_band: int256) -> int256:
-    assert msg.sender == CONTROLLER
+    self._assert_only_controller()
 
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
@@ -625,7 +643,7 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
     @notice Close an existing loan
     @param account The account to close the loan for
     """
-    assert msg.sender == CONTROLLER
+    self._assert_only_controller()
 
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
@@ -760,6 +778,8 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
     @param min_x Minimal amount of stablecoin to receive (to avoid liquidators being sandwiched)
     @param frac Fraction to liquidate; 100% = 10**18
     """
+    self._assert_only_controller()
+
     health_limit: uint256 = 0
     if target != caller:
         health_limit = self.liquidation_discounts[target]
@@ -909,7 +929,7 @@ def set_amm_fee(fee: uint256):
     @notice Set the AMM fee
     @param fee The fee which should be no higher than MAX_FEE
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert fee <= MAX_FEE and fee >= MIN_FEE, "Fee"
     AMM.set_fee(fee)
 
@@ -921,7 +941,7 @@ def set_amm_admin_fee(fee: uint256):
     @notice Set AMM's admin fee
     @param fee New admin fee (not higher than MAX_ADMIN_FEE)
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert fee <= MAX_ADMIN_FEE, "High fee"
     AMM.set_admin_fee(fee)
 
@@ -934,7 +954,7 @@ def set_borrowing_discounts(loan_discount: uint256, liquidation_discount: uint25
     @param loan_discount Discount which defines LTV
     @param liquidation_discount Discount where bad liquidation starts
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert loan_discount > liquidation_discount
     assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT
     assert loan_discount <= MAX_LOAN_DISCOUNT
@@ -949,7 +969,7 @@ def set_liquidity_mining_hook(hook: address):
     """
     @notice Set liquidity mining callback
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     AMM.set_liquidity_mining_hook(hook)
 
 
@@ -960,7 +980,7 @@ def set_debt_ceiling(debt_ceiling: uint256):
     @notice Set debt ceiling
     @param debt_ceiling New debt ceiling
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     self.debt_ceiling = debt_ceiling
 
 
@@ -970,7 +990,7 @@ def collect_fees() -> (uint256, uint256[2]):
     """
     @notice Collect the fees charged as interest
     """
-    assert msg.sender == CONTROLLER
+    self._assert_only_controller()
 
     # AMM-based fees
     xy: uint256[2] = AMM.reset_admin_fees()

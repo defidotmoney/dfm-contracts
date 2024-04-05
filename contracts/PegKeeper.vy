@@ -104,6 +104,18 @@ def __init__(core: ICoreOwner, _pool: CurvePool, _caller_share: uint256, _regula
     log SetNewCallerShare(_caller_share)
 
 
+@view
+@external
+def owner() -> address:
+    return CORE_OWNER.owner()
+
+
+@view
+@internal
+def _assert_only_owner():
+    assert msg.sender == CORE_OWNER.owner(), "PegKeeper: Only owner"
+
+
 @pure
 @external
 def pegged() -> address:
@@ -329,7 +341,7 @@ def set_new_caller_share(_new_caller_share: uint256):
     @notice Set new update caller's part
     @param _new_caller_share Part with SHARE_PRECISION
     """
-    assert msg.sender == CORE_OWNER.owner()  # dev: only admin
+    self._assert_only_owner()
     assert _new_caller_share <= SHARE_PRECISION  # dev: bad part value
 
     self.caller_share = _new_caller_share
@@ -343,7 +355,7 @@ def set_regulator(_new_regulator: Regulator):
     """
     @notice Set new peg keeper regulator
     """
-    assert msg.sender == CORE_OWNER.owner()  # dev: only admin
+    self._assert_only_owner()
     assert _new_regulator.address != empty(address)  # dev: bad regulator
     assert self.owed_debt == 0, "!Change regulator with owed debt"
 
@@ -354,7 +366,7 @@ def set_regulator(_new_regulator: Regulator):
 @external
 @nonpayable
 def recall_debt(amount: uint256) -> uint256:
-    assert msg.sender == self.regulator.address
+    assert msg.sender == self.regulator.address, "PegKeeper: only regulator"
     debt: uint256 = PEGGED.balanceOf(self)
 
     if debt >= amount:

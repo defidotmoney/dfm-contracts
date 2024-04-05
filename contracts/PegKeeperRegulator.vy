@@ -107,6 +107,18 @@ def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, controller: 
     log DebtParameters(self.alpha, self.beta)
 
 
+@view
+@external
+def owner() -> address:
+    return CORE_OWNER.owner()
+
+
+@view
+@internal
+def _assert_only_owner():
+    assert msg.sender == CORE_OWNER.owner(), "PegKeeperRegulator: Only owner"
+
+
 @external
 @view
 def stablecoin() -> ERC20:
@@ -238,7 +250,7 @@ def withdraw_allowed(_pk: address=msg.sender) -> uint256:
 
 @external
 def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
 
     self._repay_owed_debt(self.owed_debt)
@@ -281,7 +293,7 @@ def _recall_debt(pk: PegKeeper, reduce_amount: uint256):
 
 @external
 def remove_peg_keeper(pk: PegKeeper):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
 
     peg_keepers: DynArray[PegKeeperInfo, MAX_LEN] = self.peg_keepers
 
@@ -304,7 +316,7 @@ def remove_peg_keeper(pk: PegKeeper):
 
 @external
 def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     i: uint256 = self.peg_keeper_i[pk] - 1  # dev: pool not found
 
     current_debt_ceiling: uint256 = self.debt_ceiling[pk.address]
@@ -317,7 +329,7 @@ def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
 
 @external
 def recall_debt(burn_amount: uint256):
-    assert msg.sender == CONTROLLER
+    assert msg.sender == CONTROLLER, "PKRegulator: Only controller"
     owed_debt: uint256 = self.owed_debt + burn_amount
     self.owed_debt = owed_debt
     self._repay_owed_debt(owed_debt)
@@ -343,7 +355,7 @@ def set_worst_price_threshold(_threshold: uint256):
     @notice Set threshold for the worst price that is still accepted
     @param _threshold Price threshold with base 10 ** 18 (1.0 = 10 ** 18)
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert _threshold <= 10 ** (18 - 2)  # 0.01
     self.worst_price_threshold = _threshold
     log WorstPriceThreshold(_threshold)
@@ -355,7 +367,7 @@ def set_price_deviation(_deviation: uint256):
     @notice Set acceptable deviation of current price from oracle's
     @param _deviation Deviation of price with base 10 ** 18 (1.0 = 10 ** 18)
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert _deviation <= 10 ** 20
     self.price_deviation = _deviation
     log PriceDeviation(_deviation)
@@ -367,7 +379,7 @@ def set_debt_parameters(_alpha: uint256, _beta: uint256):
     @notice Set parameters for calculation of debt limits
     @dev 10 ** 18 precision
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert _alpha <= ONE
     assert _beta <= ONE
 
@@ -382,6 +394,6 @@ def set_killed(_is_killed: Killed):
     @notice Pause/unpause Peg Keepers
     @dev 0 unpause, 1 provide, 2 withdraw, 3 everything
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     self.is_killed = _is_killed
     log SetKilled(_is_killed, msg.sender)

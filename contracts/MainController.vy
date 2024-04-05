@@ -212,6 +212,12 @@ def owner() -> address:
     return CORE_OWNER.owner()
 
 
+@view
+@internal
+def _assert_only_owner():
+    assert msg.sender == CORE_OWNER.owner(), "MainController: Only owner"
+
+
 @external
 def setDelegateApproval(delegate: address, is_approved: bool):
     """
@@ -262,7 +268,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     @param debt_ceiling Debt ceiling for this market
     @return (MarketOperator, AMM)
     """
-    assert msg.sender == CORE_OWNER.owner(), "Only admin"
+    self._assert_only_owner()
     assert A >= MIN_A and A <= MAX_A, "Wrong A"
     assert fee <= MAX_FEE, "Fee too high"
     assert fee >= MIN_FEE, "Fee too low"
@@ -355,7 +361,7 @@ def max_borrowable(market: MarketOperator, coll_amount: uint256, N: uint256) -> 
 @external
 @nonreentrant('lock')
 def set_global_market_debt_ceiling(debt_ceiling: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     self.global_market_debt_ceiling = debt_ceiling
 
     log SetGlobalMarketDebtCeiling(debt_ceiling)
@@ -369,7 +375,7 @@ def set_implementations(market: address, amm: address):
     @param market Address of the market blueprint
     @param amm Address of the AMM blueprint
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert market != empty(address)
     assert amm != empty(address)
     self.market_operator_implementation = market
@@ -385,7 +391,7 @@ def set_market_hooks(market: address, hooks: address, hooks_bitfield: uint256):
                           For example, a bitfield of 0b1010 indicates that ON_ADJUST_LOAN
                           and ON_LIQUIDATION hooks are active.
     """
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert hooks_bitfield >> NUM_HOOK_IDS == 0
 
     hookdata: uint256 = (convert(hooks, uint256) << 96) + hooks_bitfield
@@ -397,7 +403,7 @@ def set_market_hooks(market: address, hooks: address, hooks_bitfield: uint256):
 
 @external
 def set_amm_hook(market: address, hook: address):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     amm: address = self._get_contracts(market).amm
     AMM(amm).set_exchange_hook(hook)
     self.amm_hooks[amm] = hook
@@ -405,7 +411,7 @@ def set_amm_hook(market: address, hook: address):
 
 @external
 def add_new_monetary_policy(monetary_policy: address):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     idx: uint256 = self.n_monetary_policies
     self.monetary_policies[idx] = monetary_policy
     self.n_monetary_policies = idx +1
@@ -413,21 +419,21 @@ def add_new_monetary_policy(monetary_policy: address):
 
 @external
 def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert mp_idx < self.n_monetary_policies
     self.monetary_policies[mp_idx] = monetary_policy
 
 
 @external
 def change_market_monetary_policy(market: address, mp_idx: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert mp_idx < self.n_monetary_policies
     self.market_contracts[market].mp_idx = mp_idx
 
 
 @external
 def set_peg_keeper_regulator(regulator: PegKeeperRegulator, debt_ceiling: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     old: PegKeeperRegulator = self.peg_keeper_regulator
     if old.address != empty(address):
         old.recall_debt(self.peg_keeper_debt_ceiling)
@@ -441,7 +447,7 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, debt_ceiling: uint25
 
 @external
 def set_peg_keeper_debt_ceiling(debt_ceiling: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     regulator: PegKeeperRegulator = self.peg_keeper_regulator
     current: uint256 = self.peg_keeper_debt_ceiling
     if debt_ceiling < current:

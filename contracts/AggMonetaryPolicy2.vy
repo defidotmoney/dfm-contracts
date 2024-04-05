@@ -67,6 +67,18 @@ def __init__(core: CoreOwner,
     self.target_debt_fraction = target_debt_fraction
 
 
+@view
+@external
+def owner() -> address:
+    return CORE_OWNER.owner()
+
+
+@view
+@internal
+def _assert_only_owner():
+    assert msg.sender == CORE_OWNER.owner(), "AggMonetaryPolicy2: Only owner"
+
+
 @internal
 @pure
 def exp(power: int256) -> uint256:
@@ -149,7 +161,7 @@ def rate_write(market: address) -> uint256:
 
 @external
 def set_rate(rate: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert rate <= MAX_RATE
     self.rate0 = rate
     log SetRate(rate)
@@ -157,7 +169,7 @@ def set_rate(rate: uint256):
 
 @external
 def set_sigma(sigma: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert sigma >= MIN_SIGMA
     assert sigma <= MAX_SIGMA
 
@@ -167,7 +179,7 @@ def set_sigma(sigma: uint256):
 
 @external
 def set_target_debt_fraction(target_debt_fraction: uint256):
-    assert msg.sender == CORE_OWNER.owner()
+    self._assert_only_owner()
     assert target_debt_fraction <= MAX_TARGET_DEBT_FRACTION
 
     self.target_debt_fraction = target_debt_fraction
