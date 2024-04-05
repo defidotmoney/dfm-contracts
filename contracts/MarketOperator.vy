@@ -174,11 +174,20 @@ def __init__(
     A_ratio: uint256 = 10**18 * A / (A - 1)
     amm: address = create_from_blueprint(
         amm_implementation,
-        STABLECOIN.address, 10**(18 - STABLECOIN.decimals()),
-        collateral_token, COLLATERAL_PRECISION,  # <- This validates ERC20 ABI
-        A, SQRT_BAND_RATIO, self.ln_int(A_ratio),
-        _base_price, fee, admin_fee, _price_oracle_contract, msg.sender,
-        code_offset=3)
+        STABLECOIN.address,
+        collateral_token,
+        10**(18 - STABLECOIN.decimals()),
+        COLLATERAL_PRECISION,
+        A,
+        SQRT_BAND_RATIO,
+        self.ln_int(A_ratio),
+        _base_price,
+        fee,
+        admin_fee,
+        _price_oracle_contract,
+        msg.sender,
+        code_offset=3
+    )
     AMM = LLAMMA(amm)
 
 

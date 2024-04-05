@@ -1,5 +1,4 @@
 #pragma version 0.3.10
-#pragma optimize codesize
 """
 @title LLAMMA - crvUSD AMM
 @author Curve.Fi
@@ -151,9 +150,8 @@ exchange_hook: public(address)
 
 @external
 def __init__(
-        _borrowed_token: address,
+        _tokens: ERC20[2],
         _borrowed_precision: uint256,
-        _collateral_token: address,
         _collateral_precision: uint256,
         _A: uint256,
         _sqrt_band_ratio: uint256,
@@ -166,8 +164,6 @@ def __init__(
     ):
     """
     @notice LLAMMA constructor
-    @param _borrowed_token Token which is being borrowed
-    @param _collateral_token Token used as collateral
     @param _collateral_precision Precision of collateral: we pass it because we want the blueprint to fit into bytecode
     @param _A "Amplification coefficient" which also defines density of liquidity and band size. Relative band size is 1/_A
     @param _sqrt_band_ratio Precomputed int(sqrt(A / (A - 1)) * 1e18)
@@ -181,9 +177,9 @@ def __init__(
     MARKET_OPERATOR = msg.sender
     CONTROLLER = controller
 
-    BORROWED_TOKEN = ERC20(_borrowed_token)
+    BORROWED_TOKEN = _tokens[0]
+    COLLATERAL_TOKEN = _tokens[1]
     BORROWED_PRECISION = _borrowed_precision
-    COLLATERAL_TOKEN = ERC20(_collateral_token)
     COLLATERAL_PRECISION = _collateral_precision
     A = _A
     BASE_PRICE = _base_price
@@ -212,8 +208,14 @@ def __init__(
         pow = unsafe_div(pow * A, Aminus1)
     MAX_ORACLE_DN_POW = pow
 
-    ERC20(_borrowed_token).approve(controller, max_value(uint256), default_return_value=True)
-    ERC20(_collateral_token).approve(controller, max_value(uint256), default_return_value=True)
+    for token in _tokens:
+        token.approve(controller, max_value(uint256), default_return_value=True)
+
+
+@internal
+@view
+def _assert_market_operator():
+    assert msg.sender == MARKET_OPERATOR, "AMM: Only operator"
 
 
 @internal
@@ -670,7 +672,7 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
     @param n1 Lower band in the deposit range
     @param n2 Upper band in the deposit range
     """
-    assert msg.sender == MARKET_OPERATOR
+    self._assert_market_operator()
 
     user_shares: DynArray[uint256, MAX_TICKS_UINT] = []
     collateral_shares: DynArray[uint256, MAX_TICKS_UINT] = []
@@ -750,7 +752,7 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
     @param frac Fraction to withdraw (1e18 being 100%)
     @return Amount of [stablecoins, collateral] withdrawn
     """
-    assert msg.sender == MARKET_OPERATOR
+    self._assert_market_operator()
 
     lm: LMGauge = self.lm_hook
 
@@ -991,7 +993,7 @@ def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedT
     """
     # i = 0: borrowable (USD) in, collateral (ETH) out; going up
     # i = 1: collateral (ETH) in, borrowable (USD) out; going down
-    assert (i == 0 and j == 1) or (i == 1 and j == 0), "Wrong index"
+    assert i + j == 1, "Wrong index"
     out: DetailedTrade = empty(DetailedTrade)
     if amount == 0:
         return out
@@ -1054,7 +1056,7 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
     assert (i == 0 and j == 1) or (i == 1 and j == 0), "Wrong index"
     p_o: uint256[2] = self._price_oracle_w()  # Let's update the oracle even if we exchange 0
     if amount == 0:
-        return [0, 0]
+        return empty(uint256[2])
 
     lm: LMGauge = self.lm_hook
     collateral_shares: DynArray[uint256, MAX_TICKS_UINT] = []
@@ -1084,7 +1086,7 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
     else:
         assert in_amount_done <= minmax_amount and (out_amount_done == amount or amount == max_value(uint256)), "Slippage"
     if out_amount_done == 0 or in_amount_done == 0:
-        return [0, 0]
+        return empty(uint256[2])
 
     out.admin_fee = unsafe_div(out.admin_fee, in_precision)
     if i == 0:
@@ -1508,6 +1510,7 @@ def get_x_down(user: address) -> uint256:
     """
     return self.get_xy_up(user, False)
 
+
 @internal
 @view
 def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]:
@@ -1546,6 +1549,7 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
 
     return [xs, ys]
 
+
 @external
 @view
 @nonreentrant('lock')
@@ -1557,6 +1561,7 @@ def get_sum_xy(user: address) -> uint256[2]:
     """
     xy: DynArray[uint256, MAX_TICKS_UINT][2] = self._get_xy(user, True)
     return [xy[0][0], xy[1][0]]
+
 
 @external
 @view
@@ -1693,7 +1698,7 @@ def set_fee(fee: uint256):
     @notice Set AMM fee
     @param fee Fee where 1e18 == 100%
     """
-    assert msg.sender == MARKET_OPERATOR
+    self._assert_market_operator()
     self.fee = fee
     log SetFee(fee)
 
@@ -1705,7 +1710,7 @@ def set_admin_fee(fee: uint256):
     @notice Set admin fee - fraction of the AMM fee to go to admin
     @param fee Admin fee where 1e18 == 100%
     """
-    assert msg.sender == MARKET_OPERATOR
+    self._assert_market_operator()
     self.admin_fee = fee
     log SetAdminFee(fee)
 
@@ -1716,7 +1721,7 @@ def reset_admin_fees() -> uint256[2]:
     """
     @notice Zero out AMM fees collected
     """
-    assert msg.sender == MARKET_OPERATOR
+    self._assert_market_operator()
 
     xy: uint256[2] = [self.admin_fees_x, self.admin_fees_y]
     self.admin_fees_x = 0
@@ -1732,7 +1737,7 @@ def set_liquidity_mining_hook(lm_hook: LMGauge):
     @notice Set a gauge address with callbacks for liquidity mining for collateral
     @param lm_hook Gauge address
     """
-    assert msg.sender == MARKET_OPERATOR
+    self._assert_market_operator()
     self.lm_hook = lm_hook
 
 
