@@ -49,3 +49,8 @@ def set_price(price: uint256):
 @external
 def set_debt(debt: uint256):
     self.debt = debt
+
+
+@external
+def recall_debt(amount: uint256) -> uint256:
+    return amount

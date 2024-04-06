@@ -82,6 +82,7 @@ def test_withdraw_profit(
     peg_keeper_updater,
     donate_fee,
     price_aggregator,
+    pk_regulator,
 ):
     """Withdraw profit and update for the whole debt."""
 
@@ -107,7 +108,7 @@ def test_withdraw_profit(
             boa.env.time_travel(20000)
 
             with boa.env.prank(peg_keeper_updater):
-                assert peg_keeper.update()
+                assert pk_regulator.update(peg_keeper)
 
             diff = 5 * debt
 
@@ -133,17 +134,19 @@ def test_withdraw_profit_access(peg_keepers, alice):
 
 
 @pytest.mark.parametrize("coin_to_imbalance", [0, 1])
-def test_profit_receiver(swaps, peg_keepers, bob, receiver, coin_to_imbalance, imbalance_pools):
+def test_profit_receiver(
+    swaps, peg_keepers, pk_regulator, bob, receiver, coin_to_imbalance, imbalance_pools
+):
     imbalance_pools(coin_to_imbalance)
     for peg_keeper, swap in zip(peg_keepers, swaps):
         with boa.env.prank(bob):
-            peg_keeper.update(receiver)
+            pk_regulator.update(peg_keeper, receiver)
         assert swap.balanceOf(bob) == 0
         assert swap.balanceOf(receiver) > 0
 
 
 def test_unprofitable_peg(
-    swaps, peg_keepers, redeemable_tokens, stablecoin, alice, imbalance_pool, admin
+    swaps, peg_keepers, redeemable_tokens, stablecoin, alice, imbalance_pool, admin, pk_regulator
 ):
     for swap, peg_keeper, rtoken in zip(swaps, peg_keepers, redeemable_tokens):
         with boa.env.anchor():
@@ -152,7 +155,7 @@ def test_unprofitable_peg(
             rtoken_mul = 10 ** (18 - rtoken.decimals())
             imbalance_pool(swap, 1, 5 * (peg_keeper.debt() - little))
             with boa.env.prank(alice):
-                peg_keeper.update()
+                pk_regulator.update(peg_keeper)
 
             # Imbalance so it should give all
             able_to_add = stablecoin.balanceOf(peg_keeper) // rtoken_mul
@@ -166,12 +169,14 @@ def test_unprofitable_peg(
             boa.env.time_travel(15 * 60)
             with boa.reverts("peg unprofitable"):  # dev: peg was unprofitable
                 with boa.env.prank(alice):
-                    peg_keeper.update()
+                    pk_regulator.update(peg_keeper)
 
 
 @given(share=st.integers(min_value=0, max_value=10**5))
 @pytest.mark.parametrize("coin_to_imbalance", [0, 1])
-def test_profit_share(peg_keepers, swaps, bob, admin, coin_to_imbalance, imbalance_pools, share):
+def test_profit_share(
+    peg_keepers, pk_regulator, swaps, bob, admin, coin_to_imbalance, imbalance_pools, share
+):
     imbalance_pools(coin_to_imbalance)
 
     for peg_keeper, swap in zip(peg_keepers, swaps):
@@ -181,7 +186,7 @@ def test_profit_share(peg_keepers, swaps, bob, admin, coin_to_imbalance, imbalan
 
             profit_before = peg_keeper.calc_profit()
             with boa.env.prank(bob):
-                peg_keeper.update()
+                pk_regulator.update(peg_keeper)
             profit_after = peg_keeper.calc_profit()
 
             receiver_profit = profit_after - profit_before

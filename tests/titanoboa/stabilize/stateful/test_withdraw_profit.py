@@ -5,10 +5,7 @@ from boa.vyper.contract import BoaError
 from hypothesis import settings
 from hypothesis.stateful import run_state_machine_as_test, rule, invariant
 
-pytestmark = pytest.mark.usefixtures(
-    "add_initial_liquidity",
-    "mint_alice"
-)
+pytestmark = pytest.mark.usefixtures("add_initial_liquidity", "mint_alice")
 
 
 class StateMachine(base.StateMachine):
@@ -33,7 +30,7 @@ class StateMachine(base.StateMachine):
         """
         for peg_keeper, swap, dmul in zip(self.peg_keepers, self.swaps, self.dmul):
             try:
-                peg_keeper.update()
+                self.pk_regulator.update(peg_keeper)
             except BoaError:
                 continue
 
@@ -58,7 +55,7 @@ class StateMachine(base.StateMachine):
 
                 debt_before = peg_keeper.debt()
                 try:
-                    peg_keeper.update()
+                    self.pk_regulator.update(peg_keeper)
                 except BoaError:
                     continue
                 debt_after = peg_keeper.debt()
@@ -66,7 +63,10 @@ class StateMachine(base.StateMachine):
                 # This is imprecise: probably because decimals of the redeemable token can be not 1e18
                 # But could make sense to investigate more
                 assert debt_after / debt_before < 1e-5
-                assert abs(swap.balances(0) * 10**18 // dmul[0] - (swap.balances(1) - 4 * debt)) <= swap.balances(1) / 1e5
+                assert (
+                    abs(swap.balances(0) * 10**18 // dmul[0] - (swap.balances(1) - 4 * debt))
+                    <= swap.balances(1) / 1e5
+                )
 
 
 @pytest.mark.parametrize("always_withdraw", [False, True])
@@ -74,13 +74,14 @@ def test_withdraw_profit(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
     receiver,
     admin,
     always_withdraw,
-    _mint
+    _mint,
 ):
     with boa.env.prank(admin):
         for swap in swaps:
@@ -99,12 +100,13 @@ def test_withdraw_profit_example_1(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
     receiver,
     admin,
-    _mint
+    _mint,
 ):
     always_withdraw = False
 

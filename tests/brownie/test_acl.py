@@ -47,12 +47,7 @@ def test_change_market_monetary_policy(controller, market, alice):
 
 def test_set_peg_keeper_regulator(controller, regulator, alice):
     with brownie.reverts("MainController: Only owner"):
-        controller.set_peg_keeper_regulator(regulator, 0, {"from": alice})
-
-
-def test_set_peg_keeper_debt_ceiling(controller, alice):
-    with brownie.reverts("MainController: Only owner"):
-        controller.set_peg_keeper_debt_ceiling(0, {"from": alice})
+        controller.set_peg_keeper_regulator(regulator, False, {"from": alice})
 
 
 # MarketOperator
@@ -117,12 +112,12 @@ def test_set_new_caller_share(pk, alice):
 
 
 def test_set_regulator(pk, regulator, alice):
-    with brownie.reverts("PegKeeper: Only owner"):
+    with brownie.reverts("PegKeeper: Only controller"):
         pk.set_regulator(regulator, {"from": alice})
 
 
 def test_pk_recall_debt(pk, alice):
-    with brownie.reverts("PegKeeper: only regulator"):
+    with brownie.reverts("PegKeeper: Only regulator"):
         pk.recall_debt(10_000 * 10**18, {"from": alice})
 
 
@@ -157,11 +152,6 @@ def test_set_price_deviation(regulator, alice):
 def test_set_debt_parameters(regulator, alice):
     with brownie.reverts("PegKeeperRegulator: Only owner"):
         regulator.set_debt_parameters(10**18, 10**18, {"from": alice})
-
-
-def test_regulator_recall_debt(regulator, alice):
-    with brownie.reverts("PKRegulator: Only controller"):
-        regulator.recall_debt(10_000 * 10**18, {"from": alice})
 
 
 # AMM

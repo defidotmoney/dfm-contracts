@@ -7,10 +7,7 @@ from hypothesis._settings import HealthCheck
 
 from . import base
 
-pytestmark = pytest.mark.usefixtures(
-    "add_initial_liquidity",
-    "mint_alice"
-)
+pytestmark = pytest.mark.usefixtures("add_initial_liquidity", "mint_alice")
 
 
 class StateMachine(base.StateMachine):
@@ -24,21 +21,25 @@ class StateMachine(base.StateMachine):
         """
         Verify that Peg Keeper decreased diff of balances by 1/5.
         """
-        for idx, (peg_keeper, swap, dmul) in enumerate(zip(self.peg_keepers, self.swaps, self.dmul)):
+        for idx, (peg_keeper, swap, dmul) in enumerate(
+            zip(self.peg_keepers, self.swaps, self.dmul)
+        ):
             balances_before = [swap.balances(i) for i in range(2)]
             profit = 0
 
             try:
                 with boa.env.prank(self.alice):
-                    profit = peg_keeper.update()
+                    profit = self.pk_regulator.update(peg_keeper)
             except BoaError as e:
-                if 'peg unprofitable' in str(e):
+                if "peg unprofitable" in str(e):
                     continue
 
             balances = [swap.balances(i) for i in range(2)]
 
             diff = balances[1] * 10**18 // dmul[1] - balances[0] * 10**18 // dmul[0]
-            last_diff = balances_before[1] * 10**18 // dmul[1] - balances_before[0] * 10**18 // dmul[0]
+            last_diff = (
+                balances_before[1] * 10**18 // dmul[1] - balances_before[0] * 10**18 // dmul[0]
+            )
 
             if diff == last_diff:
                 assert profit == 0
@@ -50,13 +51,16 @@ def test_stable_peg(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
     receiver,
     admin,
 ):
-    StateMachine.TestCase.settings = settings(max_examples=20, stateful_step_count=40, suppress_health_check=HealthCheck.all())
+    StateMachine.TestCase.settings = settings(
+        max_examples=20, stateful_step_count=40, suppress_health_check=HealthCheck.all()
+    )
     for k, v in locals().items():
         setattr(StateMachine, k, v)
     run_state_machine_as_test(StateMachine)
@@ -66,6 +70,7 @@ def test_fail_remove(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
@@ -85,6 +90,7 @@ def test_fail_wrong_diff(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
@@ -106,6 +112,7 @@ def test_fail_wrong_diff_2(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,

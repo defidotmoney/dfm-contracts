@@ -7,10 +7,7 @@ from hypothesis._settings import HealthCheck
 
 from . import base
 
-pytestmark = pytest.mark.usefixtures(
-    "add_initial_liquidity",
-    "mint_alice"
-)
+pytestmark = pytest.mark.usefixtures("add_initial_liquidity", "mint_alice")
 
 
 class StateMachine(base.StateMachine):
@@ -18,6 +15,7 @@ class StateMachine(base.StateMachine):
     Stateful test that performs a series of deposits, swaps and withdrawals
     and confirms that profit is calculated right.
     """
+
     @invariant()
     def invariant_expected_caller_profit(self):
         """
@@ -31,9 +29,9 @@ class StateMachine(base.StateMachine):
             caller_profit = 0
             try:
                 with boa.env.prank(self.alice):
-                    caller_profit = peg_keeper.update()
+                    caller_profit = self.pk_regulator.update(peg_keeper)
             except BoaError as e:
-                if 'peg unprofitable' in str(e):
+                if "peg unprofitable" in str(e):
                     continue
 
             caller_balance = swap.balanceOf(self.alice)
@@ -52,6 +50,7 @@ def test_stable_peg(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
@@ -65,7 +64,9 @@ def test_stable_peg(
         for swap in swaps:
             swap.apply_new_fee()
 
-    StateMachine.TestCase.settings = settings(max_examples=100, stateful_step_count=40, suppress_health_check=HealthCheck.all())
+    StateMachine.TestCase.settings = settings(
+        max_examples=100, stateful_step_count=40, suppress_health_check=HealthCheck.all()
+    )
     for k, v in locals().items():
         setattr(StateMachine, k, v)
     run_state_machine_as_test(StateMachine)
@@ -75,6 +76,7 @@ def test_expected_profit_amount(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
@@ -117,6 +119,7 @@ def test_expected_profit_amount_2(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,
@@ -195,6 +198,7 @@ def test_calc_revert(
     add_initial_liquidity,
     swaps,
     peg_keepers,
+    pk_regulator,
     redeemable_tokens,
     stablecoin,
     alice,

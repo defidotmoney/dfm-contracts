@@ -16,6 +16,7 @@ def test_withdraw(
     alice,
     amount,
     peg_keepers,
+    pk_regulator,
     peg_keeper_updater,
 ):
     for swap, peg_keeper in zip(swaps, peg_keepers):
@@ -24,7 +25,7 @@ def test_withdraw(
         balances = [swap.balances(0), swap.balances(1)]
 
         with boa.env.prank(peg_keeper_updater):
-            assert peg_keeper.update()
+            assert pk_regulator.update(peg_keeper)
 
         new_balances = [swap.balances(0), swap.balances(1)]
         assert new_balances[0] == balances[0]
@@ -37,6 +38,7 @@ def test_withdraw_insufficient_debt(
     alice,
     initial_amounts,
     peg_keepers,
+    pk_regulator,
     peg_keeper_updater,
     _mint,
 ):
@@ -49,7 +51,7 @@ def test_withdraw_insufficient_debt(
         balances = [swap.balances(0), swap.balances(1)]
 
         with boa.env.prank(peg_keeper_updater):
-            assert peg_keeper.update()
+            assert pk_regulator.update(peg_keeper)
 
         new_balances = [swap.balances(0), swap.balances(1)]
         assert new_balances[0] == balances[0]
@@ -63,10 +65,13 @@ def test_withdraw_dust_debt(
     initial_amounts,
     redeemable_tokens,
     peg_keepers,
+    pk_regulator,
     peg_keeper_updater,
-    _mint
+    _mint,
 ):
-    for swap, peg_keeper, initial, rtoken in zip(swaps, peg_keepers, initial_amounts, redeemable_tokens):
+    for swap, peg_keeper, initial, rtoken in zip(
+        swaps, peg_keepers, initial_amounts, redeemable_tokens
+    ):
         rtoken_mul = 10 ** (18 - rtoken.decimals())
         amount = 5 * (initial[1] - 1)
         _mint(alice, [stablecoin], [2 * amount])
@@ -75,7 +80,7 @@ def test_withdraw_dust_debt(
         with boa.env.prank(alice):
             swap.add_liquidity([0, amount], 0)
         with boa.env.prank(peg_keeper_updater):
-            assert peg_keeper.update()
+            assert pk_regulator.update(peg_keeper)
 
         assert (swap.balances(1) - (amount - amount // 5)) // rtoken_mul == swap.balances(0)
 
@@ -88,16 +93,10 @@ def test_withdraw_dust_debt(
         with boa.env.prank(alice):
             swap.add_liquidity([0, amount], 0)
         with boa.env.prank(peg_keeper_updater):
-            assert not peg_keeper.update()
+            assert not pk_regulator.update(peg_keeper)
 
 
-def test_almost_balanced(
-    swaps,
-    alice,
-    admin,
-    peg_keepers,
-    peg_keeper_updater
-):
+def test_almost_balanced(swaps, alice, admin, peg_keepers, pk_regulator, peg_keeper_updater):
     for swap, peg_keeper in zip(swaps, peg_keepers):
         with boa.env.prank(alice):
             swap.add_liquidity([0, 10**18], 0)
@@ -107,4 +106,4 @@ def test_almost_balanced(
             swap.apply_new_fee()
         with boa.reverts():  # dev: peg was unprofitable
             with boa.env.prank(peg_keeper_updater):
-                peg_keeper.update()
+                pk_regulator.update(peg_keeper)

@@ -82,13 +82,14 @@ def controller(MainController, MarketOperator, AMM, core, stable, policy, deploy
 @pytest.fixture(scope="module")
 def regulator(PegKeeperRegulator, core, stable, agg_stable, controller, deployer):
     contract = PegKeeperRegulator.deploy(core, stable, agg_stable, controller, {"from": deployer})
-    controller.set_peg_keeper_regulator(contract, PEGKEEPER_CAP * PK_COUNT, {"from": deployer})
+    stable.setMinter(contract, True, {"from": deployer})
+    controller.set_peg_keeper_regulator(contract, False, {"from": deployer})
 
     return contract
 
 
 @pytest.fixture(scope="module")
-def peg_keepers(PegKeeper, Stableswap, core, stable, deployer, regulator, agg_stable):
+def peg_keepers(PegKeeper, Stableswap, core, stable, deployer, regulator, controller, agg_stable):
     pk_list = []
     for i in range(1, PK_COUNT + 1):
         coin = ERC20()
@@ -97,7 +98,9 @@ def peg_keepers(PegKeeper, Stableswap, core, stable, deployer, regulator, agg_st
             f"PegPool {i}", f"PP{i}", [coin, stable], rate_mul, 500, 1000000, {"from": deployer}
         )
         agg_stable.add_price_pair(swap, {"from": deployer})
-        peg_keeper = PegKeeper.deploy(core, swap, 2 * 10**4, regulator, {"from": deployer})
+        peg_keeper = PegKeeper.deploy(
+            core, regulator, controller, stable, swap, 2 * 10**4, {"from": deployer}
+        )
         regulator.add_peg_keeper(peg_keeper, PEGKEEPER_CAP, {"from": deployer})
         pk_list.append(peg_keeper)
 

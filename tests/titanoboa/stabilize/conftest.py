@@ -167,7 +167,8 @@ def crypto_agg_with_external_oracle(
 def pk_regulator(admin, core, stablecoin, mock_peg_keepers, agg, controller):
     with boa.env.prank(admin):
         regulator = boa.load("contracts/PegKeeperRegulator.vy", core, stablecoin, agg, controller)
-        controller.set_peg_keeper_regulator(regulator, PK_DEBT_CEILING * 2)
+        stablecoin.setMinter(regulator, True)
+        controller.set_peg_keeper_regulator(regulator, False)
         regulator.set_price_deviation(10**20)
         regulator.set_debt_parameters(10**18, 10**18)
         for pk in mock_peg_keepers:
@@ -188,6 +189,8 @@ def mock_peg_keepers(stablecoin):
 def peg_keepers(
     core,
     pk_regulator,
+    controller,
+    stablecoin,
     stableswap_a,
     stableswap_b,
     admin,
@@ -198,10 +201,12 @@ def peg_keepers(
             pks.append(
                 boa.load(
                     "contracts/PegKeeper.vy",
-                    core.address,
-                    pool.address,
+                    core,
+                    pk_regulator,
+                    controller,
+                    stablecoin,
+                    pool,
                     PK_CALLER_SHARE,
-                    pk_regulator.address,
                 )
             )
             pk_regulator.add_peg_keeper(pks[-1].address, PK_DEBT_CEILING)
@@ -292,7 +297,7 @@ def add_initial_liquidity(
 
 @pytest.fixture(scope="module")
 def provide_token_to_peg_keepers_no_sleep(
-    initial_amounts, swaps, peg_keepers, redeemable_tokens, alice, peg_keeper_updater
+    initial_amounts, swaps, peg_keepers, pk_regulator, redeemable_tokens, alice, peg_keeper_updater
 ):
     for (amount_r, amount_s), swap, pk, rtoken in zip(
         initial_amounts, swaps, peg_keepers, redeemable_tokens
@@ -307,7 +312,7 @@ def provide_token_to_peg_keepers_no_sleep(
             swap.add_liquidity([amount, 0], 0)
 
         with boa.env.prank(peg_keeper_updater):
-            pk.update()
+            pk_regulator.update(pk)
 
         with boa.env.prank(alice):
             rtoken_mul = 10 ** (18 - rtoken.decimals())
