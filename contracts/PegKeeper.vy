@@ -292,8 +292,9 @@ def estimate_caller_profit() -> uint256:
 def update(_beneficiary: address) -> (int256, uint256):
     """
     @notice Provide or withdraw coins from the pool to stabilize it
+    @dev Called via the regulator
     @param _beneficiary Beneficiary address
-    @return Amount of profit received by beneficiary
+    @return (change in peg keeper's debt, profit received by beneficiary)
     """
     self._assert_only_regulator()
     if self.last_change + ACTION_DELAY > block.timestamp:
@@ -348,7 +349,7 @@ def set_new_caller_share(_new_caller_share: uint256):
     @notice Set new update caller's part
     @param _new_caller_share Part with SHARE_PRECISION
     """
-    assert msg.sender == CORE_OWNER.owner(), "PegKeeper: only owner"
+    assert msg.sender == CORE_OWNER.owner(), "PegKeeper: Only owner"
     assert _new_caller_share <= SHARE_PRECISION  # dev: bad part value
 
     self.caller_share = _new_caller_share
@@ -361,7 +362,7 @@ def set_regulator(_new_regulator: Regulator):
     """
     @notice Set new peg keeper regulator
     """
-    assert msg.sender == CONTROLLER, "PegKeeper: only controller"
+    assert msg.sender == CONTROLLER, "PegKeeper: Only controller"
     assert _new_regulator.address != empty(address)  # dev: bad regulator
     assert self.owed_debt == 0, "!Change regulator with owed debt"
 

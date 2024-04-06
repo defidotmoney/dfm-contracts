@@ -81,7 +81,7 @@ price_deviation: public(uint256)
 alpha: public(uint256)  # Initial boundary
 beta: public(uint256)  # Each PegKeeper's impact
 
-STABLECOIN: immutable(ERC20)
+STABLECOIN: public(immutable(ERC20))
 aggregator: public(Aggregator)
 peg_keepers: public(DynArray[PegKeeperInfo, MAX_LEN])
 peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
@@ -111,6 +111,43 @@ def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, controller: 
     log DebtParameters(self.alpha, self.beta)
 
 
+
+@external
+def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_ceilings: DynArray[uint256, MAX_LEN]):
+    """
+    @notice Add peg keepers and debt ceilings from another PegKeeperRegulator deployment
+    @dev Called via `MainController.set_peg_keeper_regulator`
+    """
+    assert msg.sender == CONTROLLER, "PegKeeperRegulator: !controller"
+    assert len(self.peg_keepers) == 0, "PegKeeperRegulator: already set"
+
+    max_debt: uint256 = 0
+    active_debt: uint256 = 0
+    for i in range(MAX_LEN):
+        if i == len(peg_keepers): break
+        pk: PegKeeper = peg_keepers[i]
+
+        assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
+
+        # verify that the regulator has permission to call `recall_debt`
+        pk.recall_debt(0)
+
+        info: PegKeeperInfo = PegKeeperInfo({
+            peg_keeper: pk,
+            pool: pk.pool(),
+            is_inverse: pk.IS_INVERSE(),
+            debt_ceiling: debt_ceilings[i]
+        })
+        self.peg_keepers.append(info)  # dev: too many pairs
+        self.peg_keeper_i[pk] = len(self.peg_keepers)
+
+        max_debt += debt_ceilings[i]
+        active_debt += pk.debt()
+
+    self.max_debt = max_debt
+    self.active_debt = active_debt
+
+
 @view
 @external
 def owner() -> address:
@@ -121,12 +158,6 @@ def owner() -> address:
 @internal
 def _assert_only_owner():
     assert msg.sender == CORE_OWNER.owner(), "PegKeeperRegulator: Only owner"
-
-
-@external
-@view
-def stablecoin() -> ERC20:
-    return STABLECOIN
 
 
 @internal
@@ -185,6 +216,54 @@ def _get_max_ratio(_debt_ratios: DynArray[uint256, MAX_LEN]) -> uint256:
     for r in _debt_ratios:
         rsum += isqrt(r * ONE)
     return (self.alpha + self.beta * rsum / ONE) ** 2 / ONE
+
+
+@pure
+@internal
+def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
+    if adjustment < 0:
+        return initial - convert(-adjustment, uint256)
+    else:
+        return initial + convert(adjustment, uint256)
+
+
+@internal
+def _recall_debt(pk: PegKeeper, reduce_amount: uint256):
+    pk.recall_debt(reduce_amount)
+
+    self.max_debt -= reduce_amount
+
+
+@view
+@external
+def get_peg_keepers_with_debt_ceilings() -> (DynArray[address, MAX_LEN], DynArray[uint256, MAX_LEN]):
+    """
+    @notice Gets all active peg keepers and their current debt ceilings
+    """
+    peg_keepers: DynArray[address, MAX_LEN] = []
+    debt_ceilings: DynArray[uint256, MAX_LEN] = []
+    for info in self.peg_keepers:
+        peg_keepers.append(info.peg_keeper.address)
+        debt_ceilings.append(info.debt_ceiling)
+
+    return peg_keepers, debt_ceilings
+
+
+@view
+@external
+def owed_debt() -> uint256:
+    """
+    @notice Total owed debt across all active peg keepers
+    @dev Debt becomes "owed" if a peg keeper's ceiling is reduced
+         but the keeper does not have enough available balance to
+         meet the reduction requirement. Each time the keeper withdraws
+         from it's pool it will burn the received tokens until the owed
+         debt returns to zero.
+    """
+    debt: uint256 = 0
+    for info in self.peg_keepers:
+        debt += info.peg_keeper.owed_debt()
+    return debt
 
 
 @external
@@ -253,6 +332,22 @@ def withdraw_allowed(_pk: address=msg.sender) -> uint256:
 
 
 @external
+def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
+    """
+    @notice Provide or withdraw coins from the pool to stabilize it
+    @param pk PegKeeper to provide or withdraw from
+    @param beneficiary Address to send earned profits to
+    @return Amount of profit received by beneficiary
+    """
+    assert self.peg_keeper_i[pk] != 0, "Unknown PegKeeper"
+    debt_adjustment: int256 = 0
+    caller_profit: uint256 = 0
+    (debt_adjustment, caller_profit) = pk.update(beneficiary)
+    self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
+    return caller_profit
+
+
+@external
 def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     self._assert_only_owner()
     assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
@@ -279,13 +374,6 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
         self.max_debt += debt_ceiling
 
     log AddPegKeeper(info.peg_keeper, info.pool, info.is_inverse)
-
-
-@internal
-def _recall_debt(pk: PegKeeper, reduce_amount: uint256):
-    pk.recall_debt(reduce_amount)
-
-    self.max_debt -= reduce_amount
 
 
 @external
@@ -372,77 +460,3 @@ def set_killed(_is_killed: Killed):
     self._assert_only_owner()
     self.is_killed = _is_killed
     log SetKilled(_is_killed, msg.sender)
-
-
-
-@external
-def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
-    assert self.peg_keeper_i[pk] != 0, "Unknown PegKeeper"
-    debt_adjustment: int256 = 0
-    caller_profit: uint256 = 0
-    (debt_adjustment, caller_profit) = pk.update(beneficiary)
-    self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
-    return caller_profit
-
-
-
-@pure
-@internal
-def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
-    if adjustment < 0:
-        return initial - convert(-adjustment, uint256)
-    else:
-        return initial + convert(adjustment, uint256)
-
-
-@view
-@external
-def owed_debt() -> uint256:
-    debt: uint256 = 0
-    for info in self.peg_keepers:
-        debt += info.peg_keeper.owed_debt()
-    return debt
-
-
-@view
-@external
-def get_peg_keepers_with_debt_ceilings() -> (DynArray[address, MAX_LEN], DynArray[uint256, MAX_LEN]):
-    peg_keepers: DynArray[address, MAX_LEN] = []
-    debt_ceilings: DynArray[uint256, MAX_LEN] = []
-    for info in self.peg_keepers:
-        peg_keepers.append(info.peg_keeper.address)
-        debt_ceilings.append(info.debt_ceiling)
-
-    return peg_keepers, debt_ceilings
-
-
-@external
-def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_ceilings: DynArray[uint256, MAX_LEN]):
-    assert msg.sender == CONTROLLER
-    assert len(self.peg_keepers) == 0
-
-    max_debt: uint256 = 0
-    active_debt: uint256 = 0
-    for i in range(MAX_LEN):
-        if i == len(peg_keepers): break
-        pk: PegKeeper = peg_keepers[i]
-
-        assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
-
-        # verify that the regulator has permission to call `recall_debt`
-        pk.recall_debt(0)
-
-        info: PegKeeperInfo = PegKeeperInfo({
-            peg_keeper: pk,
-            pool: pk.pool(),
-            is_inverse: pk.IS_INVERSE(),
-            debt_ceiling: debt_ceilings[i]
-        })
-        self.peg_keepers.append(info)  # dev: too many pairs
-        self.peg_keeper_i[pk] = len(self.peg_keepers)
-
-        max_debt += debt_ceilings[i]
-        active_debt += pk.debt()
-
-    self.max_debt = max_debt
-    self.active_debt = active_debt
