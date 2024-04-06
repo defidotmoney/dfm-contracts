@@ -21,6 +21,7 @@ from scripts.deploy_blueprint import deploy_blueprint
 
 MARKET_DEBT_CAP = 10_000_000 * 10**18
 PEGKEEPER_CAP = 1_000_000 * 10**18
+FEE_RECEIVER = "000000000000000000000000000000000000fee5"
 
 
 market_A = 100
@@ -34,7 +35,7 @@ def main(acct=None):
     if acct is None:
         acct = accounts[0]
 
-    core = CoreOwner.deploy({"from": acct})
+    core = CoreOwner.deploy(FEE_RECEIVER, {"from": acct})
     stable = StableCoin.deploy({"from": acct})
     policy = ConstantMonetaryPolicy.deploy({"from": acct})
     oracle = DummyPriceOracle.deploy(3000 * 10**18, {"from": acct})
@@ -43,12 +44,13 @@ def main(acct=None):
     amm_impl = deploy_blueprint(AMM, acct)
 
     controller = MainController.deploy(
-        core, stable, market_impl, amm_impl, [policy], {"from": acct}
+        core, stable, market_impl, amm_impl, [policy], MARKET_DEBT_CAP, {"from": acct}
     )
-    stable.setMinter(controller, True, {"from": acct})
-
     regulator = PegKeeperRegulator.deploy(core, stable, agg_stable, controller, {"from": acct})
-    controller.set_peg_keeper_regulator(regulator, PEGKEEPER_CAP * 2, {"from": acct})
+    controller.set_peg_keeper_regulator(regulator, False, {"from": acct})
+
+    stable.setMinter(controller, True, {"from": acct})
+    stable.setMinter(regulator, True, {"from": acct})
 
     for i in range(1, 3):
         coin = ERC20()
@@ -57,7 +59,9 @@ def main(acct=None):
             f"PegPool {i}", f"PP{i}", [coin, stable], rate_mul, 500, 1000000, {"from": acct}
         )
         agg_stable.add_price_pair(swap, {"from": acct})
-        peg_keeper = PegKeeper.deploy(core, swap, 2 * 10**4, regulator, {"from": acct})
+        peg_keeper = PegKeeper.deploy(
+            core, regulator, controller, stable, swap, 2 * 10**4, {"from": acct}
+        )
         regulator.add_peg_keeper(peg_keeper, PEGKEEPER_CAP, {"from": acct})
 
     collateral = ERC20()
