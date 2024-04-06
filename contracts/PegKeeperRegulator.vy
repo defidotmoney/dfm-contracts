@@ -228,9 +228,14 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
 
 
 @internal
+def _mint(pk: PegKeeper, amount: uint256):
+    STABLECOIN.mint(pk.address, amount)
+    self.max_debt += amount
+
+
+@internal
 def _recall_debt(pk: PegKeeper, reduce_amount: uint256):
     pk.recall_debt(reduce_amount)
-
     self.max_debt -= reduce_amount
 
 
@@ -366,8 +371,7 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     self.peg_keeper_i[pk] = len(self.peg_keepers)
 
     if debt_ceiling > 0:
-        STABLECOIN.mint(pk.address, debt_ceiling)
-        self.max_debt += debt_ceiling
+        self._mint(pk, debt_ceiling)
 
     log AddPegKeeper(info.peg_keeper, info.pool, info.is_inverse)
 
@@ -406,7 +410,8 @@ def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
     if current_debt_ceiling > debt_ceiling:
         self._recall_debt(pk, current_debt_ceiling - debt_ceiling)
     else:
-        STABLECOIN.mint(pk.address, debt_ceiling - current_debt_ceiling)
+        self._mint(pk, debt_ceiling - current_debt_ceiling)
+
     self.peg_keepers[i].debt_ceiling = debt_ceiling
 
 
