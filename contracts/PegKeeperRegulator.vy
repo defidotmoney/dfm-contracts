@@ -9,6 +9,7 @@
 interface ERC20:
     def balanceOf(_owner: address) -> uint256: view
     def transfer(receiver: address, amount: uint256) -> bool: nonpayable
+    def mint(target: address, amount: uint256) -> bool: nonpayable
     def burn(target: address, amount: uint256) -> bool: nonpayable
 
 interface StableSwap:
@@ -17,9 +18,12 @@ interface StableSwap:
 
 interface PegKeeper:
     def pool() -> StableSwap: view
+    def regulator() -> address: view
     def debt() -> uint256: view
+    def owed_debt() -> uint256: view
     def IS_INVERSE() -> bool: view
     def recall_debt(amount: uint256) -> uint256: nonpayable
+    def update(_beneficiary: address) -> (int256, uint256): nonpayable
 
 interface Aggregator:
     def price() -> uint256: view
@@ -85,7 +89,7 @@ is_killed: public(Killed)
 
 debt_ceiling: public(HashMap[address, uint256])
 max_debt: public(uint256)
-owed_debt: public(uint256)
+active_debt: public(uint256)
 
 CORE_OWNER: immutable(CoreOwner)
 CONTROLLER: immutable(address)
@@ -253,7 +257,8 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     self._assert_only_owner()
     assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
 
-    self._repay_owed_debt(self.owed_debt)
+    # verify that the regulator has permission to call `recall_debt`
+    pk.recall_debt(0)
 
     info: PegKeeperInfo = PegKeeperInfo({
         peg_keeper: pk,
@@ -267,7 +272,9 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
         # in case this is an active peg keeper that was previously removed
         existing_debt: uint256 = pk.debt()
         if existing_debt < debt_ceiling:
-            STABLECOIN.transfer(pk.address, debt_ceiling - existing_debt)
+            STABLECOIN.mint(pk.address, debt_ceiling - existing_debt)
+        if existing_debt > 0:
+            self.active_debt += existing_debt
         self.debt_ceiling[pk.address] = debt_ceiling
         self.max_debt += debt_ceiling
 
@@ -275,18 +282,8 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
 
 
 @internal
-def _repay_owed_debt(owed_debt: uint256):
-    if owed_debt > 0:
-        debt_reduce: uint256 = min(owed_debt, STABLECOIN.balanceOf(self))
-        if debt_reduce > 0:
-            STABLECOIN.burn(self, debt_reduce)
-            self.owed_debt = owed_debt - debt_reduce
-
-
-@internal
 def _recall_debt(pk: PegKeeper, reduce_amount: uint256):
     pk.recall_debt(reduce_amount)
-    self._repay_owed_debt(self.owed_debt)
 
     self.max_debt -= reduce_amount
 
@@ -323,30 +320,8 @@ def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
     if current_debt_ceiling > debt_ceiling:
         self._recall_debt(pk, current_debt_ceiling - debt_ceiling)
     else:
-        STABLECOIN.transfer(pk.address, debt_ceiling - current_debt_ceiling)
+        STABLECOIN.mint(pk.address, debt_ceiling - current_debt_ceiling)
     self.debt_ceiling[pk.address] = debt_ceiling
-
-
-@external
-def recall_debt(burn_amount: uint256):
-    assert msg.sender == CONTROLLER, "PKRegulator: Only controller"
-    owed_debt: uint256 = self.owed_debt + burn_amount
-    self.owed_debt = owed_debt
-    self._repay_owed_debt(owed_debt)
-
-
-@external
-def repay_owed_debt():
-    self._repay_owed_debt(self.owed_debt)
-
-
-@view
-@external
-def total_debt() -> uint256:
-    debt: uint256 = 0
-    for info in self.peg_keepers:
-        debt += info.peg_keeper.debt()
-    return debt
 
 
 @external
@@ -397,3 +372,33 @@ def set_killed(_is_killed: Killed):
     self._assert_only_owner()
     self.is_killed = _is_killed
     log SetKilled(_is_killed, msg.sender)
+
+
+
+@external
+def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
+    assert self.peg_keeper_i[pk] != 0, "Unknown PegKeeper"
+    debt_adjustment: int256 = 0
+    caller_profit: uint256 = 0
+    (debt_adjustment, caller_profit) = pk.update(beneficiary)
+    self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
+    return caller_profit
+
+
+
+@pure
+@internal
+def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
+    if adjustment < 0:
+        return initial - convert(-adjustment, uint256)
+    else:
+        return initial + convert(adjustment, uint256)
+
+
+@view
+@external
+def owed_debt() -> uint256:
+    debt: uint256 = 0
+    for info in self.peg_keepers:
+        debt += info.peg_keeper.owed_debt()
+    return debt

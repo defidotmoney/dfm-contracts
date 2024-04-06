@@ -42,7 +42,7 @@ interface MonetaryPolicy:
 interface PegKeeperRegulator:
     def max_debt() -> uint256: view
     def owed_debt() -> uint256: view
-    def total_debt() -> uint256: view
+    def active_debt() -> uint256: view
     def recall_debt(amount: uint256): nonpayable
 
 interface ICoreOwner:
@@ -177,7 +177,6 @@ market_hooks: HashMap[address, uint256]
 amm_hooks: HashMap[address, address]
 
 peg_keeper_regulator: public(PegKeeperRegulator)
-peg_keeper_debt_ceiling: public(uint256)
 
 
 @external
@@ -341,7 +340,7 @@ def peg_keeper_debt() -> uint256:
     regulator: PegKeeperRegulator = self.peg_keeper_regulator
     if regulator.address == empty(address):
         return 0
-    return regulator.total_debt()
+    return regulator.active_debt()
 
 
 @view
@@ -432,30 +431,9 @@ def change_market_monetary_policy(market: address, mp_idx: uint256):
 
 
 @external
-def set_peg_keeper_regulator(regulator: PegKeeperRegulator, debt_ceiling: uint256):
+def set_peg_keeper_regulator(regulator: PegKeeperRegulator):
     self._assert_only_owner()
-    old: PegKeeperRegulator = self.peg_keeper_regulator
-    if old.address != empty(address):
-        old.recall_debt(self.peg_keeper_debt_ceiling)
-    if regulator.address != empty(address):
-        assert regulator.max_debt() + regulator.owed_debt() == 0
-        regulator.recall_debt(0)
-        STABLECOIN.mint(regulator.address, debt_ceiling)
     self.peg_keeper_regulator = regulator
-    self.peg_keeper_debt_ceiling = debt_ceiling
-
-
-@external
-def set_peg_keeper_debt_ceiling(debt_ceiling: uint256):
-    self._assert_only_owner()
-    regulator: PegKeeperRegulator = self.peg_keeper_regulator
-    current: uint256 = self.peg_keeper_debt_ceiling
-    if debt_ceiling < current:
-        regulator.recall_debt(current - debt_ceiling)
-    else:
-        STABLECOIN.mint(regulator.address, debt_ceiling - current)
-
-    self.peg_keeper_debt_ceiling = debt_ceiling
 
 
 @view

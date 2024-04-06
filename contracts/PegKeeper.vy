@@ -27,6 +27,7 @@ interface ERC20:
     def balanceOf(_owner: address) -> uint256: view
     def decimals() -> uint256: view
     def transfer(receiver: address, amount: uint256) -> bool: nonpayable
+    def burn(target: address, amount: uint256) -> bool: nonpayable
 
 interface ICoreOwner:
     def owner() -> address: view
@@ -145,13 +146,13 @@ def _repay_owed_debt():
 
 
 @internal
-def _provide(_amount: uint256):
+def _provide(_amount: uint256) -> int256:
     """
     @notice Implementation of provide
     @dev Coins should be already in the contract
     """
     if _amount == 0:
-        return
+        return 0
 
     self._repay_owed_debt()
 
@@ -165,14 +166,16 @@ def _provide(_amount: uint256):
     self.debt += amount
     log Provide(amount)
 
+    return convert(amount, int256)
+
 
 @internal
-def _withdraw(_amount: uint256):
+def _withdraw(_amount: uint256) -> int256:
     """
     @notice Implementation of withdraw
     """
     if _amount == 0:
-        return
+        return 0
 
     debt: uint256 = self.debt
     amount: uint256 = min(_amount, debt)
@@ -187,6 +190,8 @@ def _withdraw(_amount: uint256):
     self._repay_owed_debt()
 
     log Withdraw(amount)
+
+    return -convert(amount, int256)
 
 
 @internal
@@ -284,29 +289,31 @@ def estimate_caller_profit() -> uint256:
 
 @external
 @nonpayable
-def update(_beneficiary: address = msg.sender) -> uint256:
+def update(_beneficiary: address) -> (int256, uint256):
     """
     @notice Provide or withdraw coins from the pool to stabilize it
     @param _beneficiary Beneficiary address
     @return Amount of profit received by beneficiary
     """
+    assert msg.sender == self.regulator.address, "PegKeeper: only regulator"
     if self.last_change + ACTION_DELAY > block.timestamp:
-        return 0
+        return 0, 0
 
     balance_pegged: uint256 = POOL.balances(I)
     balance_peg: uint256 = POOL.balances(1 - I) * PEG_MUL
 
     initial_profit: uint256 = self._calc_profit()
 
+    debt_adjustment: int256 = 0
     if balance_peg > balance_pegged:
         allowed: uint256 = self.regulator.provide_allowed()
         assert allowed > 0, "Regulator ban"
-        self._provide(min(unsafe_sub(balance_peg, balance_pegged) / 5, allowed))  # this dumps stablecoin
+        debt_adjustment = self._provide(min(unsafe_sub(balance_peg, balance_pegged) / 5, allowed))  # this dumps stablecoin
 
     else:
         allowed: uint256 = self.regulator.withdraw_allowed()
         assert allowed > 0, "Regulator ban"
-        self._withdraw(min(unsafe_sub(balance_pegged, balance_peg) / 5, allowed))  # this pumps stablecoin
+        debt_adjustment = self._withdraw(min(unsafe_sub(balance_pegged, balance_peg) / 5, allowed))  # this pumps stablecoin
 
     # Send generated profit
     new_profit: uint256 = self._calc_profit()
@@ -316,7 +323,7 @@ def update(_beneficiary: address = msg.sender) -> uint256:
     if caller_profit > 0:
         POOL.transfer(_beneficiary, caller_profit)
 
-    return caller_profit
+    return (debt_adjustment, caller_profit)
 
 
 @external
@@ -370,11 +377,11 @@ def recall_debt(amount: uint256) -> uint256:
     debt: uint256 = PEGGED.balanceOf(self)
 
     if debt >= amount:
-        PEGGED.transfer(msg.sender, amount)
+        PEGGED.burn(self, amount)
         return amount
 
     if debt > 0:
-        PEGGED.transfer(msg.sender, debt)
+        PEGGED.burn(self, debt)
     self.owed_debt += amount - debt
 
     return debt
