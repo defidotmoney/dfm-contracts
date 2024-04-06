@@ -136,12 +136,12 @@ def pool() -> CurvePool:
 
 
 @internal
-def _repay_owed_debt():
+def _burn_owed_debt():
     owed_debt: uint256 = self.owed_debt
     if owed_debt > 0:
         debt_reduce: uint256 = min(owed_debt, PEGGED.balanceOf(self))
         if debt_reduce > 0:
-            PEGGED.transfer(self.regulator.address, debt_reduce)
+            PEGGED.burn(self, debt_reduce)
             self.owed_debt = owed_debt - debt_reduce
 
 
@@ -154,7 +154,7 @@ def _provide(_amount: uint256) -> int256:
     if _amount == 0:
         return 0
 
-    self._repay_owed_debt()
+    self._burn_owed_debt()
 
     amount: uint256 = min(_amount, PEGGED.balanceOf(self))
 
@@ -187,7 +187,7 @@ def _withdraw(_amount: uint256) -> int256:
     self.last_change = block.timestamp
     self.debt = debt - amount
 
-    self._repay_owed_debt()
+    self._burn_owed_debt()
 
     log Withdraw(amount)
 
