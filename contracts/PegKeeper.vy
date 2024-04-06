@@ -73,36 +73,36 @@ SHARE_PRECISION: constant(uint256) = 10 ** 5
 caller_share: public(uint256)
 
 CORE_OWNER: public(immutable(ICoreOwner))
-
+CONTROLLER: public(immutable(address))
 
 @external
-def __init__(core: ICoreOwner, _pool: CurvePool, _caller_share: uint256, _regulator: Regulator):
+def __init__(core: ICoreOwner, regulator: Regulator, controller: address, stable: ERC20, pool: CurvePool, caller_share: uint256):
     """
     @notice Contract constructor
-    @param _pool Contract pool address
-    @param _caller_share Caller's share of profit
-    @param _regulator Peg Keeper Regulator
+    @param regulator Peg Keeper Regulator
+    @param pool Contract pool address
+    @param caller_share Caller's share of profit
     """
-    POOL = _pool
     CORE_OWNER = core
-    pegged: ERC20 = ERC20(_regulator.stablecoin())
-    PEGGED = pegged
-    pegged.approve(_pool.address, max_value(uint256))
+    POOL = pool
+    CONTROLLER = controller
+    PEGGED = stable
+    stable.approve(pool.address, max_value(uint256))
 
-    coins: ERC20[2] = [ERC20(_pool.coins(0)), ERC20(_pool.coins(1))]
+    coins: ERC20[2] = [ERC20(pool.coins(0)), ERC20(pool.coins(1))]
     for i in range(2):
-        if coins[i] == pegged:
+        if coins[i] == stable:
             I = i
             IS_INVERSE = (i == 0)
         else:
             PEG_MUL = 10 ** (18 - coins[i].decimals())
 
-    self.regulator = _regulator
-    log SetNewRegulator(_regulator.address)
+    self.regulator = regulator
+    log SetNewRegulator(regulator.address)
 
-    assert _caller_share <= SHARE_PRECISION  # dev: bad part value
-    self.caller_share = _caller_share
-    log SetNewCallerShare(_caller_share)
+    assert caller_share <= SHARE_PRECISION  # dev: bad part value
+    self.caller_share = caller_share
+    log SetNewCallerShare(caller_share)
 
 
 @view
@@ -113,8 +113,8 @@ def owner() -> address:
 
 @view
 @internal
-def _assert_only_owner():
-    assert msg.sender == CORE_OWNER.owner(), "PegKeeper: Only owner"
+def _assert_only_regulator():
+    assert msg.sender == self.regulator.address, "PegKeeper: Only regulator"
 
 
 @pure
@@ -295,7 +295,7 @@ def update(_beneficiary: address) -> (int256, uint256):
     @param _beneficiary Beneficiary address
     @return Amount of profit received by beneficiary
     """
-    assert msg.sender == self.regulator.address, "PegKeeper: only regulator"
+    self._assert_only_regulator()
     if self.last_change + ACTION_DELAY > block.timestamp:
         return 0, 0
 
@@ -348,13 +348,12 @@ def set_new_caller_share(_new_caller_share: uint256):
     @notice Set new update caller's part
     @param _new_caller_share Part with SHARE_PRECISION
     """
-    self._assert_only_owner()
+    assert msg.sender == CORE_OWNER.owner(), "PegKeeper: only owner"
     assert _new_caller_share <= SHARE_PRECISION  # dev: bad part value
 
     self.caller_share = _new_caller_share
 
     log SetNewCallerShare(_new_caller_share)
-
 
 @external
 @nonpayable
@@ -362,7 +361,7 @@ def set_regulator(_new_regulator: Regulator):
     """
     @notice Set new peg keeper regulator
     """
-    # assert msg.sender == CONTROLLER
+    assert msg.sender == CONTROLLER, "PegKeeper: only controller"
     assert _new_regulator.address != empty(address)  # dev: bad regulator
     assert self.owed_debt == 0, "!Change regulator with owed debt"
 
@@ -373,7 +372,7 @@ def set_regulator(_new_regulator: Regulator):
 @external
 @nonpayable
 def recall_debt(amount: uint256) -> uint256:
-    assert msg.sender == self.regulator.address, "PegKeeper: only regulator"
+    self._assert_only_regulator()
     debt: uint256 = PEGGED.balanceOf(self)
 
     if debt >= amount:
