@@ -351,6 +351,7 @@ def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
 def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     self._assert_only_owner()
     assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
+    assert pk.debt() == 0, "PKRegulator: keeper has debt"
 
     # verify that the regulator has permission to call `recall_debt`
     pk.recall_debt(0)
@@ -365,12 +366,7 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     self.peg_keeper_i[pk] = len(self.peg_keepers)
 
     if debt_ceiling > 0:
-        # in case this is an active peg keeper that was previously removed
-        existing_debt: uint256 = pk.debt()
-        if existing_debt < debt_ceiling:
-            STABLECOIN.mint(pk.address, debt_ceiling - existing_debt)
-        if existing_debt > 0:
-            self.active_debt += existing_debt
+        STABLECOIN.mint(pk.address, debt_ceiling)
         self.max_debt += debt_ceiling
 
     log AddPegKeeper(info.peg_keeper, info.pool, info.is_inverse)
@@ -387,6 +383,8 @@ def remove_peg_keeper(pk: PegKeeper):
     debt_ceiling: uint256 = self.peg_keepers[i].debt_ceiling
     if debt_ceiling > 0:
         self._recall_debt(pk, debt_ceiling)
+
+    assert pk.debt() == 0, "PKRegulator: keeper has debt"
 
     max_n: uint256 = len(self.peg_keepers) - 1
     if i < max_n:

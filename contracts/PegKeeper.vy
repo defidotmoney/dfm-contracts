@@ -364,7 +364,6 @@ def set_regulator(_new_regulator: Regulator):
     """
     assert msg.sender == CONTROLLER, "PegKeeper: Only controller"
     assert _new_regulator.address != empty(address)  # dev: bad regulator
-    assert self.owed_debt == 0, "!Change regulator with owed debt"
 
     self.regulator = _new_regulator
     log SetNewRegulator(_new_regulator.address)
