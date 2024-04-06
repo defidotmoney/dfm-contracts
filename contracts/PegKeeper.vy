@@ -362,7 +362,7 @@ def set_regulator(_new_regulator: Regulator):
     """
     @notice Set new peg keeper regulator
     """
-    self._assert_only_owner()
+    # assert msg.sender == CONTROLLER
     assert _new_regulator.address != empty(address)  # dev: bad regulator
     assert self.owed_debt == 0, "!Change regulator with owed debt"
 

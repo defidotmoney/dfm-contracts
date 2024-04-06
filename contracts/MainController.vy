@@ -39,11 +39,16 @@ interface MarketOperator:
 interface MonetaryPolicy:
     def rate_write(market: address) -> uint256: nonpayable
 
+interface PegKeeper:
+    def set_regulator(regulator: address): nonpayable
+
 interface PegKeeperRegulator:
     def max_debt() -> uint256: view
     def owed_debt() -> uint256: view
     def active_debt() -> uint256: view
     def recall_debt(amount: uint256): nonpayable
+    def get_peg_keepers_with_debt_ceilings() -> (DynArray[PegKeeper, 256], DynArray[uint256, 256]): view
+    def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, 256], debt_ceilings: DynArray[uint256, 256]): nonpayable
 
 interface ICoreOwner:
     def owner() -> address: view
@@ -431,8 +436,27 @@ def change_market_monetary_policy(market: address, mp_idx: uint256):
 
 
 @external
-def set_peg_keeper_regulator(regulator: PegKeeperRegulator):
+def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool):
+    """
+    @notice Set the active peg keeper regulator
+    @dev The regulator must also be given permission to mint `STABLECOIN`
+    @param regulator Address of the new peg keeper regulator. Can also be set to
+                     empty(address) to have no active regulator.
+    @param with_migration if True, all peg keepers from the old regulator are
+                          added to the new regulator with the same debt ceilings.
+    """
     self._assert_only_owner()
+    old: PegKeeperRegulator = self.peg_keeper_regulator
+    assert old != regulator
+
+    if with_migration:
+        peg_keepers: DynArray[PegKeeper, 256] = []
+        debt_ceilings: DynArray[uint256, 256] = []
+        (peg_keepers, debt_ceilings) = old.get_peg_keepers_with_debt_ceilings()
+        for pk in peg_keepers:
+            pk.set_regulator(regulator.address)
+        regulator.init_migrate_peg_keepers(peg_keepers, debt_ceilings)
+
     self.peg_keeper_regulator = regulator
 
 

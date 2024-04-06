@@ -67,6 +67,7 @@ struct PegKeeperInfo:
     peg_keeper: PegKeeper
     pool: StableSwap
     is_inverse: bool
+    debt_ceiling: uint256
 
 enum Killed:
     Provide  # 1
@@ -87,7 +88,6 @@ peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
 
 is_killed: public(Killed)
 
-debt_ceiling: public(HashMap[address, uint256])
 max_debt: public(uint256)
 active_debt: public(uint256)
 
@@ -264,6 +264,7 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
         peg_keeper: pk,
         pool: pk.pool(),
         is_inverse: pk.IS_INVERSE(),
+        debt_ceiling: debt_ceiling
     })
     self.peg_keepers.append(info)  # dev: too many pairs
     self.peg_keeper_i[pk] = len(self.peg_keepers)
@@ -275,7 +276,6 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
             STABLECOIN.mint(pk.address, debt_ceiling - existing_debt)
         if existing_debt > 0:
             self.active_debt += existing_debt
-        self.debt_ceiling[pk.address] = debt_ceiling
         self.max_debt += debt_ceiling
 
     log AddPegKeeper(info.peg_keeper, info.pool, info.is_inverse)
@@ -295,6 +295,11 @@ def remove_peg_keeper(pk: PegKeeper):
     peg_keepers: DynArray[PegKeeperInfo, MAX_LEN] = self.peg_keepers
 
     i: uint256 = self.peg_keeper_i[pk] - 1  # dev: pool not found
+
+    debt_ceiling: uint256 = self.peg_keepers[i].debt_ceiling
+    if debt_ceiling > 0:
+        self._recall_debt(pk, debt_ceiling)
+
     max_n: uint256 = len(self.peg_keepers) - 1
     if i < max_n:
         self.peg_keepers[i] = self.peg_keepers[max_n]
@@ -302,11 +307,6 @@ def remove_peg_keeper(pk: PegKeeper):
 
     self.peg_keepers.pop()
     self.peg_keeper_i[pk] = empty(uint256)
-
-    debt_ceiling: uint256 = self.debt_ceiling[pk.address]
-    if debt_ceiling > 0:
-        self._recall_debt(pk, debt_ceiling)
-        self.debt_ceiling[pk.address] = 0
 
     log RemovePegKeeper(pk)
 
@@ -316,12 +316,12 @@ def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
     self._assert_only_owner()
     i: uint256 = self.peg_keeper_i[pk] - 1  # dev: pool not found
 
-    current_debt_ceiling: uint256 = self.debt_ceiling[pk.address]
+    current_debt_ceiling: uint256 = self.peg_keepers[i].debt_ceiling
     if current_debt_ceiling > debt_ceiling:
         self._recall_debt(pk, current_debt_ceiling - debt_ceiling)
     else:
         STABLECOIN.mint(pk.address, debt_ceiling - current_debt_ceiling)
-    self.debt_ceiling[pk.address] = debt_ceiling
+    self.peg_keepers[i].debt_ceiling = debt_ceiling
 
 
 @external
@@ -402,3 +402,47 @@ def owed_debt() -> uint256:
     for info in self.peg_keepers:
         debt += info.peg_keeper.owed_debt()
     return debt
+
+
+@view
+@external
+def get_peg_keepers_with_debt_ceilings() -> (DynArray[address, MAX_LEN], DynArray[uint256, MAX_LEN]):
+    peg_keepers: DynArray[address, MAX_LEN] = []
+    debt_ceilings: DynArray[uint256, MAX_LEN] = []
+    for info in self.peg_keepers:
+        peg_keepers.append(info.peg_keeper.address)
+        debt_ceilings.append(info.debt_ceiling)
+
+    return peg_keepers, debt_ceilings
+
+
+@external
+def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_ceilings: DynArray[uint256, MAX_LEN]):
+    assert msg.sender == CONTROLLER
+    assert len(self.peg_keepers) == 0
+
+    max_debt: uint256 = 0
+    active_debt: uint256 = 0
+    for i in range(MAX_LEN):
+        if i == len(peg_keepers): break
+        pk: PegKeeper = peg_keepers[i]
+
+        assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
+
+        # verify that the regulator has permission to call `recall_debt`
+        pk.recall_debt(0)
+
+        info: PegKeeperInfo = PegKeeperInfo({
+            peg_keeper: pk,
+            pool: pk.pool(),
+            is_inverse: pk.IS_INVERSE(),
+            debt_ceiling: debt_ceilings[i]
+        })
+        self.peg_keepers.append(info)  # dev: too many pairs
+        self.peg_keeper_i[pk] = len(self.peg_keepers)
+
+        max_debt += debt_ceilings[i]
+        active_debt += pk.debt()
+
+    self.max_debt = max_debt
+    self.active_debt = active_debt
