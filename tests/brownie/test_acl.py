@@ -106,6 +106,11 @@ def test_collect_fees(market, alice):
 # PegKeeper
 
 
+def test_update(pk, alice):
+    with brownie.reverts("PegKeeper: Only regulator"):
+        pk.update(alice, {"from": alice})
+
+
 def test_set_new_caller_share(pk, alice):
     with brownie.reverts("PegKeeper: Only owner"):
         pk.set_new_caller_share(0, {"from": alice})
@@ -122,6 +127,11 @@ def test_pk_recall_debt(pk, alice):
 
 
 # PegKeeperRegulator
+
+
+def test_init_migrate_peg_keepers(regulator, alice):
+    with brownie.reverts("PegKeeperRegulator: !controller"):
+        regulator.init_migrate_peg_keepers([], [], {"from": alice})
 
 
 def test_add_peg_keeper(regulator, pk, alice):
@@ -152,6 +162,11 @@ def test_set_price_deviation(regulator, alice):
 def test_set_debt_parameters(regulator, alice):
     with brownie.reverts("PegKeeperRegulator: Only owner"):
         regulator.set_debt_parameters(10**18, 10**18, {"from": alice})
+
+
+def test_set_killed(regulator, alice):
+    with brownie.reverts("PegKeeperRegulator: Only owner"):
+        regulator.set_killed(True, {"from": alice})
 
 
 # AMM
