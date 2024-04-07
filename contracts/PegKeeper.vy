@@ -373,8 +373,10 @@ def set_regulator(_new_regulator: Regulator):
 @nonpayable
 def recall_debt(amount: uint256) -> uint256:
     self._assert_only_regulator()
-    debt: uint256 = PEGGED.balanceOf(self)
+    if amount == 0:
+        return 0
 
+    debt: uint256 = PEGGED.balanceOf(self)
     if debt >= amount:
         PEGGED.burn(self, amount)
         return amount

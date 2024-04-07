@@ -229,6 +229,9 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
 
 @internal
 def _mint(pk: PegKeeper, amount: uint256):
+     # always verify the regulator can `recall_debt` prior to minting
+    pk.recall_debt(0)
+
     STABLECOIN.mint(pk.address, amount)
     self.max_debt += amount
 
@@ -357,9 +360,6 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     self._assert_only_owner()
     assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
     assert pk.debt() == 0, "PKRegulator: keeper has debt"
-
-    # verify that the regulator has permission to call `recall_debt`
-    pk.recall_debt(0)
 
     info: PegKeeperInfo = PegKeeperInfo({
         peg_keeper: pk,
