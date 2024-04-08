@@ -52,5 +52,7 @@ brownie test
 To run the [`titanoboa`](https://github.com/vyperlang/titanoboa) tests:
 
 ```bash
-pytest tests/titanoboa -p no:pytest-brownie
+pytest tests/titanoboa
 ```
+
+Note that `brownie` and `titanoboa` do not play nicely together - attempting to run all tests at once might cause weirdness.
