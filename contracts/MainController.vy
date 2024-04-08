@@ -50,7 +50,7 @@ interface PegKeeperRegulator:
     def get_peg_keepers_with_debt_ceilings() -> (DynArray[PegKeeper, 256], DynArray[uint256, 256]): view
     def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, 256], debt_ceilings: DynArray[uint256, 256]): nonpayable
 
-interface ICoreOwner:
+interface CoreOwner:
     def owner() -> address: view
     def stableCoin() -> ERC20: view
     def feeReceiver() -> address: view
@@ -70,23 +70,45 @@ event AddMarket:
     collateral: indexed(address)
     market: address
     amm: address
-    monetary_policy: address
-    ix: uint256
+    mp_idx: uint256
+    market_idx: uint256
 
-event MintForMarket:
-    addr: indexed(address)
-    amount: uint256
-
-event RemoveFromMarket:
-    addr: indexed(address)
-    amount: uint256
+event SetDelegateApproval:
+    account: indexed(address)
+    delegate: indexed(address)
+    is_approved: bool
 
 event SetImplementations:
     amm: address
     market: address
 
+event SetMarketHooks:
+    market: indexed(address)
+    hooks: indexed(address)
+    hooks_bitfield: uint256
+
+event SetAmmHooks:
+    market: indexed(address)
+    hooks: indexed(address)
+
+event AddMonetaryPolicy:
+    mp_idx: indexed(uint256)
+    monetary_policy: address
+
+event ChangeMonetaryPolicy:
+    mp_idx: indexed(uint256)
+    monetary_policy: address
+
+event ChangeMonetaryPolicyForMarket:
+    market: indexed(address)
+    mp_idx: indexed(uint256)
+
 event SetGlobalMarketDebtCeiling:
     debt_ceiling: uint256
+
+event SetPegKeeperRegulator:
+    regulator: address
+    with_migration: bool
 
 event CreateLoan:
     market: indexed(address)
@@ -97,10 +119,8 @@ event CreateLoan:
 event AdjustLoan:
     market: indexed(address)
     account: indexed(address)
-    coll_increase: uint256
-    coll_decrease: uint256
-    debt_increase: uint256
-    debt_decrease: uint256
+    coll_adjustment: int256
+    debt_adjustment: int256
 
 event CloseLoan:
     market: indexed(address)
@@ -144,10 +164,10 @@ enum HookId:
 
 NUM_HOOK_IDS: constant(uint256) = 4
 
-MAX_MARKETS: constant(uint256) = 50000
-MAX_ACTIVE_BAND: constant(int256) = 2**255-1
+MAX_MARKETS: constant(uint256) = 2 ** 16 - 1
+MAX_ACTIVE_BAND: constant(int256) = max_value(int256)
 STABLECOIN: public(immutable(ERC20))
-CORE_OWNER: public(immutable(ICoreOwner))
+CORE_OWNER: public(immutable(CoreOwner))
 markets: public(address[MAX_MARKETS])
 amms: public(address[MAX_MARKETS])
 market_operator_implementation: public(address)
@@ -186,7 +206,7 @@ peg_keeper_regulator: public(PegKeeperRegulator)
 
 @external
 def __init__(
-    core: ICoreOwner,
+    core: CoreOwner,
     stable: ERC20,
     market_impl: address,
     amm_impl: address,
@@ -235,6 +255,7 @@ def setDelegateApproval(delegate: address, is_approved: bool):
         minted stablecoins to the caller.
     """
     self.isApprovedDelegate[msg.sender][delegate] = is_approved
+    log SetDelegateApproval(msg.sender, delegate, is_approved)
 
 
 @view
@@ -313,7 +334,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
 
     self.market_contracts[market] = MarketContracts({collateral: token, amm: amm, mp_idx: mp_idx})
 
-    # log AddMarket(token, market, amm, mp_idx, N)
+    log AddMarket(token, market, amm, mp_idx, N)
     return [market, amm]
 
 
@@ -404,6 +425,8 @@ def set_market_hooks(market: address, hooks: address, hooks_bitfield: uint256):
     else:
         self.market_hooks[market] = hookdata
 
+    log SetMarketHooks(market, hooks, hooks_bitfield)
+
 
 @external
 def set_amm_hook(market: address, hook: address):
@@ -411,6 +434,8 @@ def set_amm_hook(market: address, hook: address):
     amm: address = self._get_contracts(market).amm
     AMM(amm).set_exchange_hook(hook)
     self.amm_hooks[amm] = hook
+
+    log SetAmmHooks(market, hook)
 
 
 @external
@@ -420,6 +445,8 @@ def add_new_monetary_policy(monetary_policy: address):
     self.monetary_policies[idx] = monetary_policy
     self.n_monetary_policies = idx +1
 
+    log AddMonetaryPolicy(idx, monetary_policy)
+
 
 @external
 def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
@@ -427,12 +454,16 @@ def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
     assert mp_idx < self.n_monetary_policies
     self.monetary_policies[mp_idx] = monetary_policy
 
+    log ChangeMonetaryPolicy(mp_idx, monetary_policy)
+
 
 @external
 def change_market_monetary_policy(market: address, mp_idx: uint256):
     self._assert_only_owner()
     assert mp_idx < self.n_monetary_policies
     self.market_contracts[market].mp_idx = mp_idx
+
+    log ChangeMonetaryPolicyForMarket(market, mp_idx)
 
 
 @external
@@ -458,6 +489,8 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool
         regulator.init_migrate_peg_keepers(peg_keepers, debt_ceilings)
 
     self.peg_keeper_regulator = regulator
+
+    log SetPegKeeperRegulator(regulator.address, with_migration)
 
 
 @view
@@ -567,7 +600,7 @@ def create_loan(account: address, market: address, coll_amount: uint256, debt_am
 
 @external
 @nonreentrant('lock')
-def adjust_loan(account: address, market: address, coll_change: int256, debt_change: int256, max_active_band: int256 = 2**255-1):
+def adjust_loan(account: address, market: address, coll_change: int256, debt_change: int256, max_active_band: int256 = max_value(int256)):
     assert coll_change != 0 or debt_change != 0
 
     self._assert_caller_or_approved_delegate(account)
@@ -607,6 +640,8 @@ def adjust_loan(account: address, market: address, coll_change: int256, debt_cha
             self._deposit_collateral(msg.sender, c.collateral, c.amm, coll_change_abs)
         else:
             self._withdraw_collateral(msg.sender, c.collateral, c.amm, coll_change_abs)
+
+    log AdjustLoan(market, account, coll_change, debt_change_final)
 
 
 @external

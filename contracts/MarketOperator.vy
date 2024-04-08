@@ -47,7 +47,7 @@ interface MonetaryPolicy:
 interface Controller:
     def STABLECOIN() -> ERC20: view
 
-interface ICoreOwner:
+interface CoreOwner:
     def owner() -> address: view
 
 interface PriceOracle:
@@ -63,12 +63,21 @@ event UserState:
     n2: int256
     liquidation_discount: uint256
 
-event SetMonetaryPolicy:
-    monetary_policy: address
-
 event SetBorrowingDiscounts:
     loan_discount: uint256
     liquidation_discount: uint256
+
+event SetAmmFee:
+    fee: uint256
+
+event SetAmmAdminFee:
+    fee: uint256
+
+event SetLiquidityMiningHook:
+    hook: address
+
+event SetDebtCeiling:
+    debt_ceiling: uint256
 
 
 struct Loan:
@@ -82,14 +91,9 @@ struct Position:
     debt: uint256
     health: int256
 
-struct CallbackData:
-    active_band: int256
-    stablecoins: uint256
-    collateral: uint256
-
 
 CONTROLLER: public(immutable(address))
-CORE_OWNER: public(immutable(ICoreOwner))
+CORE_OWNER: public(immutable(CoreOwner))
 STABLECOIN: public(immutable(ERC20))
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16 # Start liquidating when threshold reached
@@ -113,7 +117,7 @@ debt_ceiling: public(uint256)
 liquidation_discount: public(uint256)
 loan_discount: public(uint256)
 
-COLLATERAL_TOKEN: immutable(ERC20)
+COLLATERAL_TOKEN: public(immutable(ERC20))
 COLLATERAL_PRECISION: immutable(uint256)
 
 AMM: public(immutable(LLAMMA))
@@ -131,7 +135,7 @@ DEAD_SHARES: constant(uint256) = 1000
 
 @external
 def __init__(
-        core: ICoreOwner,
+        core: CoreOwner,
         collateral_token: address,
         amm_implementation: address,
         debt_ceiling: uint256,
@@ -271,24 +275,6 @@ def ln_int(_x: uint256) -> int256:
     # ln(x) = log2(x) / log2(e)
     return convert(res * 10**18 / 1442695040888963328, int256)
 ## End of low-level math
-
-
-@external
-@view
-def amm() -> LLAMMA:
-    """
-    @notice Address of the AMM
-    """
-    return AMM
-
-
-@external
-@view
-def collateral_token() -> ERC20:
-    """
-    @notice Address of the collateral token
-    """
-    return COLLATERAL_TOKEN
 
 
 @internal
@@ -513,7 +499,13 @@ def min_collateral(debt: uint256, N: uint256) -> uint256:
     @return Minimal collateral required
     """
      # Add N**2 to account for precision loss in multiple bands, e.g. N / (y/N) = N**2 / y
-    return unsafe_div(unsafe_div(debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, N, self.loan_discount) + N * (N + 2 * DEAD_SHARES), COLLATERAL_PRECISION) * 10**18, 10**18 - 10**14)
+    return unsafe_div(
+        unsafe_div(
+            debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, N, self.loan_discount) + N * (N + 2 * DEAD_SHARES),
+            COLLATERAL_PRECISION
+        ) * 10**18,
+        10**18 - 10**14
+    )
 
 
 @external
@@ -942,6 +934,8 @@ def set_amm_fee(fee: uint256):
     assert fee <= MAX_FEE and fee >= MIN_FEE, "Fee"
     AMM.set_fee(fee)
 
+    log SetAmmFee(fee)
+
 
 # AMM has nonreentrant decorator
 @external
@@ -954,6 +948,7 @@ def set_amm_admin_fee(fee: uint256):
     assert fee <= MAX_ADMIN_FEE, "High fee"
     AMM.set_admin_fee(fee)
 
+    log SetAmmAdminFee(fee)
 
 @nonreentrant('lock')
 @external
@@ -980,6 +975,7 @@ def set_liquidity_mining_hook(hook: address):
     """
     self._assert_only_owner()
     AMM.set_liquidity_mining_hook(hook)
+    log SetLiquidityMiningHook(hook)
 
 
 @nonreentrant('lock')
@@ -991,6 +987,7 @@ def set_debt_ceiling(debt_ceiling: uint256):
     """
     self._assert_only_owner()
     self.debt_ceiling = debt_ceiling
+    log SetDebtCeiling(debt_ceiling)
 
 
 @external

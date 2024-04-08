@@ -77,12 +77,6 @@ event SetRate:
     rate_mul: uint256
     time: uint256
 
-event SetFee:
-    fee: uint256
-
-event SetAdminFee:
-    fee: uint256
-
 
 MAX_TICKS: constant(int256) = 50
 MAX_TICKS_UINT: constant(uint256) = 50
@@ -1700,7 +1694,6 @@ def set_fee(fee: uint256):
     """
     self._assert_market_operator()
     self.fee = fee
-    log SetFee(fee)
 
 
 @external
@@ -1712,7 +1705,6 @@ def set_admin_fee(fee: uint256):
     """
     self._assert_market_operator()
     self.admin_fee = fee
-    log SetAdminFee(fee)
 
 
 @external
@@ -1750,7 +1742,7 @@ def set_exchange_hook(hook: address) -> bool:
         assert COLLATERAL_TOKEN.approve(old_hook, 0, default_return_value=True)
 
     if hook != empty(address):
-        assert COLLATERAL_TOKEN.approve(hook, MAX_UINT256, default_return_value=True)
+        assert COLLATERAL_TOKEN.approve(hook, max_value(uint256), default_return_value=True)
         AmmHooks(hook).on_add_hook(MARKET_OPERATOR, self)
 
     self.exchange_hook = hook

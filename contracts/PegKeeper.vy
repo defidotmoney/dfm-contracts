@@ -29,7 +29,7 @@ interface ERC20:
     def transfer(receiver: address, amount: uint256) -> bool: nonpayable
     def burn(target: address, amount: uint256) -> bool: nonpayable
 
-interface ICoreOwner:
+interface CoreOwner:
     def owner() -> address: view
     def stableCoin() -> ERC20: view
     def feeReceiver() -> address: view
@@ -50,6 +50,11 @@ event SetNewCallerShare:
 event SetNewRegulator:
     regulator: address
 
+event RecallDebt:
+    recalled: uint256
+    burned: uint256
+    owing: uint256
+
 
 # Time between providing/withdrawing coins
 ACTION_DELAY: constant(uint256) = 15 * 60
@@ -57,9 +62,9 @@ ADMIN_ACTIONS_DELAY: constant(uint256) = 3 * 86400
 
 PRECISION: constant(uint256) = 10 ** 18
 
-POOL: immutable(CurvePool)
+POOL: public(immutable(CurvePool))
 I: immutable(uint256)  # index of pegged in pool
-PEGGED: immutable(ERC20)
+PEGGED: public(immutable(ERC20))
 IS_INVERSE: public(immutable(bool))
 PEG_MUL: immutable(uint256)
 
@@ -72,11 +77,11 @@ owed_debt: public(uint256)
 SHARE_PRECISION: constant(uint256) = 10 ** 5
 caller_share: public(uint256)
 
-CORE_OWNER: public(immutable(ICoreOwner))
+CORE_OWNER: public(immutable(CoreOwner))
 CONTROLLER: public(immutable(address))
 
 @external
-def __init__(core: ICoreOwner, regulator: Regulator, controller: address, stable: ERC20, pool: CurvePool, caller_share: uint256):
+def __init__(core: CoreOwner, regulator: Regulator, controller: address, stable: ERC20, pool: CurvePool, caller_share: uint256):
     """
     @notice Contract constructor
     @param regulator Peg Keeper Regulator
@@ -117,24 +122,6 @@ def _assert_only_regulator():
     assert msg.sender == self.regulator.address, "PegKeeper: Only regulator"
 
 
-@pure
-@external
-def pegged() -> address:
-    """
-    @return Address of stablecoin being pegged
-    """
-    return PEGGED.address
-
-
-@pure
-@external
-def pool() -> CurvePool:
-    """
-    @return StableSwap pool being used
-    """
-    return POOL
-
-
 @internal
 def _burn_owed_debt():
     owed_debt: uint256 = self.owed_debt
@@ -142,8 +129,9 @@ def _burn_owed_debt():
         debt_reduce: uint256 = min(owed_debt, PEGGED.balanceOf(self))
         if debt_reduce > 0:
             PEGGED.burn(self, debt_reduce)
-            self.owed_debt = owed_debt - debt_reduce
-
+            owed_debt -= debt_reduce
+            self.owed_debt = owed_debt
+            log RecallDebt(0, debt_reduce, owed_debt)
 
 @internal
 def _provide(_amount: uint256) -> int256:
@@ -377,12 +365,17 @@ def recall_debt(amount: uint256) -> uint256:
         return 0
 
     debt: uint256 = PEGGED.balanceOf(self)
+    burned: uint256 = 0
+    owed: uint256 = 0
     if debt >= amount:
         PEGGED.burn(self, amount)
-        return amount
+        burned = amount
+    else:
+        if debt > 0:
+            PEGGED.burn(self, debt)
+            burned = debt
+        owed = self.owed_debt + amount - burned
+        self.owed_debt = owed
 
-    if debt > 0:
-        PEGGED.burn(self, debt)
-    self.owed_debt += amount - debt
-
-    return debt
+    log RecallDebt(amount, burned, owed)
+    return burned

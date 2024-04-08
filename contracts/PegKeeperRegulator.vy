@@ -17,7 +17,7 @@ interface StableSwap:
     def price_oracle() -> uint256: view
 
 interface PegKeeper:
-    def pool() -> StableSwap: view
+    def POOL() -> StableSwap: view
     def regulator() -> address: view
     def debt() -> uint256: view
     def owed_debt() -> uint256: view
@@ -57,11 +57,6 @@ event SetKilled:
     is_killed: Killed
     by: address
 
-event SetAdmin:
-    admin: address
-
-event SetEmergencyAdmin:
-    admin: address
 
 struct PegKeeperInfo:
     peg_keeper: PegKeeper
@@ -69,9 +64,11 @@ struct PegKeeperInfo:
     is_inverse: bool
     debt_ceiling: uint256
 
+
 enum Killed:
     Provide  # 1
     Withdraw  # 2
+
 
 MAX_LEN: constant(uint256) = 8
 ONE: constant(uint256) = 10 ** 18
@@ -91,8 +88,8 @@ is_killed: public(Killed)
 max_debt: public(uint256)
 active_debt: public(uint256)
 
-CORE_OWNER: immutable(CoreOwner)
-CONTROLLER: immutable(address)
+CORE_OWNER: public(immutable(CoreOwner))
+CONTROLLER: public(immutable(address))
 
 
 @external
@@ -134,7 +131,7 @@ def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_cei
 
         info: PegKeeperInfo = PegKeeperInfo({
             peg_keeper: pk,
-            pool: pk.pool(),
+            pool: pk.POOL(),
             is_inverse: pk.IS_INVERSE(),
             debt_ceiling: debt_ceilings[i]
         })
@@ -363,7 +360,7 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
 
     info: PegKeeperInfo = PegKeeperInfo({
         peg_keeper: pk,
-        pool: pk.pool(),
+        pool: pk.POOL(),
         is_inverse: pk.IS_INVERSE(),
         debt_ceiling: debt_ceiling
     })

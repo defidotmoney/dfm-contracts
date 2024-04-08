@@ -13,7 +13,7 @@ interface Stableswap:
     def get_virtual_price() -> uint256: view
     def totalSupply() -> uint256: view
 
-interface ICoreOwner:
+interface CoreOwner:
     def owner() -> address: view
     def stableCoin() -> address: view
     def feeReceiver() -> address: view
@@ -40,7 +40,7 @@ event MovePricePair:
 MAX_PAIRS: constant(uint256) = 20
 MIN_LIQUIDITY: constant(uint256) = 100_000 * 10**18  # Only take into account pools with enough liquidity
 
-CORE_OWNER: public(immutable(ICoreOwner))
+CORE_OWNER: public(immutable(CoreOwner))
 STABLECOIN: public(immutable(address))
 SIGMA: public(immutable(uint256))
 price_pairs: public(PricePair[MAX_PAIRS])
@@ -54,7 +54,7 @@ last_price: public(uint256)
 
 
 @external
-def __init__(core: ICoreOwner, stable: address, sigma: uint256):
+def __init__(core: CoreOwner, stable: address, sigma: uint256):
     CORE_OWNER = core
     STABLECOIN = stable
     SIGMA = sigma  # The change is so rare that we can change the whole thing altogether
