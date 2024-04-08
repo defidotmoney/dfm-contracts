@@ -547,8 +547,7 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
 
 @external
 @nonreentrant('lock')
-def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
-               _price_oracle_contract: address,
+def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, oracle: PriceOracle,
                mp_idx: uint256, loan_discount: uint256, liquidation_discount: uint256,
                debt_ceiling: uint256) -> address[2]:
     """
@@ -557,7 +556,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     @param A Amplification coefficient; one band size is 1/A
     @param fee AMM fee in the market's AMM
     @param admin_fee AMM admin fee
-    @param _price_oracle_contract Address of price oracle contract for this market
+    @param oracle Address of price oracle contract for this market
     @param mp_idx Monetary policy index for this market
     @param loan_discount Loan discount: allowed to borrow only up to x_down * (1 - loan_discount)
     @param liquidation_discount Discount which defines a bad liquidation threshold
@@ -574,9 +573,9 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     assert loan_discount > liquidation_discount, "need loan_discount>liquidation_discount"
     assert mp_idx < self.n_monetary_policies, "Invalid monetary policy index"
 
-    p: uint256 = PriceOracle(_price_oracle_contract).price()  # This also validates price oracle ABI
+    p: uint256 = oracle.price()
     assert p > 0
-    assert PriceOracle(_price_oracle_contract).price_w() == p
+    assert oracle.price_w() == p
 
     market: address = create_from_blueprint(
         self.market_operator_implementation,
@@ -590,7 +589,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
         p,
         fee,
         admin_fee,
-        _price_oracle_contract,
+        oracle,
         code_offset=3
     )
     # `AMM` is deployed in constructor of `MarketOperator`
