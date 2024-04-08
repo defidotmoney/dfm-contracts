@@ -73,23 +73,23 @@ enum Killed:
 MAX_LEN: constant(uint256) = 8
 ONE: constant(uint256) = 10 ** 18
 
+STABLECOIN: public(immutable(ERC20))
+CORE_OWNER: public(immutable(CoreOwner))
+CONTROLLER: public(immutable(address))
+
+aggregator: public(Aggregator)
+peg_keepers: public(DynArray[PegKeeperInfo, MAX_LEN])
+peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
+
+max_debt: public(uint256)
+active_debt: public(uint256)
+
 worst_price_threshold: public(uint256)
 price_deviation: public(uint256)
 alpha: public(uint256)  # Initial boundary
 beta: public(uint256)  # Each PegKeeper's impact
 
-STABLECOIN: public(immutable(ERC20))
-aggregator: public(Aggregator)
-peg_keepers: public(DynArray[PegKeeperInfo, MAX_LEN])
-peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
-
 is_killed: public(Killed)
-
-max_debt: public(uint256)
-active_debt: public(uint256)
-
-CORE_OWNER: public(immutable(CoreOwner))
-CONTROLLER: public(immutable(address))
 
 
 @external

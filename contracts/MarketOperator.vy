@@ -92,9 +92,18 @@ struct Position:
     health: int256
 
 
-CONTROLLER: public(immutable(address))
 CORE_OWNER: public(immutable(CoreOwner))
+CONTROLLER: public(immutable(address))
 STABLECOIN: public(immutable(ERC20))
+COLLATERAL_TOKEN: public(immutable(ERC20))
+AMM: public(immutable(LLAMMA))
+
+COLLATERAL_PRECISION: immutable(uint256)
+A: immutable(uint256)
+Aminus1: immutable(uint256)
+LOG2_A_RATIO: immutable(int256)  # log(A / (A - 1))
+SQRT_BAND_RATIO: immutable(uint256)
+
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16 # Start liquidating when threshold reached
 MAX_TICKS: constant(int256) = 50
@@ -104,6 +113,10 @@ MAX_SKIP_TICKS: constant(uint256) = 1024
 MAX_P_BASE_BANDS: constant(int256) = 5
 
 MAX_RATE: constant(uint256) = 43959106799  # 300% APY
+MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
+MIN_FEE: constant(uint256) = 10**6  # 1e-12, still needs to be above 0
+MAX_FEE: immutable(uint256)  # MIN_TICKS / A: for example, 4% max fee for A=100
+DEAD_SHARES: constant(uint256) = 1000
 
 loan: HashMap[address, Loan]
 liquidation_discounts: public(HashMap[address, uint256])
@@ -116,21 +129,6 @@ n_loans: public(uint256)  # Number of nonzero loans
 debt_ceiling: public(uint256)
 liquidation_discount: public(uint256)
 loan_discount: public(uint256)
-
-COLLATERAL_TOKEN: public(immutable(ERC20))
-COLLATERAL_PRECISION: immutable(uint256)
-
-AMM: public(immutable(LLAMMA))
-A: immutable(uint256)
-Aminus1: immutable(uint256)
-LOG2_A_RATIO: immutable(int256)  # log(A / (A - 1))
-SQRT_BAND_RATIO: immutable(uint256)
-
-MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
-MIN_FEE: constant(uint256) = 10**6  # 1e-12, still needs to be above 0
-MAX_FEE: immutable(uint256)  # MIN_TICKS / A: for example, 4% max fee for A=100
-
-DEAD_SHARES: constant(uint256) = 1000
 
 
 @external

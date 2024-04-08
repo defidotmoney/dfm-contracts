@@ -164,21 +164,6 @@ enum HookId:
 
 NUM_HOOK_IDS: constant(uint256) = 4
 
-MAX_MARKETS: constant(uint256) = 2 ** 16 - 1
-MAX_ACTIVE_BAND: constant(int256) = max_value(int256)
-STABLECOIN: public(immutable(ERC20))
-CORE_OWNER: public(immutable(CoreOwner))
-markets: public(address[MAX_MARKETS])
-amms: public(address[MAX_MARKETS])
-market_operator_implementation: public(address)
-amm_implementation: public(address)
-
-n_collaterals: public(uint256)
-collaterals: public(address[MAX_MARKETS])
-collaterals_index: public(HashMap[address, DynArray[uint256, 255]])
-monetary_policies: public(address[MAX_MARKETS])
-n_monetary_policies: public(uint256)
-
 # Limits
 MIN_A: constant(uint256) = 2
 MAX_A: constant(uint256) = 10000
@@ -187,6 +172,22 @@ MAX_FEE: constant(uint256) = 10**17  # 10%
 MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16
+MAX_MARKETS: constant(uint256) = 2 ** 16 - 1
+MAX_ACTIVE_BAND: constant(int256) = max_value(int256)
+
+STABLECOIN: public(immutable(ERC20))
+CORE_OWNER: public(immutable(CoreOwner))
+markets: public(address[MAX_MARKETS])
+amms: public(address[MAX_MARKETS])
+market_operator_implementation: public(address)
+amm_implementation: public(address)
+peg_keeper_regulator: public(PegKeeperRegulator)
+
+n_collaterals: public(uint256)
+collaterals: public(address[MAX_MARKETS])
+collaterals_index: public(HashMap[address, DynArray[uint256, 255]])
+monetary_policies: public(address[MAX_MARKETS])
+n_monetary_policies: public(uint256)
 
 market_contracts: public(HashMap[address, MarketContracts])
 
@@ -200,8 +201,6 @@ isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 global_hooks: uint256
 market_hooks: HashMap[address, uint256]
 amm_hooks: HashMap[address, address]
-
-peg_keeper_regulator: public(PegKeeperRegulator)
 
 
 @external

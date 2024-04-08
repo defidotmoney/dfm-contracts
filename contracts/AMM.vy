@@ -97,14 +97,16 @@ struct DetailedTrade:
     admin_fee: uint256
 
 
+coins: public(immutable(ERC20[2]))
 BORROWED_TOKEN: immutable(ERC20)    # x
-BORROWED_PRECISION: immutable(uint256)
 COLLATERAL_TOKEN: immutable(ERC20)  # y
-COLLATERAL_PRECISION: immutable(uint256)
-BASE_PRICE: immutable(uint256)
 CONTROLLER: immutable(address)
 MARKET_OPERATOR: public(immutable(address))
+ORACLE: public(immutable(PriceOracle))
 
+BORROWED_PRECISION: immutable(uint256)
+COLLATERAL_PRECISION: immutable(uint256)
+BASE_PRICE: immutable(uint256)
 A: public(immutable(uint256))
 Aminus1: immutable(uint256)
 A2: immutable(uint256)
@@ -125,7 +127,6 @@ max_band: public(int256)
 admin_fees_x: uint256
 admin_fees_y: uint256
 
-price_oracle_contract: public(immutable(PriceOracle))
 old_p_o: uint256
 old_dfee: uint256
 prev_p_o_time: uint256
@@ -141,6 +142,7 @@ DEAD_SHARES: constant(uint256) = 1000
 
 lm_hook: public(LMGauge)
 exchange_hook: public(address)
+
 
 @external
 def __init__(
@@ -171,6 +173,7 @@ def __init__(
     MARKET_OPERATOR = msg.sender
     CONTROLLER = controller
 
+    coins = _tokens
     BORROWED_TOKEN = _tokens[0]
     COLLATERAL_TOKEN = _tokens[1]
     BORROWED_PRECISION = _borrowed_precision
@@ -184,9 +187,9 @@ def __init__(
 
     self.fee = fee
     self.admin_fee = admin_fee
-    price_oracle_contract = PriceOracle(_price_oracle_contract)
+    ORACLE = PriceOracle(_price_oracle_contract)
     self.prev_p_o_time = block.timestamp
-    self.old_p_o = price_oracle_contract.price()
+    self.old_p_o = ORACLE.price()
 
     self.rate_mul = 10**18
 
@@ -220,12 +223,6 @@ def sqrt_int(_x: uint256) -> uint256:
     @param _x Square root's input in "normal" units, e.g. sqrt_int(1) == 1
     """
     return isqrt(_x)
-
-
-@external
-@pure
-def coins(i: uint256) -> address:
-    return [BORROWED_TOKEN.address, COLLATERAL_TOKEN.address][i]
 
 
 @internal
@@ -282,12 +279,12 @@ def limit_p_o(p: uint256) -> uint256[2]:
 @internal
 @view
 def _price_oracle_ro() -> uint256[2]:
-    return self.limit_p_o(price_oracle_contract.price())
+    return self.limit_p_o(ORACLE.price())
 
 
 @internal
 def _price_oracle_w() -> uint256[2]:
-    p: uint256[2] = self.limit_p_o(price_oracle_contract.price_w())
+    p: uint256[2] = self.limit_p_o(ORACLE.price_w())
     self.prev_p_o_time = block.timestamp
     self.old_p_o = p[0]
     self.old_dfee = p[1]

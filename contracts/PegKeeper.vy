@@ -62,6 +62,8 @@ ADMIN_ACTIONS_DELAY: constant(uint256) = 3 * 86400
 
 PRECISION: constant(uint256) = 10 ** 18
 
+CORE_OWNER: public(immutable(CoreOwner))
+CONTROLLER: public(immutable(address))
 POOL: public(immutable(CurvePool))
 I: immutable(uint256)  # index of pegged in pool
 PEGGED: public(immutable(ERC20))
@@ -77,8 +79,6 @@ owed_debt: public(uint256)
 SHARE_PRECISION: constant(uint256) = 10 ** 5
 caller_share: public(uint256)
 
-CORE_OWNER: public(immutable(CoreOwner))
-CONTROLLER: public(immutable(address))
 
 @external
 def __init__(core: CoreOwner, regulator: Regulator, controller: address, stable: ERC20, pool: CurvePool, caller_share: uint256):
