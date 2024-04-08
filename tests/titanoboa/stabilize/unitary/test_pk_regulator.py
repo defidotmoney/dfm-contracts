@@ -14,19 +14,19 @@ def test_price_range(peg_keepers, swaps, stablecoin, admin, receiver, pk_regulat
             stablecoin.eval(f"self.balanceOf[{peg_keeper.address}] += {10 ** 18}")
 
     for peg_keeper, swap in zip(peg_keepers, swaps):
-        assert pk_regulator.provide_allowed(peg_keeper)
-        assert pk_regulator.withdraw_allowed(peg_keeper)
+        assert pk_regulator.get_max_provide(peg_keeper)
+        assert pk_regulator.get_max_withdraw(peg_keeper)
 
         # Move current price (get_p) a little
         swap.eval("self.rate_multipliers[0] *= 2")
-        assert pk_regulator.provide_allowed(peg_keeper)
-        assert pk_regulator.withdraw_allowed(peg_keeper)
+        assert pk_regulator.get_max_provide(peg_keeper)
+        assert pk_regulator.get_max_withdraw(peg_keeper)
 
         # Move further
         swap.eval("self.rate_multipliers[0] *= 5")
 
-        assert not pk_regulator.provide_allowed(peg_keeper)
-        assert not pk_regulator.withdraw_allowed(peg_keeper)
+        assert not pk_regulator.get_max_provide(peg_keeper)
+        assert not pk_regulator.get_max_withdraw(peg_keeper)
 
 
 def test_price_order(
@@ -59,14 +59,14 @@ def test_price_order(
                 # Make sure small decline still works
                 swap.exchange(0, 1, amount, 0)
                 boa.env.time_travel(seconds=6000)  # Update EMA
-                assert pk_regulator.provide_allowed(peg_keeper)
-                assert pk_regulator.withdraw_allowed(peg_keeper)  # no such check for withdraw
+                assert pk_regulator.get_max_provide(peg_keeper)
+                assert pk_regulator.get_max_withdraw(peg_keeper)  # no such check for withdraw
 
                 # and a bigger one
                 swap.exchange(0, 1, amount, 0)
                 boa.env.time_travel(seconds=6000)  # Update EMA
-                assert not pk_regulator.provide_allowed(peg_keeper)
-                assert pk_regulator.withdraw_allowed(peg_keeper)
+                assert not pk_regulator.get_max_provide(peg_keeper)
+                assert pk_regulator.get_max_withdraw(peg_keeper)
 
 
 def test_aggregator_price(peg_keepers, mock_peg_keepers, pk_regulator, agg, admin, stablecoin):
@@ -77,8 +77,8 @@ def test_aggregator_price(peg_keepers, mock_peg_keepers, pk_regulator, agg, admi
             mock_peg_keeper.set_price(int(price * 10**18))
             boa.env.time_travel(seconds=50000)
             for peg_keeper in peg_keepers:
-                assert (pk_regulator.provide_allowed(peg_keeper) > 0) == (price > 1)
-                assert (pk_regulator.withdraw_allowed(peg_keeper) > 0) == (price < 1)
+                assert (pk_regulator.get_max_provide(peg_keeper) > 0) == (price > 1)
+                assert (pk_regulator.get_max_withdraw(peg_keeper) > 0) == (price < 1)
 
 
 def test_debt_limit(peg_keepers, mock_peg_keepers, pk_regulator, agg, admin, stablecoin):
@@ -94,14 +94,14 @@ def test_debt_limit(peg_keepers, mock_peg_keepers, pk_regulator, agg, admin, sta
         pk.eval("self.debt = 0")
         stablecoin.eval(f"self.balanceOf[{pk.address}] = {10 ** 18}")
     for pk in all_pks:
-        assert pk_regulator.provide_allowed(pk.address) == alpha**2 // 10**18
+        assert pk_regulator.get_max_provide(pk.address) == alpha**2 // 10**18
 
     # Three peg keepers debt limits
     for pk in all_pks[:2]:
         pk.eval("self.debt = 10 ** 18")
         stablecoin.eval(f"self.balanceOf[{pk.address}] = 0")
     for pk in all_pks[2:]:
-        assert pk_regulator.provide_allowed(pk.address) == pytest.approx(10**18, abs=5)
+        assert pk_regulator.get_max_provide(pk.address) == pytest.approx(10**18, abs=5)
 
 
 def test_set_killed(pk_regulator, peg_keepers, admin):
@@ -109,26 +109,26 @@ def test_set_killed(pk_regulator, peg_keepers, admin):
     with boa.env.prank(admin):
         assert pk_regulator.is_killed() == 0
 
-        assert pk_regulator.provide_allowed(peg_keeper)
-        assert pk_regulator.withdraw_allowed(peg_keeper)
+        assert pk_regulator.get_max_provide(peg_keeper)
+        assert pk_regulator.get_max_withdraw(peg_keeper)
 
         pk_regulator.set_killed(1)
         assert pk_regulator.is_killed() == 1
 
-        assert not pk_regulator.provide_allowed(peg_keeper)
-        assert pk_regulator.withdraw_allowed(peg_keeper)
+        assert not pk_regulator.get_max_provide(peg_keeper)
+        assert pk_regulator.get_max_withdraw(peg_keeper)
 
         pk_regulator.set_killed(2)
         assert pk_regulator.is_killed() == 2
 
-        assert pk_regulator.provide_allowed(peg_keeper)
-        assert not pk_regulator.withdraw_allowed(peg_keeper)
+        assert pk_regulator.get_max_provide(peg_keeper)
+        assert not pk_regulator.get_max_withdraw(peg_keeper)
 
         pk_regulator.set_killed(3)
         assert pk_regulator.is_killed() == 3
 
-        assert not pk_regulator.provide_allowed(peg_keeper)
-        assert not pk_regulator.withdraw_allowed(peg_keeper)
+        assert not pk_regulator.get_max_provide(peg_keeper)
+        assert not pk_regulator.get_max_withdraw(peg_keeper)
 
 
 def test_admin(pk_regulator, admin, alice):

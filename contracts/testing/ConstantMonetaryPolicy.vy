@@ -3,14 +3,20 @@
 Although this monetary policy works, it's only intended to be used in tests
 """
 
-rate: public(uint256)
+_rate: uint256
+
+
+@view
+@external
+def rate(market: address) -> uint256:
+    return self._rate
 
 
 @external
 def rate_write(controller: address) -> uint256:
-    return self.rate
+    return self._rate
 
 
 @external
 def set_rate(rate: uint256):
-    self.rate = rate
+    self._rate = rate

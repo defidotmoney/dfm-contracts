@@ -33,9 +33,6 @@ def test_add_market(
                 10**8 * 10**18,
             )
 
-            assert controller.n_collaterals() == 1
-            assert controller.collaterals(0).lower() == collateral_token.address.lower()
-
             market = operator_interface.at(controller.get_market(collateral_token.address))
             amm = amm_interface.at(controller.get_amm(collateral_token.address))
 
