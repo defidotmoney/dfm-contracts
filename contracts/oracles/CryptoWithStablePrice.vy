@@ -63,8 +63,8 @@ def __init__(
     MA_EXP_TIME = ma_exp_time
 
 
-@internal
 @pure
+@internal
 def exp(power: int256) -> uint256:
     if power <= -41446531673892821376:
         return 0
@@ -99,44 +99,44 @@ def exp(power: int256) -> uint256:
         unsafe_sub(k, 195))
 
 
-@external
 @pure
+@external
 def tricrypto() -> Tricrypto:
     return TRICRYPTO
 
 
-@external
 @pure
+@external
 def stableswap_aggregator() -> StableAggregator:
     return STABLESWAP_AGGREGATOR
 
 
-@external
 @pure
+@external
 def stableswap() -> Stableswap:
     return STABLESWAP
 
 
-@external
 @pure
+@external
 def stablecoin() -> address:
     return STABLECOIN
 
 
-@external
 @pure
+@external
 def redeemable() -> address:
     return REDEEMABLE
 
 
-@external
 @pure
+@external
 def ma_exp_time() -> uint256:
     return MA_EXP_TIME
 
 
-@internal
 @view
+@internal
 def _raw_price() -> uint256:
     p_crypto_r: uint256 = TRICRYPTO.price_oracle(TRICRYPTO_IX)  # d_usdt/d_eth
     p_stable_r: uint256 = STABLESWAP.price_oracle()             # d_usdt/d_st
@@ -146,14 +146,14 @@ def _raw_price() -> uint256:
     return p_crypto_r * p_stable_agg / p_stable_r
 
 
-@external
 @view
+@external
 def raw_price() -> uint256:
     return self._raw_price()
 
 
-@internal
 @view
+@internal
 def ema_price() -> uint256:
     last_timestamp: uint256 = self.last_timestamp
     last_price: uint256 = self.last_price
@@ -170,8 +170,8 @@ def ema_price() -> uint256:
         return last_price
 
 
-@external
 @view
+@external
 def price() -> uint256:
     return self.ema_price()
 

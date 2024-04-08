@@ -209,14 +209,14 @@ def __init__(
         token.approve(controller, max_value(uint256), default_return_value=True)
 
 
-@internal
 @view
+@internal
 def _assert_market_operator():
     assert msg.sender == MARKET_OPERATOR, "AMM: Only operator"
 
 
-@internal
 @pure
+@internal
 def sqrt_int(_x: uint256) -> uint256:
     """
     @notice Wrapping isqrt builtin because otherwise it will be repeated every time instead of calling
@@ -225,8 +225,8 @@ def sqrt_int(_x: uint256) -> uint256:
     return isqrt(_x)
 
 
-@internal
 @view
+@internal
 def limit_p_o(p: uint256) -> uint256[2]:
     """
     @notice Limits oracle price to avoid losses at abrupt changes, as well as calculates a dynamic fee.
@@ -276,8 +276,8 @@ def limit_p_o(p: uint256) -> uint256[2]:
     return [p_new, ratio]
 
 
-@internal
 @view
+@internal
 def _price_oracle_ro() -> uint256[2]:
     return self.limit_p_o(ORACLE.price())
 
@@ -291,8 +291,8 @@ def _price_oracle_w() -> uint256[2]:
     return p
 
 
-@external
 @view
+@external
 def price_oracle() -> uint256:
     """
     @notice Value returned by the external price oracle contract
@@ -300,8 +300,8 @@ def price_oracle() -> uint256:
     return self._price_oracle_ro()[0]
 
 
-@external
 @view
+@external
 def dynamic_fee() -> uint256:
     """
     @notice Dynamic fee which accounts for price_oracle shifts
@@ -309,8 +309,8 @@ def dynamic_fee() -> uint256:
     return max(self.fee, self._price_oracle_ro()[1])
 
 
-@internal
 @view
+@internal
 def _rate_mul() -> uint256:
     """
     @notice Rate multiplier which is 1.0 + integral(rate, dt)
@@ -319,8 +319,8 @@ def _rate_mul() -> uint256:
     return unsafe_div(self.rate_mul * (10**18 + self.rate * (block.timestamp - self.rate_time)), 10**18)
 
 
-@external
 @view
+@external
 def get_rate_mul() -> uint256:
     """
     @notice Rate multiplier which is 1.0 + integral(rate, dt)
@@ -329,8 +329,8 @@ def get_rate_mul() -> uint256:
     return self._rate_mul()
 
 
-@internal
 @view
+@internal
 def _base_price() -> uint256:
     """
     @notice Price which corresponds to band 0.
@@ -339,8 +339,8 @@ def _base_price() -> uint256:
     return unsafe_div(BASE_PRICE * self._rate_mul(), 10**18)
 
 
-@external
 @view
+@external
 def get_base_price() -> uint256:
     """
     @notice Price which corresponds to band 0.
@@ -349,8 +349,8 @@ def get_base_price() -> uint256:
     return self._base_price()
 
 
-@internal
 @view
+@internal
 def _p_oracle_up(n: int256) -> uint256:
     """
     @notice Upper oracle price for the band to have liquidity when p = p_oracle
@@ -398,8 +398,8 @@ def _p_oracle_up(n: int256) -> uint256:
     return unsafe_div(self._base_price() * exp_result, 10**18)
 
 
-@internal
 @view
+@internal
 def _p_current_band(n: int256) -> uint256:
     """
     @notice Lowest possible price of the band at current oracle price
@@ -415,8 +415,8 @@ def _p_current_band(n: int256) -> uint256:
     return unsafe_div(p_oracle**2 / p_base * p_oracle, p_base)
 
 
-@external
 @view
+@external
 def p_current_up(n: int256) -> uint256:
     """
     @notice Highest possible price of the band at current oracle price
@@ -426,8 +426,8 @@ def p_current_up(n: int256) -> uint256:
     return self._p_current_band(n + 1)
 
 
-@external
 @view
+@external
 def p_current_down(n: int256) -> uint256:
     """
     @notice Lowest possible price of the band at current oracle price
@@ -437,8 +437,8 @@ def p_current_down(n: int256) -> uint256:
     return self._p_current_band(n)
 
 
-@external
 @view
+@external
 def p_oracle_up(n: int256) -> uint256:
     """
     @notice Highest oracle price for the band to have liquidity when p = p_oracle
@@ -448,8 +448,8 @@ def p_oracle_up(n: int256) -> uint256:
     return self._p_oracle_up(n)
 
 
-@external
 @view
+@external
 def p_oracle_down(n: int256) -> uint256:
     """
     @notice Lowest oracle price for the band to have liquidity when p = p_oracle
@@ -459,8 +459,8 @@ def p_oracle_down(n: int256) -> uint256:
     return self._p_oracle_up(n + 1)
 
 
-@internal
 @pure
+@internal
 def _get_y0(x: uint256, y: uint256, p_o: uint256, p_o_up: uint256) -> uint256:
     """
     @notice Calculate y0 for the invariant based on current liquidity in band.
@@ -488,8 +488,8 @@ def _get_y0(x: uint256, y: uint256, p_o: uint256, p_o_up: uint256) -> uint256:
         return unsafe_div(b * 10**18, unsafe_mul(A, p_o))
 
 
-@internal
 @view
+@internal
 def _get_p(n: int256, x: uint256, y: uint256) -> uint256:
     """
     @notice Get current AMM price in band
@@ -522,8 +522,8 @@ def _get_p(n: int256, x: uint256, y: uint256) -> uint256:
     return (f + x * 10**18) / (g + y)
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_p() -> uint256:
     """
@@ -534,8 +534,8 @@ def get_p() -> uint256:
     return self._get_p(n, self.bands_x[n], self.bands_y[n])
 
 
-@internal
 @view
+@internal
 def _read_user_tick_numbers(user: address) -> int256[2]:
     """
     @notice Unpacks and reads user tick numbers
@@ -551,8 +551,8 @@ def _read_user_tick_numbers(user: address) -> int256[2]:
     return [n1, n2]
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def read_user_tick_numbers(user: address) -> int256[2]:
     """
@@ -563,8 +563,8 @@ def read_user_tick_numbers(user: address) -> int256[2]:
     return self._read_user_tick_numbers(user)
 
 
-@internal
 @view
+@internal
 def _read_user_ticks(user: address, ns: int256[2]) -> DynArray[uint256, MAX_TICKS_UINT]:
     """
     @notice Unpacks and reads user ticks (shares) for all the ticks user deposited into
@@ -585,8 +585,8 @@ def _read_user_ticks(user: address, ns: int256[2]) -> DynArray[uint256, MAX_TICK
     return ticks
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def can_skip_bands(n_end: int256) -> bool:
     """
@@ -612,8 +612,8 @@ def can_skip_bands(n_end: int256) -> bool:
     # out.base_mul = unsafe_div(out.base_mul * Aminus1, A)
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def active_band_with_skip() -> int256:
     n0: int256 = self.active_band
@@ -629,8 +629,8 @@ def active_band_with_skip() -> int256:
     return n
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def has_liquidity(user: address) -> bool:
     """
@@ -819,8 +819,8 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
     return [total_x, total_y]
 
 
-@internal
 @view
+@internal
 def calc_swap_out(pump: bool, in_amount: uint256, p_o: uint256[2], in_precision: uint256, out_precision: uint256) -> DetailedTrade:
     """
     @notice Calculate the amount which can be obtained as a result of exchange.
@@ -969,8 +969,8 @@ def calc_swap_out(pump: bool, in_amount: uint256, p_o: uint256[2], in_precision:
     return out
 
 
-@internal
 @view
+@internal
 def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedTrade:
     """
     @notice Method to use to calculate out amount and spent in amount
@@ -1001,8 +1001,8 @@ def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedT
     return out
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_dy(i: uint256, j: uint256, in_amount: uint256) -> uint256:
     """
@@ -1015,8 +1015,8 @@ def get_dy(i: uint256, j: uint256, in_amount: uint256) -> uint256:
     return self._get_dxdy(i, j, in_amount, True).out_amount
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_dxdy(i: uint256, j: uint256, in_amount: uint256) -> (uint256, uint256):
     """
@@ -1130,8 +1130,8 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
     return [in_amount_done, out_amount_done]
 
 
-@internal
 @view
+@internal
 def calc_swap_in(pump: bool, out_amount: uint256, p_o: uint256[2], in_precision: uint256, out_precision: uint256) -> DetailedTrade:
     """
     @notice Calculate the input amount required to receive the desired output amount.
@@ -1276,8 +1276,8 @@ def calc_swap_in(pump: bool, out_amount: uint256, p_o: uint256[2], in_precision:
     return out
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_dx(i: uint256, j: uint256, out_amount: uint256) -> uint256:
     """
@@ -1294,8 +1294,8 @@ def get_dx(i: uint256, j: uint256, out_amount: uint256) -> uint256:
     return trade.in_amount
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_dydx(i: uint256, j: uint256, out_amount: uint256) -> (uint256, uint256):
     """
@@ -1341,8 +1341,8 @@ def exchange_dy(i: uint256, j: uint256, out_amount: uint256, max_amount: uint256
     return self._exchange(i, j, out_amount, max_amount, _for, False)
 
 
-@internal
 @view
+@internal
 def get_xy_up(user: address, use_y: bool) -> uint256:
     """
     @notice Measure the amount of y (collateral) in the band n if we adiabatically trade near p_oracle on the way up,
@@ -1476,8 +1476,8 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
         return unsafe_div(XY, BORROWED_PRECISION)
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_y_up(user: address) -> uint256:
     """
@@ -1488,8 +1488,8 @@ def get_y_up(user: address) -> uint256:
     return self.get_xy_up(user, True)
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_x_down(user: address) -> uint256:
     """
@@ -1500,8 +1500,8 @@ def get_x_down(user: address) -> uint256:
     return self.get_xy_up(user, False)
 
 
-@internal
 @view
+@internal
 def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]:
     """
     @notice A low-gas function to measure amounts of stablecoins and collateral which user currently owns
@@ -1539,8 +1539,8 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
     return [xs, ys]
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_sum_xy(user: address) -> uint256[2]:
     """
@@ -1552,8 +1552,8 @@ def get_sum_xy(user: address) -> uint256[2]:
     return [xy[0][0], xy[1][0]]
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_xy(user: address) -> DynArray[uint256, MAX_TICKS_UINT][2]:
     """
@@ -1564,8 +1564,8 @@ def get_xy(user: address) -> DynArray[uint256, MAX_TICKS_UINT][2]:
     return self._get_xy(user, False)
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def get_amount_for_price(p: uint256) -> (uint256, bool):
     """

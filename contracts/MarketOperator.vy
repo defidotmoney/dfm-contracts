@@ -211,8 +211,8 @@ def _assert_only_controller():
     assert msg.sender == CONTROLLER, "MarketOperator: Only controller"
 
 
-@internal
 @pure
+@internal
 def log2(_x: uint256) -> int256:
     """
     @notice int(1e18 * log2(_x / 1e18))
@@ -245,8 +245,8 @@ def log2(_x: uint256) -> int256:
         return convert(res, int256)
 
 
-@internal
 @pure
+@internal
 def ln_int(_x: uint256) -> int256:
     """
     @notice Logarithm ln() function based on log2. Not very gas-efficient but brief
@@ -275,8 +275,8 @@ def ln_int(_x: uint256) -> int256:
 ## End of low-level math
 
 
-@internal
 @view
+@internal
 def _debt(account: address) -> (uint256, uint256):
     """
     @notice Get the value of debt without changing the state
@@ -291,8 +291,8 @@ def _debt(account: address) -> (uint256, uint256):
         return (loan.initial_debt * rate_mul / loan.rate_mul, rate_mul)
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def debt(account: address) -> uint256:
     """
@@ -303,8 +303,8 @@ def debt(account: address) -> uint256:
     return self._debt(account)[0]
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def loan_exists(account: address) -> bool:
     """
@@ -313,18 +313,16 @@ def loan_exists(account: address) -> bool:
     return self.loan[account].initial_debt > 0
 
 
-# No decorator because used in monetary policy
-@internal
 @view
+@internal
 def _get_total_debt() -> uint256:
     rate_mul: uint256 = AMM.get_rate_mul()
     loan: Loan = self._total_debt
     return loan.initial_debt * rate_mul / loan.rate_mul
 
 
-
-@external
 @view
+@external
 def total_debt() -> uint256:
     """
     @notice Total debt of this market
@@ -332,8 +330,8 @@ def total_debt() -> uint256:
     return self._get_total_debt()
 
 
-@external
 @view
+@external
 def pending_debt() -> uint256:
     """
     @notice Market debt which has not been stored in `MainController.total_debt`
@@ -341,8 +339,8 @@ def pending_debt() -> uint256:
     return self._get_total_debt() - self._total_debt.initial_debt
 
 
-@internal
 @view
+@internal
 def get_y_effective(collateral: uint256, N: uint256, discount: uint256) -> uint256:
     """
     @notice Intermediary method which calculates y_effective defined as x_effective / p_base,
@@ -371,8 +369,8 @@ def get_y_effective(collateral: uint256, N: uint256, discount: uint256) -> uint2
     return y_effective
 
 
-@internal
 @view
+@internal
 def _calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256:
     """
     @notice Calculate the upper band number for the deposit to sit in to support
@@ -420,8 +418,8 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256
     return n1
 
 
-@internal
 @view
+@internal
 def max_p_base() -> uint256:
     """
     @notice Calculate max base price including skipping bands
@@ -448,8 +446,8 @@ def max_p_base() -> uint256:
     return p_base
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def max_borrowable(collateral: uint256, N: uint256) -> uint256:
     """
@@ -486,8 +484,8 @@ def max_borrowable(collateral: uint256, N: uint256) -> uint256:
         return 0
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def min_collateral(debt: uint256, N: uint256) -> uint256:
     """
@@ -506,8 +504,8 @@ def min_collateral(debt: uint256, N: uint256) -> uint256:
     )
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256:
     """
@@ -670,8 +668,8 @@ def _remove_from_list(receiver: address):
     self.n_loans = last_loan_ix
 
 
-@internal
 @view
+@internal
 def _health(account: address, debt: uint256, full: bool, liquidation_discount: uint256) -> int256:
     """
     @notice Returns position health normalized to 1e18 for the account.
@@ -697,8 +695,8 @@ def _health(account: address, debt: uint256, full: bool, liquidation_discount: u
     return health
 
 
-@external
 @view
+@external
 @nonreentrant('lock')
 def health_calculator(account: address, coll_amount: int256, debt_amount: int256, full: bool, N: uint256 = 0) -> int256:
     """
@@ -753,8 +751,8 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
     return health
 
 
-@internal
 @view
+@internal
 def _get_f_remove(frac: uint256, health_limit: uint256) -> uint256:
     # f_remove = ((1 + h / 2) / (1 + h) * (1 - frac) + frac) * frac
     f_remove: uint256 = 10 ** 18
@@ -879,7 +877,6 @@ def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position
     return out
 
 
-# AMM has a nonreentrant decorator
 @view
 @external
 def amm_price() -> uint256:
@@ -917,7 +914,6 @@ def user_state(account: address) -> uint256[4]:
     return [xy[1], xy[0], self._debt(account)[0], convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)]
 
 
-# AMM has nonreentrant decorator
 @external
 def set_amm_fee(fee: uint256):
     """
@@ -931,7 +927,6 @@ def set_amm_fee(fee: uint256):
     log SetAmmFee(fee)
 
 
-# AMM has nonreentrant decorator
 @external
 def set_amm_admin_fee(fee: uint256):
     """
@@ -944,8 +939,9 @@ def set_amm_admin_fee(fee: uint256):
 
     log SetAmmAdminFee(fee)
 
-@nonreentrant('lock')
+
 @external
+@nonreentrant('lock')
 def set_borrowing_discounts(loan_discount: uint256, liquidation_discount: uint256):
     """
     @notice Set discounts at which we can borrow (defines max LTV) and where bad liquidation starts

@@ -157,8 +157,8 @@ def _assert_only_owner():
     assert msg.sender == CORE_OWNER.owner(), "PegKeeperRegulator: Only owner"
 
 
-@internal
 @pure
+@internal
 def _get_price(_info: PegKeeperInfo) -> uint256:
     """
     @return Price of the coin in STABLECOIN
@@ -169,8 +169,8 @@ def _get_price(_info: PegKeeperInfo) -> uint256:
     return price
 
 
-@internal
 @pure
+@internal
 def _get_price_oracle(_info: PegKeeperInfo) -> uint256:
     """
     @return Price of the coin in STABLECOIN
@@ -181,8 +181,8 @@ def _get_price_oracle(_info: PegKeeperInfo) -> uint256:
     return price
 
 
-@internal
 @view
+@internal
 def _price_in_range(_p0: uint256, _p1: uint256) -> bool:
     """
     @notice Check that the price is in accepted range using absolute error
@@ -196,8 +196,8 @@ def _price_in_range(_p0: uint256, _p1: uint256) -> bool:
     return unsafe_sub(unsafe_add(deviation, _p0), _p1) < deviation << 1
 
 
-@internal
 @view
+@internal
 def _get_ratio(_peg_keeper: PegKeeper) -> uint256:
     """
     @return debt ratio limited up to 1
@@ -206,8 +206,8 @@ def _get_ratio(_peg_keeper: PegKeeper) -> uint256:
     return debt * ONE / (1 + debt + STABLECOIN.balanceOf(_peg_keeper.address))
 
 
-@internal
 @view
+@internal
 def _get_max_ratio(_debt_ratios: DynArray[uint256, MAX_LEN]) -> uint256:
     rsum: uint256 = 0
     for r in _debt_ratios:
@@ -271,8 +271,8 @@ def owed_debt() -> uint256:
     return debt
 
 
-@external
 @view
+@external
 def provide_allowed(_pk: address=msg.sender) -> uint256:
     """
     @notice Allow PegKeeper to provide stablecoin into the pool
@@ -311,8 +311,8 @@ def provide_allowed(_pk: address=msg.sender) -> uint256:
     return self._get_max_ratio(debt_ratios) * total / ONE - debt
 
 
-@external
 @view
+@external
 def withdraw_allowed(_pk: address=msg.sender) -> uint256:
     """
     @notice Allow Peg Keeper to withdraw stablecoin from the pool

@@ -52,7 +52,6 @@ TVL_MA_TIME: public(constant(uint256)) = 50000  # s
 last_price: public(uint256)
 
 
-
 @external
 def __init__(core: CoreOwner, stable: address, sigma: uint256):
     CORE_OWNER = core
@@ -93,8 +92,8 @@ def remove_price_pair(n: uint256):
     log RemovePricePair(n)
 
 
-@internal
 @view
+@internal
 def exp(power: int256) -> uint256:
     if power <= -41446531673892821376:
         return 0
@@ -129,8 +128,8 @@ def exp(power: int256) -> uint256:
         unsafe_sub(k, 195))
 
 
-@internal
 @view
+@internal
 def _ema_tvl() -> DynArray[uint256, MAX_PAIRS]:
     tvls: DynArray[uint256, MAX_PAIRS] = []
     last_timestamp: uint256 = self.last_timestamp
@@ -153,14 +152,14 @@ def _ema_tvl() -> DynArray[uint256, MAX_PAIRS]:
     return tvls
 
 
-@external
 @view
+@external
 def ema_tvl() -> DynArray[uint256, MAX_PAIRS]:
     return self._ema_tvl()
 
 
-@internal
 @view
+@internal
 def _price(tvls: DynArray[uint256, MAX_PAIRS]) -> uint256:
     n: uint256 = self.n_price_pairs
     prices: uint256[MAX_PAIRS] = empty(uint256[MAX_PAIRS])
@@ -202,8 +201,8 @@ def _price(tvls: DynArray[uint256, MAX_PAIRS]) -> uint256:
     return wp_sum / w_sum
 
 
-@external
 @view
+@external
 def price() -> uint256:
     return self._price(self._ema_tvl())
 

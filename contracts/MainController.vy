@@ -337,8 +337,8 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     return [market, amm]
 
 
-@external
 @view
+@external
 def get_market(collateral: address, i: uint256 = 0) -> address:
     """
     @notice Get market address for collateral
@@ -348,8 +348,8 @@ def get_market(collateral: address, i: uint256 = 0) -> address:
     return self.markets[self.collaterals_index[collateral][i]]
 
 
-@external
 @view
+@external
 def get_amm(collateral: address, i: uint256 = 0) -> address:
     """
     @notice Get AMM address for collateral
@@ -787,8 +787,8 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     return mint_total
 
 
-@external
 @view
+@external
 def stored_admin_fees() -> uint256:
     """
     @notice Calculate the amount of fees obtained from the interest

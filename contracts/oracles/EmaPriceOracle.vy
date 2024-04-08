@@ -42,14 +42,14 @@ def ma_exp_time() -> uint256:
     return MA_EXP_TIME
 
 
-@external
 @view
+@external
 def price_oracle_signature() -> (address, Bytes[4]):
     return SIG_ADDRESS, SIG_METHOD
 
 
-@internal
 @view
+@internal
 def _price_oracle() -> uint256:
     response: Bytes[32] = raw_call(
         SIG_ADDRESS,
@@ -60,14 +60,14 @@ def _price_oracle() -> uint256:
     return convert(response, uint256)
 
 
-@external
 @view
+@external
 def ext_price_oracle() -> uint256:
     return self._price_oracle()
 
 
-@internal
 @view
+@internal
 def exp(power: int256) -> uint256:
     if power <= -42139678854452767551:
         return 0
@@ -102,8 +102,8 @@ def exp(power: int256) -> uint256:
         unsafe_sub(k, 195))
 
 
-@internal
 @view
+@internal
 def ema_price() -> uint256:
     last_timestamp: uint256 = self.last_timestamp
     last_price: uint256 = self.last_price
@@ -117,8 +117,8 @@ def ema_price() -> uint256:
         return last_price
 
 
-@external
 @view
+@external
 def price() -> uint256:
     return self.ema_price()
 
