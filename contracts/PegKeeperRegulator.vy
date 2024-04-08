@@ -108,135 +108,12 @@ def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, controller: 
     log DebtParameters(self.alpha, self.beta)
 
 
-
-@external
-def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_ceilings: DynArray[uint256, MAX_LEN]):
-    """
-    @notice Add peg keepers and debt ceilings from another PegKeeperRegulator deployment
-    @dev Called via `MainController.set_peg_keeper_regulator`
-    """
-    assert msg.sender == CONTROLLER, "PegKeeperRegulator: !controller"
-    assert len(self.peg_keepers) == 0, "PegKeeperRegulator: already set"
-
-    max_debt: uint256 = 0
-    active_debt: uint256 = 0
-    for i in range(MAX_LEN):
-        if i == len(peg_keepers): break
-        pk: PegKeeper = peg_keepers[i]
-
-        assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
-
-        # verify that the regulator has permission to call `recall_debt`
-        pk.recall_debt(0)
-
-        info: PegKeeperInfo = PegKeeperInfo({
-            peg_keeper: pk,
-            pool: pk.POOL(),
-            is_inverse: pk.IS_INVERSE(),
-            debt_ceiling: debt_ceilings[i]
-        })
-        self.peg_keepers.append(info)  # dev: too many pairs
-        self.peg_keeper_i[pk] = len(self.peg_keepers)
-
-        max_debt += debt_ceilings[i]
-        active_debt += pk.debt()
-
-    self.max_debt = max_debt
-    self.active_debt = active_debt
-
+# --- external view functions ---
 
 @view
 @external
 def owner() -> address:
     return CORE_OWNER.owner()
-
-
-@view
-@internal
-def _assert_only_owner():
-    assert msg.sender == CORE_OWNER.owner(), "PegKeeperRegulator: Only owner"
-
-
-@pure
-@internal
-def _get_price(_info: PegKeeperInfo) -> uint256:
-    """
-    @return Price of the coin in STABLECOIN
-    """
-    price: uint256 = _info.pool.get_p()
-    if _info.is_inverse:
-        price = 10 ** 36 / price
-    return price
-
-
-@pure
-@internal
-def _get_price_oracle(_info: PegKeeperInfo) -> uint256:
-    """
-    @return Price of the coin in STABLECOIN
-    """
-    price: uint256 = _info.pool.price_oracle()
-    if _info.is_inverse:
-        price = 10 ** 36 / price
-    return price
-
-
-@view
-@internal
-def _price_in_range(_p0: uint256, _p1: uint256) -> bool:
-    """
-    @notice Check that the price is in accepted range using absolute error
-    @dev Needed for spam-attack protection
-    """
-    # |p1 - p0| <= deviation
-    # -deviation <= p1 - p0 <= deviation
-    # 0 < deviation + p1 - p0 <= 2 * deviation
-    # can use unsafe
-    deviation: uint256 = self.price_deviation
-    return unsafe_sub(unsafe_add(deviation, _p0), _p1) < deviation << 1
-
-
-@view
-@internal
-def _get_ratio(_peg_keeper: PegKeeper) -> uint256:
-    """
-    @return debt ratio limited up to 1
-    """
-    debt: uint256 = _peg_keeper.debt()
-    return debt * ONE / (1 + debt + STABLECOIN.balanceOf(_peg_keeper.address))
-
-
-@view
-@internal
-def _get_max_ratio(_debt_ratios: DynArray[uint256, MAX_LEN]) -> uint256:
-    rsum: uint256 = 0
-    for r in _debt_ratios:
-        rsum += isqrt(r * ONE)
-    return (self.alpha + self.beta * rsum / ONE) ** 2 / ONE
-
-
-@pure
-@internal
-def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
-    if adjustment < 0:
-        return initial - convert(-adjustment, uint256)
-    else:
-        return initial + convert(adjustment, uint256)
-
-
-@internal
-def _mint(pk: PegKeeper, amount: uint256):
-     # always verify the regulator can `recall_debt` prior to minting
-    pk.recall_debt(0)
-
-    STABLECOIN.mint(pk.address, amount)
-    self.max_debt += amount
-
-
-@internal
-def _recall_debt(pk: PegKeeper, reduce_amount: uint256):
-    pk.recall_debt(reduce_amount)
-    self.max_debt -= reduce_amount
 
 
 @view
@@ -336,6 +213,8 @@ def withdraw_allowed(_pk: address=msg.sender) -> uint256:
     return 0
 
 
+# --- unguarded nonpayable functions ---
+
 @external
 @nonreentrant("lock")
 def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
@@ -352,6 +231,8 @@ def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
     self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
     return caller_profit
 
+
+# --- owner-only nonpayable functions ---
 
 @external
 def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
@@ -461,3 +342,131 @@ def set_killed(_is_killed: Killed):
     self._assert_only_owner()
     self.is_killed = _is_killed
     log SetKilled(_is_killed, msg.sender)
+
+
+# --- controller-only nonpayble functions ---
+
+@external
+def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_ceilings: DynArray[uint256, MAX_LEN]):
+    """
+    @notice Add peg keepers and debt ceilings from another PegKeeperRegulator deployment
+    @dev Called via `MainController.set_peg_keeper_regulator`
+    """
+    assert msg.sender == CONTROLLER, "PegKeeperRegulator: !controller"
+    assert len(self.peg_keepers) == 0, "PegKeeperRegulator: already set"
+
+    max_debt: uint256 = 0
+    active_debt: uint256 = 0
+    for i in range(MAX_LEN):
+        if i == len(peg_keepers): break
+        pk: PegKeeper = peg_keepers[i]
+
+        assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
+
+        # verify that the regulator has permission to call `recall_debt`
+        pk.recall_debt(0)
+
+        info: PegKeeperInfo = PegKeeperInfo({
+            peg_keeper: pk,
+            pool: pk.POOL(),
+            is_inverse: pk.IS_INVERSE(),
+            debt_ceiling: debt_ceilings[i]
+        })
+        self.peg_keepers.append(info)  # dev: too many pairs
+        self.peg_keeper_i[pk] = len(self.peg_keepers)
+
+        max_debt += debt_ceilings[i]
+        active_debt += pk.debt()
+
+    self.max_debt = max_debt
+    self.active_debt = active_debt
+
+
+# --- internal functions ---
+
+@view
+@internal
+def _assert_only_owner():
+    assert msg.sender == CORE_OWNER.owner(), "PegKeeperRegulator: Only owner"
+
+
+@pure
+@internal
+def _get_price(_info: PegKeeperInfo) -> uint256:
+    """
+    @return Price of the coin in STABLECOIN
+    """
+    price: uint256 = _info.pool.get_p()
+    if _info.is_inverse:
+        price = 10 ** 36 / price
+    return price
+
+
+@pure
+@internal
+def _get_price_oracle(_info: PegKeeperInfo) -> uint256:
+    """
+    @return Price of the coin in STABLECOIN
+    """
+    price: uint256 = _info.pool.price_oracle()
+    if _info.is_inverse:
+        price = 10 ** 36 / price
+    return price
+
+
+@view
+@internal
+def _price_in_range(_p0: uint256, _p1: uint256) -> bool:
+    """
+    @notice Check that the price is in accepted range using absolute error
+    @dev Needed for spam-attack protection
+    """
+    # |p1 - p0| <= deviation
+    # -deviation <= p1 - p0 <= deviation
+    # 0 < deviation + p1 - p0 <= 2 * deviation
+    # can use unsafe
+    deviation: uint256 = self.price_deviation
+    return unsafe_sub(unsafe_add(deviation, _p0), _p1) < deviation << 1
+
+
+@view
+@internal
+def _get_ratio(_peg_keeper: PegKeeper) -> uint256:
+    """
+    @return debt ratio limited up to 1
+    """
+    debt: uint256 = _peg_keeper.debt()
+    return debt * ONE / (1 + debt + STABLECOIN.balanceOf(_peg_keeper.address))
+
+
+@view
+@internal
+def _get_max_ratio(_debt_ratios: DynArray[uint256, MAX_LEN]) -> uint256:
+    rsum: uint256 = 0
+    for r in _debt_ratios:
+        rsum += isqrt(r * ONE)
+    return (self.alpha + self.beta * rsum / ONE) ** 2 / ONE
+
+
+@pure
+@internal
+def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
+    if adjustment < 0:
+        return initial - convert(-adjustment, uint256)
+    else:
+        return initial + convert(adjustment, uint256)
+
+
+@internal
+def _mint(pk: PegKeeper, amount: uint256):
+     # always verify the regulator can `recall_debt` prior to minting
+    pk.recall_debt(0)
+
+    STABLECOIN.mint(pk.address, amount)
+    self.max_debt += amount
+
+
+@internal
+def _recall_debt(pk: PegKeeper, reduce_amount: uint256):
+    pk.recall_debt(reduce_amount)
+    self.max_debt -= reduce_amount

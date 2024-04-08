@@ -229,112 +229,12 @@ def __init__(
     log SetGlobalMarketDebtCeiling(debt_ceiling)
 
 
+# --- external view functions ---
+
 @view
 @external
 def owner() -> address:
     return CORE_OWNER.owner()
-
-
-@view
-@internal
-def _assert_only_owner():
-    assert msg.sender == CORE_OWNER.owner(), "MainController: Only owner"
-
-
-@external
-def setDelegateApproval(delegate: address, is_approved: bool):
-    """
-    @dev Functions that supports delegation include an `account` input allowing
-         the delegated caller to indicate who they are calling on behalf of.
-         In executing the call, all internal state updates are applied for
-         `account` and all value transfers occur to or from the caller.
-
-        For example: a delegated call to `create_loan` will transfer collateral
-        from the caller, create the debt position for `account`, and send newly
-        minted stablecoins to the caller.
-    """
-    self.isApprovedDelegate[msg.sender][delegate] = is_approved
-    log SetDelegateApproval(msg.sender, delegate, is_approved)
-
-
-@view
-@internal
-def _assert_caller_or_approved_delegate(account: address):
-    if msg.sender != account:
-        assert self.isApprovedDelegate[account][msg.sender], "Delegate not approved"
-
-
-@pure
-@internal
-def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
-    if adjustment < 0:
-        return initial - convert(-adjustment, uint256)
-    else:
-        return initial + convert(adjustment, uint256)
-
-
-@external
-@nonreentrant('lock')
-def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
-               _price_oracle_contract: address,
-               mp_idx: uint256, loan_discount: uint256, liquidation_discount: uint256,
-               debt_ceiling: uint256) -> address[2]:
-    """
-    @notice Add a new market, creating an AMM and a MarketOperator from a blueprint
-    @param token Collateral token address
-    @param A Amplification coefficient; one band size is 1/A
-    @param fee AMM fee in the market's AMM
-    @param admin_fee AMM admin fee
-    @param _price_oracle_contract Address of price oracle contract for this market
-    @param mp_idx Monetary policy index for this market
-    @param loan_discount Loan discount: allowed to borrow only up to x_down * (1 - loan_discount)
-    @param liquidation_discount Discount which defines a bad liquidation threshold
-    @param debt_ceiling Debt ceiling for this market
-    @return (MarketOperator, AMM)
-    """
-    self._assert_only_owner()
-    assert A >= MIN_A and A <= MAX_A, "Wrong A"
-    assert fee <= MAX_FEE, "Fee too high"
-    assert fee >= MIN_FEE, "Fee too low"
-    assert admin_fee < MAX_ADMIN_FEE, "Admin fee too high"
-    assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT, "Liquidation discount too low"
-    assert loan_discount <= MAX_LOAN_DISCOUNT, "Loan discount too high"
-    assert loan_discount > liquidation_discount, "need loan_discount>liquidation_discount"
-    assert mp_idx < self.n_monetary_policies, "Invalid monetary policy index"
-
-    p: uint256 = PriceOracle(_price_oracle_contract).price()  # This also validates price oracle ABI
-    assert p > 0
-    assert PriceOracle(_price_oracle_contract).price_w() == p
-
-    market: address = create_from_blueprint(
-        self.market_operator_implementation,
-        CORE_OWNER.address,
-        token,
-        self.amm_implementation,
-        debt_ceiling,
-        loan_discount,
-        liquidation_discount,
-        A,
-        p,
-        fee,
-        admin_fee,
-        _price_oracle_contract,
-        code_offset=3
-    )
-    # `AMM` is deployed in constructor of `MarketOperator`
-    amm: address = MarketOperator(market).AMM()
-
-    N: uint256 = self.n_collaterals
-    self.collaterals[N] = token
-    self.collaterals_index[token].append(N)
-    self.markets[N] = market
-    self.amms[N] = amm
-    self.n_collaterals = N + 1
-
-    self.market_contracts[market] = MarketContracts({collateral: token, amm: amm, mp_idx: mp_idx})
-
-    log AddMarket(token, market, amm, mp_idx, N)
-    return [market, amm]
 
 
 @view
@@ -419,175 +319,31 @@ def max_borrowable(market: MarketOperator, coll_amount: uint256, N: uint256) -> 
     return min(global_max, market_max)
 
 
-@external
-def set_global_market_debt_ceiling(debt_ceiling: uint256):
-    self._assert_only_owner()
-    self.global_market_debt_ceiling = debt_ceiling
-
-    log SetGlobalMarketDebtCeiling(debt_ceiling)
-
-
-@external
-def set_implementations(market: address, amm: address):
-    """
-    @notice Set new implementations (blueprints) for market and amm. Doesn't change existing ones
-    @param market Address of the market blueprint
-    @param amm Address of the AMM blueprint
-    """
-    self._assert_only_owner()
-    assert market != empty(address)
-    assert amm != empty(address)
-    self.market_operator_implementation = market
-    self.amm_implementation = amm
-    log SetImplementations(amm, market)
-
-
-@external
-def set_market_hooks(market: address, hooks: address, active_hooks: bool[NUM_HOOK_IDS]):
-    """
-    @notice Set callback hooks for `market`
-    @param market Market to set hooks for. Set as empty(address) for global hooks.
-    @param hooks Address of hooks contract to set as active. Set to empty(address) to disable all hooks.
-    @param active_hooks Array of booleans where items map to the values in the `HookId` enum.
-    """
-    self._assert_only_owner()
-
-    hookdata: uint256 = (convert(hooks, uint256) << 96)
-    if hooks != empty(address):
-        for i in range(NUM_HOOK_IDS):
-            if active_hooks[i]:
-                hookdata += 1 << i
-
-    if market == empty(address):
-        self.global_hooks = hookdata
-    else:
-        self.market_hooks[market] = hookdata
-
-    log SetMarketHooks(market, hooks, active_hooks)
-
-
-@external
-def set_amm_hook(market: address, hook: address):
-    self._assert_only_owner()
-    amm: address = self._get_contracts(market).amm
-    AMM(amm).set_exchange_hook(hook)
-    self.amm_hooks[amm] = hook
-
-    log SetAmmHooks(market, hook)
-
-
-@external
-def add_new_monetary_policy(monetary_policy: address):
-    self._assert_only_owner()
-    idx: uint256 = self.n_monetary_policies
-    self.monetary_policies[idx] = monetary_policy
-    self.n_monetary_policies = idx +1
-
-    log AddMonetaryPolicy(idx, monetary_policy)
-
-
-@external
-def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
-    self._assert_only_owner()
-    assert mp_idx < self.n_monetary_policies
-    self.monetary_policies[mp_idx] = monetary_policy
-
-    log ChangeMonetaryPolicy(mp_idx, monetary_policy)
-
-
-@external
-def change_market_monetary_policy(market: address, mp_idx: uint256):
-    self._assert_only_owner()
-    assert mp_idx < self.n_monetary_policies
-    self.market_contracts[market].mp_idx = mp_idx
-
-    log ChangeMonetaryPolicyForMarket(market, mp_idx)
-
-
-@external
-def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool):
-    """
-    @notice Set the active peg keeper regulator
-    @dev The regulator must also be given permission to mint `STABLECOIN`
-    @param regulator Address of the new peg keeper regulator. Can also be set to
-                     empty(address) to have no active regulator.
-    @param with_migration if True, all peg keepers from the old regulator are
-                          added to the new regulator with the same debt ceilings.
-    """
-    self._assert_only_owner()
-    old: PegKeeperRegulator = self.peg_keeper_regulator
-    assert old != regulator
-
-    if with_migration:
-        peg_keepers: DynArray[PegKeeper, 256] = []
-        debt_ceilings: DynArray[uint256, 256] = []
-        (peg_keepers, debt_ceilings) = old.get_peg_keepers_with_debt_ceilings()
-        for pk in peg_keepers:
-            pk.set_regulator(regulator.address)
-        regulator.init_migrate_peg_keepers(peg_keepers, debt_ceilings)
-
-    self.peg_keeper_regulator = regulator
-
-    log SetPegKeeperRegulator(regulator.address, with_migration)
-
-
 @view
-@internal
-def _get_contracts(market: address) -> MarketContracts:
-    c: MarketContracts = self.market_contracts[market]
-
-    assert c.collateral != empty(address), "Invalid market"
-
-    return c
-
-
-@view
-@internal
-def _check_debt_ceiling(total_debt: uint256):
-    assert total_debt <= self.global_market_debt_ceiling, "Exceeds global debt ceiling"
+@external
+def stored_admin_fees() -> uint256:
+    """
+    @notice Calculate the amount of fees obtained from the interest
+    """
+    return self.total_debt + self.redeemed - self.minted
 
 
-@internal
-def _deposit_collateral(account: address, collateral: address, amm: address, amount: uint256):
-    assert ERC20(collateral).transferFrom(account, amm, amount, default_return_value=True)
+# --- unguarded nonpayable functions ---
 
-    hooks: address = self.amm_hooks[amm]
-    if hooks != empty(address):
-        AmmHooks(hooks).after_collateral_in(amount)
+@external
+def setDelegateApproval(delegate: address, is_approved: bool):
+    """
+    @dev Functions that supports delegation include an `account` input allowing
+         the delegated caller to indicate who they are calling on behalf of.
+         In executing the call, all internal state updates are applied for
+         `account` and all value transfers occur to or from the caller.
 
-
-
-@internal
-def _withdraw_collateral(account: address, collateral: address, amm: address, amount: uint256):
-    hooks: address = self.amm_hooks[amm]
-    if hooks != empty(address):
-        AmmHooks(hooks).before_collateral_out(amount)
-
-    assert ERC20(collateral).transferFrom(amm, account, amount, default_return_value=True)
-
-
-@internal
-def _call_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int256:
-    if hookdata & convert(hook_id, uint256) == 0:
-        return 0
-    hook: address = convert(hookdata >> 96, address)
-    return convert(raw_call(hook, calldata, max_outsize=32), int256)
-
-
-@internal
-def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int256:
-    debt_adjustment: int256 = 0
-
-    debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata)
-    debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata)
-
-    return debt_adjustment
-
-
-@internal
-def _update_rate(market: address, amm: address, mp_idx: uint256):
-    mp_rate: uint256 = MonetaryPolicy(self.monetary_policies[mp_idx]).rate_write(market)
-    AMM(amm).set_rate(mp_rate)
+        For example: a delegated call to `create_loan` will transfer collateral
+        from the caller, create the debt position for `account`, and send newly
+        minted stablecoins to the caller.
+    """
+    self.isApprovedDelegate[msg.sender][delegate] = is_approved
+    log SetDelegateApproval(msg.sender, delegate, is_approved)
 
 
 @external
@@ -615,7 +371,7 @@ def create_loan(account: address, market: address, coll_amount: uint256, debt_am
     self._update_rate(market, c.amm, c.mp_idx)
 
     total_debt: uint256 = self.total_debt + debt_increase
-    self._check_debt_ceiling(total_debt)
+    self._assert_below_debt_ceiling(total_debt)
 
     self.total_debt = total_debt
     self.minted += debt_amount
@@ -654,7 +410,7 @@ def adjust_loan(account: address, market: address, coll_change: int256, debt_cha
     if debt_change != 0:
         debt_change_abs: uint256 = convert(abs(debt_change), uint256)
         if debt_change > 0:
-            self._check_debt_ceiling(total_debt)
+            self._assert_below_debt_ceiling(total_debt)
             self.minted += debt_change_abs
             STABLECOIN.mint(msg.sender, debt_change_abs)
         else:
@@ -787,10 +543,262 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     return mint_total
 
 
-@view
+# --- owner-only nonpayable functions ---
+
 @external
-def stored_admin_fees() -> uint256:
+@nonreentrant('lock')
+def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
+               _price_oracle_contract: address,
+               mp_idx: uint256, loan_discount: uint256, liquidation_discount: uint256,
+               debt_ceiling: uint256) -> address[2]:
     """
-    @notice Calculate the amount of fees obtained from the interest
+    @notice Add a new market, creating an AMM and a MarketOperator from a blueprint
+    @param token Collateral token address
+    @param A Amplification coefficient; one band size is 1/A
+    @param fee AMM fee in the market's AMM
+    @param admin_fee AMM admin fee
+    @param _price_oracle_contract Address of price oracle contract for this market
+    @param mp_idx Monetary policy index for this market
+    @param loan_discount Loan discount: allowed to borrow only up to x_down * (1 - loan_discount)
+    @param liquidation_discount Discount which defines a bad liquidation threshold
+    @param debt_ceiling Debt ceiling for this market
+    @return (MarketOperator, AMM)
     """
-    return self.total_debt + self.redeemed - self.minted
+    self._assert_only_owner()
+    assert A >= MIN_A and A <= MAX_A, "Wrong A"
+    assert fee <= MAX_FEE, "Fee too high"
+    assert fee >= MIN_FEE, "Fee too low"
+    assert admin_fee < MAX_ADMIN_FEE, "Admin fee too high"
+    assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT, "Liquidation discount too low"
+    assert loan_discount <= MAX_LOAN_DISCOUNT, "Loan discount too high"
+    assert loan_discount > liquidation_discount, "need loan_discount>liquidation_discount"
+    assert mp_idx < self.n_monetary_policies, "Invalid monetary policy index"
+
+    p: uint256 = PriceOracle(_price_oracle_contract).price()  # This also validates price oracle ABI
+    assert p > 0
+    assert PriceOracle(_price_oracle_contract).price_w() == p
+
+    market: address = create_from_blueprint(
+        self.market_operator_implementation,
+        CORE_OWNER.address,
+        token,
+        self.amm_implementation,
+        debt_ceiling,
+        loan_discount,
+        liquidation_discount,
+        A,
+        p,
+        fee,
+        admin_fee,
+        _price_oracle_contract,
+        code_offset=3
+    )
+    # `AMM` is deployed in constructor of `MarketOperator`
+    amm: address = MarketOperator(market).AMM()
+
+    N: uint256 = self.n_collaterals
+    self.collaterals[N] = token
+    self.collaterals_index[token].append(N)
+    self.markets[N] = market
+    self.amms[N] = amm
+    self.n_collaterals = N + 1
+
+    self.market_contracts[market] = MarketContracts({collateral: token, amm: amm, mp_idx: mp_idx})
+
+    log AddMarket(token, market, amm, mp_idx, N)
+    return [market, amm]
+
+
+@external
+def set_global_market_debt_ceiling(debt_ceiling: uint256):
+    self._assert_only_owner()
+    self.global_market_debt_ceiling = debt_ceiling
+
+    log SetGlobalMarketDebtCeiling(debt_ceiling)
+
+
+@external
+def set_implementations(market: address, amm: address):
+    """
+    @notice Set new implementations (blueprints) for market and amm. Doesn't change existing ones
+    @param market Address of the market blueprint
+    @param amm Address of the AMM blueprint
+    """
+    self._assert_only_owner()
+    assert market != empty(address)
+    assert amm != empty(address)
+    self.market_operator_implementation = market
+    self.amm_implementation = amm
+    log SetImplementations(amm, market)
+
+
+@external
+def set_market_hooks(market: address, hooks: address, active_hooks: bool[NUM_HOOK_IDS]):
+    """
+    @notice Set callback hooks for `market`
+    @param market Market to set hooks for. Set as empty(address) for global hooks.
+    @param hooks Address of hooks contract to set as active. Set to empty(address) to disable all hooks.
+    @param active_hooks Array of booleans where items map to the values in the `HookId` enum.
+    """
+    self._assert_only_owner()
+
+    hookdata: uint256 = (convert(hooks, uint256) << 96)
+    if hooks != empty(address):
+        for i in range(NUM_HOOK_IDS):
+            if active_hooks[i]:
+                hookdata += 1 << i
+
+    if market == empty(address):
+        self.global_hooks = hookdata
+    else:
+        self.market_hooks[market] = hookdata
+
+    log SetMarketHooks(market, hooks, active_hooks)
+
+
+@external
+def set_amm_hook(market: address, hook: address):
+    self._assert_only_owner()
+    amm: address = self._get_contracts(market).amm
+    AMM(amm).set_exchange_hook(hook)
+    self.amm_hooks[amm] = hook
+
+    log SetAmmHooks(market, hook)
+
+
+@external
+def add_new_monetary_policy(monetary_policy: address):
+    self._assert_only_owner()
+    idx: uint256 = self.n_monetary_policies
+    self.monetary_policies[idx] = monetary_policy
+    self.n_monetary_policies = idx +1
+
+    log AddMonetaryPolicy(idx, monetary_policy)
+
+
+@external
+def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
+    self._assert_only_owner()
+    assert mp_idx < self.n_monetary_policies
+    self.monetary_policies[mp_idx] = monetary_policy
+
+    log ChangeMonetaryPolicy(mp_idx, monetary_policy)
+
+
+@external
+def change_market_monetary_policy(market: address, mp_idx: uint256):
+    self._assert_only_owner()
+    assert mp_idx < self.n_monetary_policies
+    self.market_contracts[market].mp_idx = mp_idx
+
+    log ChangeMonetaryPolicyForMarket(market, mp_idx)
+
+
+@external
+def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool):
+    """
+    @notice Set the active peg keeper regulator
+    @dev The regulator must also be given permission to mint `STABLECOIN`
+    @param regulator Address of the new peg keeper regulator. Can also be set to
+                     empty(address) to have no active regulator.
+    @param with_migration if True, all peg keepers from the old regulator are
+                          added to the new regulator with the same debt ceilings.
+    """
+    self._assert_only_owner()
+    old: PegKeeperRegulator = self.peg_keeper_regulator
+    assert old != regulator
+
+    if with_migration:
+        peg_keepers: DynArray[PegKeeper, 256] = []
+        debt_ceilings: DynArray[uint256, 256] = []
+        (peg_keepers, debt_ceilings) = old.get_peg_keepers_with_debt_ceilings()
+        for pk in peg_keepers:
+            pk.set_regulator(regulator.address)
+        regulator.init_migrate_peg_keepers(peg_keepers, debt_ceilings)
+
+    self.peg_keeper_regulator = regulator
+
+    log SetPegKeeperRegulator(regulator.address, with_migration)
+
+
+# --- internal functions ---
+
+@view
+@internal
+def _assert_only_owner():
+    assert msg.sender == CORE_OWNER.owner(), "MainController: Only owner"
+
+
+@view
+@internal
+def _assert_caller_or_approved_delegate(account: address):
+    if msg.sender != account:
+        assert self.isApprovedDelegate[account][msg.sender], "Delegate not approved"
+
+
+@view
+@internal
+def _assert_below_debt_ceiling(total_debt: uint256):
+    assert total_debt <= self.global_market_debt_ceiling, "Exceeds global debt ceiling"
+
+
+@pure
+@internal
+def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
+    if adjustment < 0:
+        return initial - convert(-adjustment, uint256)
+    else:
+        return initial + convert(adjustment, uint256)
+
+
+@view
+@internal
+def _get_contracts(market: address) -> MarketContracts:
+    c: MarketContracts = self.market_contracts[market]
+
+    assert c.collateral != empty(address), "Invalid market"
+
+    return c
+
+
+@internal
+def _deposit_collateral(account: address, collateral: address, amm: address, amount: uint256):
+    assert ERC20(collateral).transferFrom(account, amm, amount, default_return_value=True)
+
+    hooks: address = self.amm_hooks[amm]
+    if hooks != empty(address):
+        AmmHooks(hooks).after_collateral_in(amount)
+
+
+
+@internal
+def _withdraw_collateral(account: address, collateral: address, amm: address, amount: uint256):
+    hooks: address = self.amm_hooks[amm]
+    if hooks != empty(address):
+        AmmHooks(hooks).before_collateral_out(amount)
+
+    assert ERC20(collateral).transferFrom(amm, account, amount, default_return_value=True)
+
+
+@internal
+def _call_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int256:
+    if hookdata & convert(hook_id, uint256) == 0:
+        return 0
+    hook: address = convert(hookdata >> 96, address)
+    return convert(raw_call(hook, calldata, max_outsize=32), int256)
+
+
+@internal
+def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int256:
+    debt_adjustment: int256 = 0
+
+    debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata)
+    debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata)
+
+    return debt_adjustment
+
+
+@internal
+def _update_rate(market: address, amm: address, mp_idx: uint256):
+    mp_rate: uint256 = MonetaryPolicy(self.monetary_policies[mp_idx]).rate_write(market)
+    AMM(amm).set_rate(mp_rate)

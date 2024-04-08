@@ -209,87 +209,7 @@ def __init__(
         token.approve(controller, max_value(uint256), default_return_value=True)
 
 
-@view
-@internal
-def _assert_market_operator():
-    assert msg.sender == MARKET_OPERATOR, "AMM: Only operator"
-
-
-@pure
-@internal
-def sqrt_int(_x: uint256) -> uint256:
-    """
-    @notice Wrapping isqrt builtin because otherwise it will be repeated every time instead of calling
-    @param _x Square root's input in "normal" units, e.g. sqrt_int(1) == 1
-    """
-    return isqrt(_x)
-
-
-@view
-@internal
-def limit_p_o(p: uint256) -> uint256[2]:
-    """
-    @notice Limits oracle price to avoid losses at abrupt changes, as well as calculates a dynamic fee.
-        If we consider oracle_change such as:
-            ratio = p_new / p_old
-        (let's take for simplicity p_new < p_old, otherwise we compute p_old / p_new)
-        Then if the minimal AMM fee will be:
-            fee = (1 - ratio**3),
-        AMM will not have a loss associated with the price change.
-        However, over time fee should still go down (over PREV_P_O_DELAY), and also ratio should be limited
-        because we don't want the fee to become too large (say, 50%) which is achieved by limiting the instantaneous
-        change in oracle price.
-
-    @return (limited_price_oracle, dynamic_fee)
-    """
-    p_new: uint256 = p
-    dt: uint256 = unsafe_sub(PREV_P_O_DELAY, min(PREV_P_O_DELAY, block.timestamp - self.prev_p_o_time))
-    ratio: uint256 = 0
-
-    # ratio = 1 - (p_o_min / p_o_max)**3
-
-    if dt > 0:
-        old_p_o: uint256 = self.old_p_o
-        old_ratio: uint256 = self.old_dfee
-        # ratio = p_o_min / p_o_max
-        if p > old_p_o:
-            ratio = unsafe_div(old_p_o * 10**18, p)
-            if ratio < 10**36 / MAX_P_O_CHG:
-                p_new = unsafe_div(old_p_o * MAX_P_O_CHG, 10**18)
-                ratio = 10**36 / MAX_P_O_CHG
-        else:
-            ratio = unsafe_div(p * 10**18, old_p_o)
-            if ratio < 10**36 / MAX_P_O_CHG:
-                p_new = unsafe_div(old_p_o * 10**18, MAX_P_O_CHG)
-                ratio = 10**36 / MAX_P_O_CHG
-
-        # ratio is lower than 1e18
-        # Also guaranteed to be limited, therefore can have all ops unsafe
-        ratio = min(
-            unsafe_div(
-                unsafe_mul(
-                    unsafe_sub(unsafe_add(10**18, old_ratio), unsafe_div(pow_mod256(ratio, 3), 10**36)),  # (f' + (1 - r**3))
-                    dt),                                                                                  # * dt / T
-            PREV_P_O_DELAY),
-        10**18 - 1)
-
-    return [p_new, ratio]
-
-
-@view
-@internal
-def _price_oracle_ro() -> uint256[2]:
-    return self.limit_p_o(ORACLE.price())
-
-
-@internal
-def _price_oracle_w() -> uint256[2]:
-    p: uint256[2] = self.limit_p_o(ORACLE.price_w())
-    self.prev_p_o_time = block.timestamp
-    self.old_p_o = p[0]
-    self.old_dfee = p[1]
-    return p
-
+# --- external view functions ---
 
 @view
 @external
@@ -310,16 +230,6 @@ def dynamic_fee() -> uint256:
 
 
 @view
-@internal
-def _rate_mul() -> uint256:
-    """
-    @notice Rate multiplier which is 1.0 + integral(rate, dt)
-    @return Rate multiplier in units where 1.0 == 1e18
-    """
-    return unsafe_div(self.rate_mul * (10**18 + self.rate * (block.timestamp - self.rate_time)), 10**18)
-
-
-@view
 @external
 def get_rate_mul() -> uint256:
     """
@@ -330,16 +240,6 @@ def get_rate_mul() -> uint256:
 
 
 @view
-@internal
-def _base_price() -> uint256:
-    """
-    @notice Price which corresponds to band 0.
-            Base price grows with time to account for interest rate (which is 0 by default)
-    """
-    return unsafe_div(BASE_PRICE * self._rate_mul(), 10**18)
-
-
-@view
 @external
 def get_base_price() -> uint256:
     """
@@ -347,72 +247,6 @@ def get_base_price() -> uint256:
             Base price grows with time to account for interest rate (which is 0 by default)
     """
     return self._base_price()
-
-
-@view
-@internal
-def _p_oracle_up(n: int256) -> uint256:
-    """
-    @notice Upper oracle price for the band to have liquidity when p = p_oracle
-    @param n Band number (can be negative)
-    @return Price at 1e18 base
-    """
-    # p_oracle_up(n) = p_base * ((A - 1) / A) ** n
-    # p_oracle_down(n) = p_base * ((A - 1) / A) ** (n + 1) = p_oracle_up(n+1)
-    # return unsafe_div(self._base_price() * self.exp_int(-n * LOG_A_RATIO), 10**18)
-
-    power: int256 = -n * LOG_A_RATIO
-
-    # ((A - 1) / A) ** n = exp(-n * ln(A / (A - 1))) = exp(-n * LOG_A_RATIO)
-    ## Exp implementation based on solmate's
-    assert power > -41446531673892821376
-    assert power < 135305999368893231589
-
-    x: int256 = unsafe_div(unsafe_mul(power, 2**96), 10**18)
-
-    k: int256 = unsafe_div(
-        unsafe_add(
-            unsafe_div(unsafe_mul(x, 2**96), 54916777467707473351141471128),
-            2**95),
-        2**96)
-    x = unsafe_sub(x, unsafe_mul(k, 54916777467707473351141471128))
-
-    y: int256 = unsafe_add(x, 1346386616545796478920950773328)
-    y = unsafe_add(unsafe_div(unsafe_mul(y, x), 2**96), 57155421227552351082224309758442)
-    p: int256 = unsafe_sub(unsafe_add(y, x), 94201549194550492254356042504812)
-    p = unsafe_add(unsafe_div(unsafe_mul(p, y), 2**96), 28719021644029726153956944680412240)
-    p = unsafe_add(unsafe_mul(p, x), (4385272521454847904659076985693276 * 2**96))
-
-    q: int256 = x - 2855989394907223263936484059900
-    q = unsafe_add(unsafe_div(unsafe_mul(q, x), 2**96), 50020603652535783019961831881945)
-    q = unsafe_sub(unsafe_div(unsafe_mul(q, x), 2**96), 533845033583426703283633433725380)
-    q = unsafe_add(unsafe_div(unsafe_mul(q, x), 2**96), 3604857256930695427073651918091429)
-    q = unsafe_sub(unsafe_div(unsafe_mul(q, x), 2**96), 14423608567350463180887372962807573)
-    q = unsafe_add(unsafe_div(unsafe_mul(q, x), 2**96), 26449188498355588339934803723976023)
-
-    exp_result: uint256 = shift(
-        unsafe_mul(convert(unsafe_div(p, q), uint256), 3822833074963236453042738258902158003155416615667),
-        unsafe_sub(k, 195))
-    ## End exp
-    assert exp_result > 1000  # dev: limit precision of the multiplier
-    return unsafe_div(self._base_price() * exp_result, 10**18)
-
-
-@view
-@internal
-def _p_current_band(n: int256) -> uint256:
-    """
-    @notice Lowest possible price of the band at current oracle price
-    @param n Band number (can be negative)
-    @return Price at 1e18 base
-    """
-    # k = (self.A - 1) / self.A  # equal to (p_down / p_up)
-    # p_base = self.p_base * k ** n = p_oracle_up(n)
-    p_base: uint256 = self._p_oracle_up(n)
-
-    # return self.p_oracle**3 / p_base**2
-    p_oracle: uint256 = self._price_oracle_ro()[0]
-    return unsafe_div(p_oracle**2 / p_base * p_oracle, p_base)
 
 
 @view
@@ -459,69 +293,6 @@ def p_oracle_down(n: int256) -> uint256:
     return self._p_oracle_up(n + 1)
 
 
-@pure
-@internal
-def _get_y0(x: uint256, y: uint256, p_o: uint256, p_o_up: uint256) -> uint256:
-    """
-    @notice Calculate y0 for the invariant based on current liquidity in band.
-            The value of y0 has a meaning of amount of collateral when band has no stablecoin
-            but current price is equal to both oracle price and upper band price.
-    @param x Amount of stablecoin in band
-    @param y Amount of collateral in band
-    @param p_o External oracle price
-    @param p_o_up Upper boundary of the band
-    @return y0
-    """
-    assert p_o != 0
-    # solve:
-    # p_o * A * y0**2 - y0 * (p_oracle_up/p_o * (A-1) * x + p_o**2/p_oracle_up * A * y) - xy = 0
-    b: uint256 = 0
-    # p_o_up * unsafe_sub(A, 1) * x / p_o + A * p_o**2 / p_o_up * y / 10**18
-    if x != 0:
-        b = unsafe_div(p_o_up * Aminus1 * x, p_o)
-    if y != 0:
-        b += unsafe_div(A * p_o**2 / p_o_up * y, 10**18)
-    if x > 0 and y > 0:
-        D: uint256 = b**2 + unsafe_div((unsafe_mul(4, A) * p_o) * y, 10**18) * x
-        return unsafe_div((b + self.sqrt_int(D)) * 10**18, unsafe_mul(unsafe_mul(2, A), p_o))
-    else:
-        return unsafe_div(b * 10**18, unsafe_mul(A, p_o))
-
-
-@view
-@internal
-def _get_p(n: int256, x: uint256, y: uint256) -> uint256:
-    """
-    @notice Get current AMM price in band
-    @param n Band number
-    @param x Amount of stablecoin in band
-    @param y Amount of collateral in band
-    @return Current price at 1e18 base
-    """
-    p_o_up: uint256 = self._p_oracle_up(n)
-    p_o: uint256 = self._price_oracle_ro()[0]
-    assert p_o_up != 0
-
-    # Special cases
-    if x == 0:
-        if y == 0:  # x and y are 0
-            # Return mid-band
-            return unsafe_div((unsafe_div(unsafe_div(p_o**2, p_o_up) * p_o, p_o_up) * A), Aminus1)
-        # if x == 0: # Lowest point of this band -> p_current_down
-        return unsafe_div(unsafe_div(p_o**2, p_o_up) * p_o, p_o_up)
-    if y == 0: # Highest point of this band -> p_current_up
-        p_o_up = unsafe_div(p_o_up * Aminus1, A)  # now this is _actually_ p_o_down
-        return unsafe_div(p_o**2 / p_o_up * p_o, p_o_up)
-
-    y0: uint256 = self._get_y0(x, y, p_o, p_o_up)
-    # ^ that call also checks that p_o != 0
-
-    # (f(y0) + x) / (g(y0) + y)
-    f: uint256 = unsafe_div(A * y0 * p_o, p_o_up) * p_o
-    g: uint256 = unsafe_div(Aminus1 * y0 * p_o_up, p_o)
-    return (f + x * 10**18) / (g + y)
-
-
 @view
 @external
 @nonreentrant('lock')
@@ -535,23 +306,6 @@ def get_p() -> uint256:
 
 
 @view
-@internal
-def _read_user_tick_numbers(user: address) -> int256[2]:
-    """
-    @notice Unpacks and reads user tick numbers
-    @param user User address
-    @return Lowest and highest band the user deposited into
-    """
-    ns: int256 = self.user_shares[user].ns
-    n2: int256 = unsafe_div(ns, 2**128)
-    n1: int256 = ns % 2**128
-    if n1 >= 2**127:
-        n1 = unsafe_sub(n1, 2**128)
-        n2 = unsafe_add(n2, 1)
-    return [n1, n2]
-
-
-@view
 @external
 @nonreentrant('lock')
 def read_user_tick_numbers(user: address) -> int256[2]:
@@ -561,28 +315,6 @@ def read_user_tick_numbers(user: address) -> int256[2]:
     @return Lowest and highest band the user deposited into
     """
     return self._read_user_tick_numbers(user)
-
-
-@view
-@internal
-def _read_user_ticks(user: address, ns: int256[2]) -> DynArray[uint256, MAX_TICKS_UINT]:
-    """
-    @notice Unpacks and reads user ticks (shares) for all the ticks user deposited into
-    @param user User address
-    @param size Number of ticks the user deposited into
-    @return Array of shares the user has
-    """
-    ticks: DynArray[uint256, MAX_TICKS_UINT] = []
-    size: uint256 = convert(ns[1] - ns[0] + 1, uint256)
-    for i in range(MAX_TICKS / 2):
-        if len(ticks) == size:
-            break
-        tick: uint256 = self.user_shares[user].ticks[i]
-        ticks.append(tick & (2**128 - 1))
-        if len(ticks) == size:
-            break
-        ticks.append(shift(tick, -128))
-    return ticks
 
 
 @view
@@ -639,19 +371,251 @@ def has_liquidity(user: address) -> bool:
     return self.user_shares[user].ticks[0] != 0
 
 
-@internal
-def save_user_shares(user: address, user_shares: DynArray[uint256, MAX_TICKS_UINT]):
-    ptr: uint256 = 0
-    for j in range(MAX_TICKS_UINT / 2):
-        if ptr >= len(user_shares):
-            break
-        tick: uint256 = user_shares[ptr]
-        ptr = unsafe_add(ptr, 1)
-        if len(user_shares) != ptr:
-            tick = tick | shift(user_shares[ptr], 128)
-        ptr = unsafe_add(ptr, 1)
-        self.user_shares[user].ticks[j] = tick
+@view
+@external
+@nonreentrant('lock')
+def get_dy(i: uint256, j: uint256, in_amount: uint256) -> uint256:
+    """
+    @notice Method to use to calculate out amount
+    @param i Input coin index
+    @param j Output coin index
+    @param in_amount Amount of input coin to swap
+    @return Amount of coin j to give out
+    """
+    return self._get_dxdy(i, j, in_amount, True).out_amount
 
+
+@view
+@external
+@nonreentrant('lock')
+def get_dxdy(i: uint256, j: uint256, in_amount: uint256) -> (uint256, uint256):
+    """
+    @notice Method to use to calculate out amount and spent in amount
+    @param i Input coin index
+    @param j Output coin index
+    @param in_amount Amount of input coin to swap
+    @return A tuple with in_amount used and out_amount returned
+    """
+    out: DetailedTrade = self._get_dxdy(i, j, in_amount, True)
+    return (out.in_amount, out.out_amount)
+
+
+
+@view
+@external
+@nonreentrant('lock')
+def get_dx(i: uint256, j: uint256, out_amount: uint256) -> uint256:
+    """
+    @notice Method to use to calculate in amount required to receive the desired out_amount
+    @param i Input coin index
+    @param j Output coin index
+    @param out_amount Desired amount of output coin to receive
+    @return Amount of coin i to spend
+    """
+    # i = 0: borrowable (USD) in, collateral (ETH) out; going up
+    # i = 1: collateral (ETH) in, borrowable (USD) out; going down
+    trade: DetailedTrade = self._get_dxdy(i, j, out_amount, False)
+    assert trade.out_amount == out_amount
+    return trade.in_amount
+
+
+@view
+@external
+@nonreentrant('lock')
+def get_dydx(i: uint256, j: uint256, out_amount: uint256) -> (uint256, uint256):
+    """
+    @notice Method to use to calculate in amount required and out amount received
+    @param i Input coin index
+    @param j Output coin index
+    @param out_amount Desired amount of output coin to receive
+    @return A tuple with out_amount received and in_amount returned
+    """
+    # i = 0: borrowable (USD) in, collateral (ETH) out; going up
+    # i = 1: collateral (ETH) in, borrowable (USD) out; going down
+    out: DetailedTrade = self._get_dxdy(i, j, out_amount, False)
+    return (out.out_amount, out.in_amount)
+
+
+
+@view
+@external
+@nonreentrant('lock')
+def get_y_up(user: address) -> uint256:
+    """
+    @notice Measure the amount of y (collateral) in the band n if we adiabatically trade near p_oracle on the way up
+    @param user User the amount is calculated for
+    @return Amount of coins
+    """
+    return self.get_xy_up(user, True)
+
+
+@view
+@external
+@nonreentrant('lock')
+def get_x_down(user: address) -> uint256:
+    """
+    @notice Measure the amount of x (stablecoin) if we trade adiabatically down
+    @param user User the amount is calculated for
+    @return Amount of coins
+    """
+    return self.get_xy_up(user, False)
+
+
+@view
+@external
+@nonreentrant('lock')
+def get_sum_xy(user: address) -> uint256[2]:
+    """
+    @notice A low-gas function to measure amounts of stablecoins and collateral which user currently owns
+    @param user User address
+    @return Amounts of (stablecoin, collateral) in a tuple
+    """
+    xy: DynArray[uint256, MAX_TICKS_UINT][2] = self._get_xy(user, True)
+    return [xy[0][0], xy[1][0]]
+
+
+@view
+@external
+@nonreentrant('lock')
+def get_xy(user: address) -> DynArray[uint256, MAX_TICKS_UINT][2]:
+    """
+    @notice A low-gas function to measure amounts of stablecoins and collateral by bands which user currently owns
+    @param user User address
+    @return Amounts of (stablecoin, collateral) by bands in a tuple
+    """
+    return self._get_xy(user, False)
+
+
+@view
+@external
+@nonreentrant('lock')
+def get_amount_for_price(p: uint256) -> (uint256, bool):
+    """
+    @notice Amount necessary to be exchanged to have the AMM at the final price `p`
+    @return (amount, is_pump)
+    """
+    min_band: int256 = self.min_band
+    max_band: int256 = self.max_band
+    n: int256 = self.active_band
+    p_o: uint256[2] = self._price_oracle_ro()
+    p_o_up: uint256 = self._p_oracle_up(n)
+    p_down: uint256 = unsafe_div(unsafe_div(p_o[0]**2, p_o_up) * p_o[0], p_o_up)  # p_current_down
+    p_up: uint256 = unsafe_div(p_down * A2, Aminus12)  # p_crurrent_up
+    amount: uint256 = 0
+    y0: uint256 = 0
+    f: uint256 = 0
+    g: uint256 = 0
+    Inv: uint256 = 0
+    j: uint256 = MAX_TICKS_UINT
+    pump: bool = True
+
+    for i in range(MAX_TICKS + MAX_SKIP_TICKS):
+        assert p_o_up > 0
+        x: uint256 = self.bands_x[n]
+        y: uint256 = self.bands_y[n]
+        if i == 0:
+            if p < self._get_p(n, x, y):
+                pump = False
+        not_empty: bool = x > 0 or y > 0
+        if not_empty:
+            y0 = self._get_y0(x, y, p_o[0], p_o_up)
+            f = unsafe_div(unsafe_div(A * y0 * p_o[0], p_o_up) * p_o[0], 10**18)
+            g = unsafe_div(Aminus1 * y0 * p_o_up, p_o[0])
+            Inv = (f + x) * (g + y)
+            if j == MAX_TICKS_UINT:
+                j = 0
+
+        if p <= p_up:
+            if p >= p_down:
+                if not_empty:
+                    ynew: uint256 = unsafe_sub(max(self.sqrt_int(Inv * 10**18 / p), g), g)
+                    xnew: uint256 = unsafe_sub(max(Inv / (g + ynew), f), f)
+                    if pump:
+                        amount += unsafe_sub(max(xnew, x), x)
+                    else:
+                        amount += unsafe_sub(max(ynew, y), y)
+                break
+
+        # Need this to break if price is too far
+        p_ratio: uint256 = unsafe_div(p_o_up * 10**18, p_o[0])
+
+        if pump:
+            if not_empty:
+                amount += (Inv / g - f) - x
+            if n == max_band:
+                break
+            if j == MAX_TICKS_UINT - 1:
+                break
+            if p_ratio < unsafe_div(10**36, MAX_ORACLE_DN_POW):
+                # Don't allow to be away by more than ~50 ticks
+                break
+            n += 1
+            p_down = p_up
+            p_up = unsafe_div(p_up * A2, Aminus12)
+            p_o_up = unsafe_div(p_o_up * Aminus1, A)
+
+        else:
+            if not_empty:
+                amount += (Inv / f - g) - y
+            if n == min_band:
+                break
+            if j == MAX_TICKS_UINT - 1:
+                break
+            if p_ratio > MAX_ORACLE_DN_POW:
+                # Don't allow to be away by more than ~50 ticks
+                break
+            n -= 1
+            p_up = p_down
+            p_down = unsafe_div(p_down * Aminus12, A2)
+            p_o_up = unsafe_div(p_o_up * A, Aminus1)
+
+        if j != MAX_TICKS_UINT:
+            j = unsafe_add(j, 1)
+
+    amount = amount * 10**18 / unsafe_sub(10**18, max(self.fee, p_o[1]))
+    if amount == 0:
+        return 0, pump
+
+    # Precision and round up
+    if pump:
+        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), BORROWED_PRECISION), 1)
+    else:
+        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), COLLATERAL_PRECISION), 1)
+
+    return amount, pump
+
+
+# --- unguarded nonpayable functions ---
+
+@external
+def exchange(i: uint256, j: uint256, in_amount: uint256, min_amount: uint256, _for: address = msg.sender) -> uint256[2]:
+    """
+    @notice Exchanges two coins, callable by anyone
+    @param i Input coin index
+    @param j Output coin index
+    @param in_amount Amount of input coin to swap
+    @param min_amount Minimal amount to get as output
+    @param _for Address to send coins to
+    @return Amount of coins given in/out
+    """
+    return self._exchange(i, j, in_amount, min_amount, _for, True)
+
+
+@external
+def exchange_dy(i: uint256, j: uint256, out_amount: uint256, max_amount: uint256, _for: address = msg.sender) -> uint256[2]:
+    """
+    @notice Exchanges two coins, callable by anyone
+    @param i Input coin index
+    @param j Output coin index
+    @param out_amount Desired amount of output coin to receive
+    @param max_amount Maximum amount to spend (revert if more)
+    @param _for Address to send coins to
+    @return Amount of coins given in/out
+    """
+    return self._exchange(i, j, out_amount, max_amount, _for, False)
+
+
+# --- operator-only nonpayable functions ---
 
 @external
 def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
@@ -817,6 +781,357 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
         lm.callback_user_shares(user, ns[0], user_shares)
 
     return [total_x, total_y]
+
+
+@external
+def set_fee(fee: uint256):
+    """
+    @notice Set AMM fee
+    @param fee Fee where 1e18 == 100%
+    """
+    self._assert_market_operator()
+    self.fee = fee
+
+
+@external
+def set_admin_fee(fee: uint256):
+    """
+    @notice Set admin fee - fraction of the AMM fee to go to admin
+    @param fee Admin fee where 1e18 == 100%
+    """
+    self._assert_market_operator()
+    self.admin_fee = fee
+
+
+@external
+def reset_admin_fees() -> uint256[2]:
+    """
+    @notice Zero out AMM fees collected
+    """
+    self._assert_market_operator()
+
+    xy: uint256[2] = [self.admin_fees_x, self.admin_fees_y]
+    self.admin_fees_x = 0
+    self.admin_fees_y = 0
+
+    return xy
+
+
+@external
+def set_liquidity_mining_hook(lm_hook: LMGauge):
+    """
+    @notice Set a gauge address with callbacks for liquidity mining for collateral
+    @param lm_hook Gauge address
+    """
+    self._assert_market_operator()
+    self.lm_hook = lm_hook
+
+
+# --- controller-only nonpayable functions ---
+
+@external
+def set_rate(rate: uint256) -> uint256:
+    """
+    @notice Set interest rate. That affects the dependence of AMM base price over time
+    @param rate New rate in units of int(fraction * 1e18) per second
+    @return rate_mul multiplier (e.g. 1.0 + integral(rate, dt))
+    """
+    assert msg.sender == CONTROLLER
+    rate_mul: uint256 = self._rate_mul()
+    self.rate_mul = rate_mul
+    self.rate_time = block.timestamp
+    self.rate = rate
+    log SetRate(rate, rate_mul, block.timestamp)
+    return rate_mul
+
+
+@external
+def set_exchange_hook(hook: address) -> bool:
+    assert msg.sender == CONTROLLER
+    old_hook: address = self.exchange_hook
+    if old_hook != empty(address):
+        AmmHooks(old_hook).on_remove_hook()
+        assert COLLATERAL_TOKEN.approve(old_hook, 0, default_return_value=True)
+
+    if hook != empty(address):
+        assert COLLATERAL_TOKEN.approve(hook, max_value(uint256), default_return_value=True)
+        AmmHooks(hook).on_add_hook(MARKET_OPERATOR, self)
+
+    self.exchange_hook = hook
+
+    return True
+
+
+# --- internal functions ---
+
+@view
+@internal
+def _assert_market_operator():
+    assert msg.sender == MARKET_OPERATOR, "AMM: Only operator"
+
+
+@pure
+@internal
+def sqrt_int(_x: uint256) -> uint256:
+    """
+    @notice Wrapping isqrt builtin because otherwise it will be repeated every time instead of calling
+    @param _x Square root's input in "normal" units, e.g. sqrt_int(1) == 1
+    """
+    return isqrt(_x)
+
+
+@view
+@internal
+def limit_p_o(p: uint256) -> uint256[2]:
+    """
+    @notice Limits oracle price to avoid losses at abrupt changes, as well as calculates a dynamic fee.
+        If we consider oracle_change such as:
+            ratio = p_new / p_old
+        (let's take for simplicity p_new < p_old, otherwise we compute p_old / p_new)
+        Then if the minimal AMM fee will be:
+            fee = (1 - ratio**3),
+        AMM will not have a loss associated with the price change.
+        However, over time fee should still go down (over PREV_P_O_DELAY), and also ratio should be limited
+        because we don't want the fee to become too large (say, 50%) which is achieved by limiting the instantaneous
+        change in oracle price.
+
+    @return (limited_price_oracle, dynamic_fee)
+    """
+    p_new: uint256 = p
+    dt: uint256 = unsafe_sub(PREV_P_O_DELAY, min(PREV_P_O_DELAY, block.timestamp - self.prev_p_o_time))
+    ratio: uint256 = 0
+
+    # ratio = 1 - (p_o_min / p_o_max)**3
+
+    if dt > 0:
+        old_p_o: uint256 = self.old_p_o
+        old_ratio: uint256 = self.old_dfee
+        # ratio = p_o_min / p_o_max
+        if p > old_p_o:
+            ratio = unsafe_div(old_p_o * 10**18, p)
+            if ratio < 10**36 / MAX_P_O_CHG:
+                p_new = unsafe_div(old_p_o * MAX_P_O_CHG, 10**18)
+                ratio = 10**36 / MAX_P_O_CHG
+        else:
+            ratio = unsafe_div(p * 10**18, old_p_o)
+            if ratio < 10**36 / MAX_P_O_CHG:
+                p_new = unsafe_div(old_p_o * 10**18, MAX_P_O_CHG)
+                ratio = 10**36 / MAX_P_O_CHG
+
+        # ratio is lower than 1e18
+        # Also guaranteed to be limited, therefore can have all ops unsafe
+        ratio = min(
+            unsafe_div(
+                unsafe_mul(
+                    unsafe_sub(unsafe_add(10**18, old_ratio), unsafe_div(pow_mod256(ratio, 3), 10**36)),  # (f' + (1 - r**3))
+                    dt),                                                                                  # * dt / T
+            PREV_P_O_DELAY),
+        10**18 - 1)
+
+    return [p_new, ratio]
+
+
+@view
+@internal
+def _price_oracle_ro() -> uint256[2]:
+    return self.limit_p_o(ORACLE.price())
+
+
+@internal
+def _price_oracle_w() -> uint256[2]:
+    p: uint256[2] = self.limit_p_o(ORACLE.price_w())
+    self.prev_p_o_time = block.timestamp
+    self.old_p_o = p[0]
+    self.old_dfee = p[1]
+    return p
+
+
+@view
+@internal
+def _base_price() -> uint256:
+    """
+    @notice Price which corresponds to band 0.
+            Base price grows with time to account for interest rate (which is 0 by default)
+    """
+    return unsafe_div(BASE_PRICE * self._rate_mul(), 10**18)
+
+
+@view
+@internal
+def _p_oracle_up(n: int256) -> uint256:
+    """
+    @notice Upper oracle price for the band to have liquidity when p = p_oracle
+    @param n Band number (can be negative)
+    @return Price at 1e18 base
+    """
+    # p_oracle_up(n) = p_base * ((A - 1) / A) ** n
+    # p_oracle_down(n) = p_base * ((A - 1) / A) ** (n + 1) = p_oracle_up(n+1)
+    # return unsafe_div(self._base_price() * self.exp_int(-n * LOG_A_RATIO), 10**18)
+
+    power: int256 = -n * LOG_A_RATIO
+
+    # ((A - 1) / A) ** n = exp(-n * ln(A / (A - 1))) = exp(-n * LOG_A_RATIO)
+    ## Exp implementation based on solmate's
+    assert power > -41446531673892821376
+    assert power < 135305999368893231589
+
+    x: int256 = unsafe_div(unsafe_mul(power, 2**96), 10**18)
+
+    k: int256 = unsafe_div(
+        unsafe_add(
+            unsafe_div(unsafe_mul(x, 2**96), 54916777467707473351141471128),
+            2**95),
+        2**96)
+    x = unsafe_sub(x, unsafe_mul(k, 54916777467707473351141471128))
+
+    y: int256 = unsafe_add(x, 1346386616545796478920950773328)
+    y = unsafe_add(unsafe_div(unsafe_mul(y, x), 2**96), 57155421227552351082224309758442)
+    p: int256 = unsafe_sub(unsafe_add(y, x), 94201549194550492254356042504812)
+    p = unsafe_add(unsafe_div(unsafe_mul(p, y), 2**96), 28719021644029726153956944680412240)
+    p = unsafe_add(unsafe_mul(p, x), (4385272521454847904659076985693276 * 2**96))
+
+    q: int256 = x - 2855989394907223263936484059900
+    q = unsafe_add(unsafe_div(unsafe_mul(q, x), 2**96), 50020603652535783019961831881945)
+    q = unsafe_sub(unsafe_div(unsafe_mul(q, x), 2**96), 533845033583426703283633433725380)
+    q = unsafe_add(unsafe_div(unsafe_mul(q, x), 2**96), 3604857256930695427073651918091429)
+    q = unsafe_sub(unsafe_div(unsafe_mul(q, x), 2**96), 14423608567350463180887372962807573)
+    q = unsafe_add(unsafe_div(unsafe_mul(q, x), 2**96), 26449188498355588339934803723976023)
+
+    exp_result: uint256 = shift(
+        unsafe_mul(convert(unsafe_div(p, q), uint256), 3822833074963236453042738258902158003155416615667),
+        unsafe_sub(k, 195))
+    ## End exp
+    assert exp_result > 1000  # dev: limit precision of the multiplier
+    return unsafe_div(self._base_price() * exp_result, 10**18)
+
+
+@view
+@internal
+def _p_current_band(n: int256) -> uint256:
+    """
+    @notice Lowest possible price of the band at current oracle price
+    @param n Band number (can be negative)
+    @return Price at 1e18 base
+    """
+    # k = (self.A - 1) / self.A  # equal to (p_down / p_up)
+    # p_base = self.p_base * k ** n = p_oracle_up(n)
+    p_base: uint256 = self._p_oracle_up(n)
+
+    # return self.p_oracle**3 / p_base**2
+    p_oracle: uint256 = self._price_oracle_ro()[0]
+    return unsafe_div(p_oracle**2 / p_base * p_oracle, p_base)
+
+
+@view
+@internal
+def _rate_mul() -> uint256:
+    """
+    @notice Rate multiplier which is 1.0 + integral(rate, dt)
+    @return Rate multiplier in units where 1.0 == 1e18
+    """
+    return unsafe_div(self.rate_mul * (10**18 + self.rate * (block.timestamp - self.rate_time)), 10**18)
+
+
+@pure
+@internal
+def _get_y0(x: uint256, y: uint256, p_o: uint256, p_o_up: uint256) -> uint256:
+    """
+    @notice Calculate y0 for the invariant based on current liquidity in band.
+            The value of y0 has a meaning of amount of collateral when band has no stablecoin
+            but current price is equal to both oracle price and upper band price.
+    @param x Amount of stablecoin in band
+    @param y Amount of collateral in band
+    @param p_o External oracle price
+    @param p_o_up Upper boundary of the band
+    @return y0
+    """
+    assert p_o != 0
+    # solve:
+    # p_o * A * y0**2 - y0 * (p_oracle_up/p_o * (A-1) * x + p_o**2/p_oracle_up * A * y) - xy = 0
+    b: uint256 = 0
+    # p_o_up * unsafe_sub(A, 1) * x / p_o + A * p_o**2 / p_o_up * y / 10**18
+    if x != 0:
+        b = unsafe_div(p_o_up * Aminus1 * x, p_o)
+    if y != 0:
+        b += unsafe_div(A * p_o**2 / p_o_up * y, 10**18)
+    if x > 0 and y > 0:
+        D: uint256 = b**2 + unsafe_div((unsafe_mul(4, A) * p_o) * y, 10**18) * x
+        return unsafe_div((b + self.sqrt_int(D)) * 10**18, unsafe_mul(unsafe_mul(2, A), p_o))
+    else:
+        return unsafe_div(b * 10**18, unsafe_mul(A, p_o))
+
+
+@view
+@internal
+def _get_p(n: int256, x: uint256, y: uint256) -> uint256:
+    """
+    @notice Get current AMM price in band
+    @param n Band number
+    @param x Amount of stablecoin in band
+    @param y Amount of collateral in band
+    @return Current price at 1e18 base
+    """
+    p_o_up: uint256 = self._p_oracle_up(n)
+    p_o: uint256 = self._price_oracle_ro()[0]
+    assert p_o_up != 0
+
+    # Special cases
+    if x == 0:
+        if y == 0:  # x and y are 0
+            # Return mid-band
+            return unsafe_div((unsafe_div(unsafe_div(p_o**2, p_o_up) * p_o, p_o_up) * A), Aminus1)
+        # if x == 0: # Lowest point of this band -> p_current_down
+        return unsafe_div(unsafe_div(p_o**2, p_o_up) * p_o, p_o_up)
+    if y == 0: # Highest point of this band -> p_current_up
+        p_o_up = unsafe_div(p_o_up * Aminus1, A)  # now this is _actually_ p_o_down
+        return unsafe_div(p_o**2 / p_o_up * p_o, p_o_up)
+
+    y0: uint256 = self._get_y0(x, y, p_o, p_o_up)
+    # ^ that call also checks that p_o != 0
+
+    # (f(y0) + x) / (g(y0) + y)
+    f: uint256 = unsafe_div(A * y0 * p_o, p_o_up) * p_o
+    g: uint256 = unsafe_div(Aminus1 * y0 * p_o_up, p_o)
+    return (f + x * 10**18) / (g + y)
+
+
+@view
+@internal
+def _read_user_tick_numbers(user: address) -> int256[2]:
+    """
+    @notice Unpacks and reads user tick numbers
+    @param user User address
+    @return Lowest and highest band the user deposited into
+    """
+    ns: int256 = self.user_shares[user].ns
+    n2: int256 = unsafe_div(ns, 2**128)
+    n1: int256 = ns % 2**128
+    if n1 >= 2**127:
+        n1 = unsafe_sub(n1, 2**128)
+        n2 = unsafe_add(n2, 1)
+    return [n1, n2]
+
+
+@view
+@internal
+def _read_user_ticks(user: address, ns: int256[2]) -> DynArray[uint256, MAX_TICKS_UINT]:
+    """
+    @notice Unpacks and reads user ticks (shares) for all the ticks user deposited into
+    @param user User address
+    @param size Number of ticks the user deposited into
+    @return Array of shares the user has
+    """
+    ticks: DynArray[uint256, MAX_TICKS_UINT] = []
+    size: uint256 = convert(ns[1] - ns[0] + 1, uint256)
+    for i in range(MAX_TICKS / 2):
+        if len(ticks) == size:
+            break
+        tick: uint256 = self.user_shares[user].ticks[i]
+        ticks.append(tick & (2**128 - 1))
+        if len(ticks) == size:
+            break
+        ticks.append(shift(tick, -128))
+    return ticks
 
 
 @view
@@ -1001,134 +1316,6 @@ def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedT
     return out
 
 
-@view
-@external
-@nonreentrant('lock')
-def get_dy(i: uint256, j: uint256, in_amount: uint256) -> uint256:
-    """
-    @notice Method to use to calculate out amount
-    @param i Input coin index
-    @param j Output coin index
-    @param in_amount Amount of input coin to swap
-    @return Amount of coin j to give out
-    """
-    return self._get_dxdy(i, j, in_amount, True).out_amount
-
-
-@view
-@external
-@nonreentrant('lock')
-def get_dxdy(i: uint256, j: uint256, in_amount: uint256) -> (uint256, uint256):
-    """
-    @notice Method to use to calculate out amount and spent in amount
-    @param i Input coin index
-    @param j Output coin index
-    @param in_amount Amount of input coin to swap
-    @return A tuple with in_amount used and out_amount returned
-    """
-    out: DetailedTrade = self._get_dxdy(i, j, in_amount, True)
-    return (out.in_amount, out.out_amount)
-
-
-@internal
-def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _for: address, use_in_amount: bool) -> uint256[2]:
-    """
-    @notice Exchanges two coins, callable by anyone
-    @param i Input coin index
-    @param j Output coin index
-    @param amount Amount of input/output coin to swap
-    @param minmax_amount Minimal/maximum amount to get as output/input
-    @param _for Address to send coins to
-    @param use_in_amount Whether input or output amount is specified
-    @return Amount of coins given in and out
-    """
-    assert (i == 0 and j == 1) or (i == 1 and j == 0), "Wrong index"
-    p_o: uint256[2] = self._price_oracle_w()  # Let's update the oracle even if we exchange 0
-    if amount == 0:
-        return empty(uint256[2])
-
-    lm: LMGauge = self.lm_hook
-    collateral_shares: DynArray[uint256, MAX_TICKS_UINT] = []
-
-    in_coin: ERC20 = BORROWED_TOKEN
-    out_coin: ERC20 = COLLATERAL_TOKEN
-    in_precision: uint256 = BORROWED_PRECISION
-    out_precision: uint256 = COLLATERAL_PRECISION
-    if i == 1:
-        in_precision = out_precision
-        in_coin = out_coin
-        out_precision = BORROWED_PRECISION
-        out_coin = BORROWED_TOKEN
-
-    out: DetailedTrade = empty(DetailedTrade)
-    if use_in_amount:
-        out = self.calc_swap_out(i == 0, amount * in_precision, p_o, in_precision, out_precision)
-    else:
-        amount_to_swap: uint256 = max_value(uint256)
-        if amount < amount_to_swap:
-            amount_to_swap = amount * out_precision
-        out = self.calc_swap_in(i == 0, amount_to_swap, p_o, in_precision, out_precision)
-    in_amount_done: uint256 = unsafe_div(out.in_amount, in_precision)
-    out_amount_done: uint256 = unsafe_div(out.out_amount, out_precision)
-    if use_in_amount:
-        assert out_amount_done >= minmax_amount, "Slippage"
-    else:
-        assert in_amount_done <= minmax_amount and (out_amount_done == amount or amount == max_value(uint256)), "Slippage"
-    if out_amount_done == 0 or in_amount_done == 0:
-        return empty(uint256[2])
-
-    out.admin_fee = unsafe_div(out.admin_fee, in_precision)
-    if i == 0:
-        self.admin_fees_x += out.admin_fee
-    else:
-        self.admin_fees_y += out.admin_fee
-
-    n: int256 = min(out.n1, out.n2)
-    n_start: int256 = n
-    n_diff: int256 = abs(unsafe_sub(out.n2, out.n1))
-
-    for k in range(MAX_TICKS):
-        x: uint256 = 0
-        y: uint256 = 0
-        if i == 0:
-            x = out.ticks_in[k]
-            if n == out.n2:
-                y = out.last_tick_j
-        else:
-            y = out.ticks_in[unsafe_sub(n_diff, k)]
-            if n == out.n2:
-                x = out.last_tick_j
-        self.bands_x[n] = x
-        self.bands_y[n] = y
-        if lm.address != empty(address):
-            s: uint256 = 0
-            if y > 0:
-                s = unsafe_div(y * 10**18, self.total_shares[n])
-            collateral_shares.append(s)
-        if k == n_diff:
-            break
-        n = unsafe_add(n, 1)
-
-    self.active_band = out.n2
-
-    log TokenExchange(_for, i, in_amount_done, j, out_amount_done)
-
-    if lm.address != empty(address):
-        lm.callback_collateral_shares(n_start, collateral_shares)
-
-    assert in_coin.transferFrom(msg.sender, self, in_amount_done, default_return_value=True)
-
-    hook: address = self.exchange_hook
-    if hook != empty(address):
-        if in_coin == COLLATERAL_TOKEN:
-            AmmHooks(hook).after_collateral_in(in_amount_done)
-        else:
-            AmmHooks(hook).before_collateral_out(out_amount_done)
-
-    assert out_coin.transfer(_for, out_amount_done, default_return_value=True)
-
-    return [in_amount_done, out_amount_done]
-
 
 @view
 @internal
@@ -1277,71 +1464,6 @@ def calc_swap_in(pump: bool, out_amount: uint256, p_o: uint256[2], in_precision:
 
 
 @view
-@external
-@nonreentrant('lock')
-def get_dx(i: uint256, j: uint256, out_amount: uint256) -> uint256:
-    """
-    @notice Method to use to calculate in amount required to receive the desired out_amount
-    @param i Input coin index
-    @param j Output coin index
-    @param out_amount Desired amount of output coin to receive
-    @return Amount of coin i to spend
-    """
-    # i = 0: borrowable (USD) in, collateral (ETH) out; going up
-    # i = 1: collateral (ETH) in, borrowable (USD) out; going down
-    trade: DetailedTrade = self._get_dxdy(i, j, out_amount, False)
-    assert trade.out_amount == out_amount
-    return trade.in_amount
-
-
-@view
-@external
-@nonreentrant('lock')
-def get_dydx(i: uint256, j: uint256, out_amount: uint256) -> (uint256, uint256):
-    """
-    @notice Method to use to calculate in amount required and out amount received
-    @param i Input coin index
-    @param j Output coin index
-    @param out_amount Desired amount of output coin to receive
-    @return A tuple with out_amount received and in_amount returned
-    """
-    # i = 0: borrowable (USD) in, collateral (ETH) out; going up
-    # i = 1: collateral (ETH) in, borrowable (USD) out; going down
-    out: DetailedTrade = self._get_dxdy(i, j, out_amount, False)
-    return (out.out_amount, out.in_amount)
-
-
-@external
-@nonreentrant('lock')
-def exchange(i: uint256, j: uint256, in_amount: uint256, min_amount: uint256, _for: address = msg.sender) -> uint256[2]:
-    """
-    @notice Exchanges two coins, callable by anyone
-    @param i Input coin index
-    @param j Output coin index
-    @param in_amount Amount of input coin to swap
-    @param min_amount Minimal amount to get as output
-    @param _for Address to send coins to
-    @return Amount of coins given in/out
-    """
-    return self._exchange(i, j, in_amount, min_amount, _for, True)
-
-
-@external
-@nonreentrant('lock')
-def exchange_dy(i: uint256, j: uint256, out_amount: uint256, max_amount: uint256, _for: address = msg.sender) -> uint256[2]:
-    """
-    @notice Exchanges two coins, callable by anyone
-    @param i Input coin index
-    @param j Output coin index
-    @param out_amount Desired amount of output coin to receive
-    @param max_amount Maximum amount to spend (revert if more)
-    @param _for Address to send coins to
-    @return Amount of coins given in/out
-    """
-    return self._exchange(i, j, out_amount, max_amount, _for, False)
-
-
-@view
 @internal
 def get_xy_up(user: address, use_y: bool) -> uint256:
     """
@@ -1477,30 +1599,6 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
 
 
 @view
-@external
-@nonreentrant('lock')
-def get_y_up(user: address) -> uint256:
-    """
-    @notice Measure the amount of y (collateral) in the band n if we adiabatically trade near p_oracle on the way up
-    @param user User the amount is calculated for
-    @return Amount of coins
-    """
-    return self.get_xy_up(user, True)
-
-
-@view
-@external
-@nonreentrant('lock')
-def get_x_down(user: address) -> uint256:
-    """
-    @notice Measure the amount of x (stablecoin) if we trade adiabatically down
-    @param user User the amount is calculated for
-    @return Amount of coins
-    """
-    return self.get_xy_up(user, False)
-
-
-@view
 @internal
 def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]:
     """
@@ -1539,202 +1637,116 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
     return [xs, ys]
 
 
-@view
-@external
+@internal
+def save_user_shares(user: address, user_shares: DynArray[uint256, MAX_TICKS_UINT]):
+    ptr: uint256 = 0
+    for j in range(MAX_TICKS_UINT / 2):
+        if ptr >= len(user_shares):
+            break
+        tick: uint256 = user_shares[ptr]
+        ptr = unsafe_add(ptr, 1)
+        if len(user_shares) != ptr:
+            tick = tick | shift(user_shares[ptr], 128)
+        ptr = unsafe_add(ptr, 1)
+        self.user_shares[user].ticks[j] = tick
+
+
+@internal
 @nonreentrant('lock')
-def get_sum_xy(user: address) -> uint256[2]:
+def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _for: address, use_in_amount: bool) -> uint256[2]:
     """
-    @notice A low-gas function to measure amounts of stablecoins and collateral which user currently owns
-    @param user User address
-    @return Amounts of (stablecoin, collateral) in a tuple
+    @notice Exchanges two coins, callable by anyone
+    @param i Input coin index
+    @param j Output coin index
+    @param amount Amount of input/output coin to swap
+    @param minmax_amount Minimal/maximum amount to get as output/input
+    @param _for Address to send coins to
+    @param use_in_amount Whether input or output amount is specified
+    @return Amount of coins given in and out
     """
-    xy: DynArray[uint256, MAX_TICKS_UINT][2] = self._get_xy(user, True)
-    return [xy[0][0], xy[1][0]]
-
-
-@view
-@external
-@nonreentrant('lock')
-def get_xy(user: address) -> DynArray[uint256, MAX_TICKS_UINT][2]:
-    """
-    @notice A low-gas function to measure amounts of stablecoins and collateral by bands which user currently owns
-    @param user User address
-    @return Amounts of (stablecoin, collateral) by bands in a tuple
-    """
-    return self._get_xy(user, False)
-
-
-@view
-@external
-@nonreentrant('lock')
-def get_amount_for_price(p: uint256) -> (uint256, bool):
-    """
-    @notice Amount necessary to be exchanged to have the AMM at the final price `p`
-    @return (amount, is_pump)
-    """
-    min_band: int256 = self.min_band
-    max_band: int256 = self.max_band
-    n: int256 = self.active_band
-    p_o: uint256[2] = self._price_oracle_ro()
-    p_o_up: uint256 = self._p_oracle_up(n)
-    p_down: uint256 = unsafe_div(unsafe_div(p_o[0]**2, p_o_up) * p_o[0], p_o_up)  # p_current_down
-    p_up: uint256 = unsafe_div(p_down * A2, Aminus12)  # p_crurrent_up
-    amount: uint256 = 0
-    y0: uint256 = 0
-    f: uint256 = 0
-    g: uint256 = 0
-    Inv: uint256 = 0
-    j: uint256 = MAX_TICKS_UINT
-    pump: bool = True
-
-    for i in range(MAX_TICKS + MAX_SKIP_TICKS):
-        assert p_o_up > 0
-        x: uint256 = self.bands_x[n]
-        y: uint256 = self.bands_y[n]
-        if i == 0:
-            if p < self._get_p(n, x, y):
-                pump = False
-        not_empty: bool = x > 0 or y > 0
-        if not_empty:
-            y0 = self._get_y0(x, y, p_o[0], p_o_up)
-            f = unsafe_div(unsafe_div(A * y0 * p_o[0], p_o_up) * p_o[0], 10**18)
-            g = unsafe_div(Aminus1 * y0 * p_o_up, p_o[0])
-            Inv = (f + x) * (g + y)
-            if j == MAX_TICKS_UINT:
-                j = 0
-
-        if p <= p_up:
-            if p >= p_down:
-                if not_empty:
-                    ynew: uint256 = unsafe_sub(max(self.sqrt_int(Inv * 10**18 / p), g), g)
-                    xnew: uint256 = unsafe_sub(max(Inv / (g + ynew), f), f)
-                    if pump:
-                        amount += unsafe_sub(max(xnew, x), x)
-                    else:
-                        amount += unsafe_sub(max(ynew, y), y)
-                break
-
-        # Need this to break if price is too far
-        p_ratio: uint256 = unsafe_div(p_o_up * 10**18, p_o[0])
-
-        if pump:
-            if not_empty:
-                amount += (Inv / g - f) - x
-            if n == max_band:
-                break
-            if j == MAX_TICKS_UINT - 1:
-                break
-            if p_ratio < unsafe_div(10**36, MAX_ORACLE_DN_POW):
-                # Don't allow to be away by more than ~50 ticks
-                break
-            n += 1
-            p_down = p_up
-            p_up = unsafe_div(p_up * A2, Aminus12)
-            p_o_up = unsafe_div(p_o_up * Aminus1, A)
-
-        else:
-            if not_empty:
-                amount += (Inv / f - g) - y
-            if n == min_band:
-                break
-            if j == MAX_TICKS_UINT - 1:
-                break
-            if p_ratio > MAX_ORACLE_DN_POW:
-                # Don't allow to be away by more than ~50 ticks
-                break
-            n -= 1
-            p_up = p_down
-            p_down = unsafe_div(p_down * Aminus12, A2)
-            p_o_up = unsafe_div(p_o_up * A, Aminus1)
-
-        if j != MAX_TICKS_UINT:
-            j = unsafe_add(j, 1)
-
-    amount = amount * 10**18 / unsafe_sub(10**18, max(self.fee, p_o[1]))
+    assert (i == 0 and j == 1) or (i == 1 and j == 0), "Wrong index"
+    p_o: uint256[2] = self._price_oracle_w()  # Let's update the oracle even if we exchange 0
     if amount == 0:
-        return 0, pump
+        return empty(uint256[2])
 
-    # Precision and round up
-    if pump:
-        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), BORROWED_PRECISION), 1)
+    lm: LMGauge = self.lm_hook
+    collateral_shares: DynArray[uint256, MAX_TICKS_UINT] = []
+
+    in_coin: ERC20 = BORROWED_TOKEN
+    out_coin: ERC20 = COLLATERAL_TOKEN
+    in_precision: uint256 = BORROWED_PRECISION
+    out_precision: uint256 = COLLATERAL_PRECISION
+    if i == 1:
+        in_precision = out_precision
+        in_coin = out_coin
+        out_precision = BORROWED_PRECISION
+        out_coin = BORROWED_TOKEN
+
+    out: DetailedTrade = empty(DetailedTrade)
+    if use_in_amount:
+        out = self.calc_swap_out(i == 0, amount * in_precision, p_o, in_precision, out_precision)
     else:
-        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), COLLATERAL_PRECISION), 1)
+        amount_to_swap: uint256 = max_value(uint256)
+        if amount < amount_to_swap:
+            amount_to_swap = amount * out_precision
+        out = self.calc_swap_in(i == 0, amount_to_swap, p_o, in_precision, out_precision)
+    in_amount_done: uint256 = unsafe_div(out.in_amount, in_precision)
+    out_amount_done: uint256 = unsafe_div(out.out_amount, out_precision)
+    if use_in_amount:
+        assert out_amount_done >= minmax_amount, "Slippage"
+    else:
+        assert in_amount_done <= minmax_amount and (out_amount_done == amount or amount == max_value(uint256)), "Slippage"
+    if out_amount_done == 0 or in_amount_done == 0:
+        return empty(uint256[2])
 
-    return amount, pump
+    out.admin_fee = unsafe_div(out.admin_fee, in_precision)
+    if i == 0:
+        self.admin_fees_x += out.admin_fee
+    else:
+        self.admin_fees_y += out.admin_fee
 
+    n: int256 = min(out.n1, out.n2)
+    n_start: int256 = n
+    n_diff: int256 = abs(unsafe_sub(out.n2, out.n1))
 
-@external
-def set_rate(rate: uint256) -> uint256:
-    """
-    @notice Set interest rate. That affects the dependence of AMM base price over time
-    @param rate New rate in units of int(fraction * 1e18) per second
-    @return rate_mul multiplier (e.g. 1.0 + integral(rate, dt))
-    """
-    assert msg.sender == CONTROLLER
-    rate_mul: uint256 = self._rate_mul()
-    self.rate_mul = rate_mul
-    self.rate_time = block.timestamp
-    self.rate = rate
-    log SetRate(rate, rate_mul, block.timestamp)
-    return rate_mul
+    for k in range(MAX_TICKS):
+        x: uint256 = 0
+        y: uint256 = 0
+        if i == 0:
+            x = out.ticks_in[k]
+            if n == out.n2:
+                y = out.last_tick_j
+        else:
+            y = out.ticks_in[unsafe_sub(n_diff, k)]
+            if n == out.n2:
+                x = out.last_tick_j
+        self.bands_x[n] = x
+        self.bands_y[n] = y
+        if lm.address != empty(address):
+            s: uint256 = 0
+            if y > 0:
+                s = unsafe_div(y * 10**18, self.total_shares[n])
+            collateral_shares.append(s)
+        if k == n_diff:
+            break
+        n = unsafe_add(n, 1)
 
+    self.active_band = out.n2
 
-@external
-def set_fee(fee: uint256):
-    """
-    @notice Set AMM fee
-    @param fee Fee where 1e18 == 100%
-    """
-    self._assert_market_operator()
-    self.fee = fee
+    log TokenExchange(_for, i, in_amount_done, j, out_amount_done)
 
+    if lm.address != empty(address):
+        lm.callback_collateral_shares(n_start, collateral_shares)
 
-@external
-def set_admin_fee(fee: uint256):
-    """
-    @notice Set admin fee - fraction of the AMM fee to go to admin
-    @param fee Admin fee where 1e18 == 100%
-    """
-    self._assert_market_operator()
-    self.admin_fee = fee
+    assert in_coin.transferFrom(msg.sender, self, in_amount_done, default_return_value=True)
 
-
-@external
-def reset_admin_fees() -> uint256[2]:
-    """
-    @notice Zero out AMM fees collected
-    """
-    self._assert_market_operator()
-
-    xy: uint256[2] = [self.admin_fees_x, self.admin_fees_y]
-    self.admin_fees_x = 0
-    self.admin_fees_y = 0
-
-    return xy
-
-
-@external
-def set_liquidity_mining_hook(lm_hook: LMGauge):
-    """
-    @notice Set a gauge address with callbacks for liquidity mining for collateral
-    @param lm_hook Gauge address
-    """
-    self._assert_market_operator()
-    self.lm_hook = lm_hook
-
-
-@external
-def set_exchange_hook(hook: address) -> bool:
-    assert msg.sender == CONTROLLER
-    old_hook: address = self.exchange_hook
-    if old_hook != empty(address):
-        AmmHooks(old_hook).on_remove_hook()
-        assert COLLATERAL_TOKEN.approve(old_hook, 0, default_return_value=True)
-
+    hook: address = self.exchange_hook
     if hook != empty(address):
-        assert COLLATERAL_TOKEN.approve(hook, max_value(uint256), default_return_value=True)
-        AmmHooks(hook).on_add_hook(MARKET_OPERATOR, self)
+        if in_coin == COLLATERAL_TOKEN:
+            AmmHooks(hook).after_collateral_in(in_amount_done)
+        else:
+            AmmHooks(hook).before_collateral_out(out_amount_done)
 
-    self.exchange_hook = hook
+    assert out_coin.transfer(_for, out_amount_done, default_return_value=True)
 
-    return True
+    return [in_amount_done, out_amount_done]
