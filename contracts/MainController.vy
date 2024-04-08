@@ -85,7 +85,7 @@ event SetImplementations:
 event SetMarketHooks:
     market: indexed(address)
     hooks: indexed(address)
-    hooks_bitfield: uint256
+    active_hooks: bool[NUM_HOOK_IDS]
 
 event SetAmmHooks:
     market: indexed(address)
@@ -362,6 +362,43 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
 
 @view
 @external
+def get_hooks(market: address) -> (address, address, bool[NUM_HOOK_IDS]):
+    """
+    @notice Get the hook contracts and active hooks for the given market
+    @param market Market address. Set as empty(address) for global hooks.
+    @return (amm hooks, market hooks, active market hooks boolean array)
+    """
+    hookdata: uint256 = 0
+    if market == empty(address):
+        hookdata = self.global_hooks
+    else:
+        hookdata = self.market_hooks[market]
+
+    hook: address = convert(hookdata >> 96, address)
+
+    active_hooks: bool[NUM_HOOK_IDS] = empty(bool[NUM_HOOK_IDS])
+    if hook != empty(address):
+        for i in range(NUM_HOOK_IDS):
+            if hookdata >> i & 1 == 0:
+                continue
+            active_hooks[i] = True
+
+    return self.amm_hooks[market], hook, active_hooks
+
+
+@view
+@external
+def get_monetary_policy_for_market(market: address) -> address:
+    c: MarketContracts = self.market_contracts[market]
+
+    if c.collateral == empty(address):
+        return empty(address)
+
+    return self.monetary_policies[c.mp_idx]
+
+
+@view
+@external
 def peg_keeper_debt() -> uint256:
     regulator: PegKeeperRegulator = self.peg_keeper_regulator
     if regulator.address == empty(address):
@@ -409,23 +446,27 @@ def set_implementations(market: address, amm: address):
 
 
 @external
-def set_market_hooks(market: address, hooks: address, hooks_bitfield: uint256):
+def set_market_hooks(market: address, hooks: address, active_hooks: bool[NUM_HOOK_IDS]):
     """
-    @param hooks_bitfield Bitfield indicating which hook IDs are active. The bit offset
-                          is equal to the values in the HookId enum, counting from 0.
-                          For example, a bitfield of 0b1010 indicates that ON_ADJUST_LOAN
-                          and ON_LIQUIDATION hooks are active.
+    @notice Set callback hooks for `market`
+    @param market Market to set hooks for. Set as empty(address) for global hooks.
+    @param hooks Address of hooks contract to set as active. Set to empty(address) to disable all hooks.
+    @param active_hooks Array of booleans where items map to the values in the `HookId` enum.
     """
     self._assert_only_owner()
-    assert hooks_bitfield >> NUM_HOOK_IDS == 0
 
-    hookdata: uint256 = (convert(hooks, uint256) << 96) + hooks_bitfield
+    hookdata: uint256 = (convert(hooks, uint256) << 96)
+    if hooks != empty(address):
+        for i in range(NUM_HOOK_IDS):
+            if active_hooks[i]:
+                hookdata += 1 << i
+
     if market == empty(address):
         self.global_hooks = hookdata
     else:
         self.market_hooks[market] = hookdata
 
-    log SetMarketHooks(market, hooks, hooks_bitfield)
+    log SetMarketHooks(market, hooks, active_hooks)
 
 
 @external
@@ -491,17 +532,6 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool
     self.peg_keeper_regulator = regulator
 
     log SetPegKeeperRegulator(regulator.address, with_migration)
-
-
-@view
-@external
-def get_monetary_policy_for_market(market: address) -> address:
-    c: MarketContracts = self.market_contracts[market]
-
-    if c.collateral == empty(address):
-        return empty(address)
-
-    return self.monetary_policies[c.mp_idx]
 
 
 @view
