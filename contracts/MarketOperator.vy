@@ -558,7 +558,6 @@ def _decrease_total_debt(amount: uint256, rate_mul: uint256) -> int256:
 
 
 @external
-@nonreentrant('lock')
 def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, num_bands: uint256) -> uint256:
     """
     @notice Create loan
@@ -596,7 +595,6 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, nu
 
 
 @external
-@nonreentrant('lock')
 def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_active_band: int256) -> int256:
     self._assert_only_controller()
 
@@ -638,7 +636,6 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
 
 
 @external
-@nonreentrant('lock')
 def close_loan(account: address) -> (int256, uint256, uint256[2]):
     """
     @notice Close an existing loan
@@ -771,7 +768,6 @@ def _get_f_remove(frac: uint256, health_limit: uint256) -> uint256:
 
 
 @external
-@nonreentrant('lock')
 def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -> (int256, uint256, uint256[2]):
     """
     @notice Perform a bad liquidation (or self-liquidation) of account if health is not good
@@ -968,7 +964,6 @@ def set_borrowing_discounts(loan_discount: uint256, liquidation_discount: uint25
 
 
 @external
-@nonreentrant('lock')
 def set_liquidity_mining_hook(hook: address):
     """
     @notice Set liquidity mining callback
@@ -978,7 +973,6 @@ def set_liquidity_mining_hook(hook: address):
     log SetLiquidityMiningHook(hook)
 
 
-@nonreentrant('lock')
 @external
 def set_debt_ceiling(debt_ceiling: uint256):
     """
@@ -991,7 +985,6 @@ def set_debt_ceiling(debt_ceiling: uint256):
 
 
 @external
-@nonreentrant('lock')
 def collect_fees() -> (uint256, uint256[2]):
     """
     @notice Collect the fees charged as interest

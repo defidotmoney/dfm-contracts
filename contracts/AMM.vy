@@ -657,7 +657,6 @@ def save_user_shares(user: address, user_shares: DynArray[uint256, MAX_TICKS_UIN
 
 
 @external
-@nonreentrant('lock')
 def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
     """
     @notice Deposit for a user in a range of bands. Only admin contract (Operator) can do it
@@ -738,7 +737,6 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
 
 
 @external
-@nonreentrant('lock')
 def withdraw(user: address, frac: uint256) -> uint256[2]:
     """
     @notice Withdraw liquidity for the user. Only admin contract can do it
@@ -1669,7 +1667,6 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
 
 
 @external
-@nonreentrant('lock')
 def set_rate(rate: uint256) -> uint256:
     """
     @notice Set interest rate. That affects the dependence of AMM base price over time
@@ -1686,7 +1683,6 @@ def set_rate(rate: uint256) -> uint256:
 
 
 @external
-@nonreentrant('lock')
 def set_fee(fee: uint256):
     """
     @notice Set AMM fee
@@ -1697,7 +1693,6 @@ def set_fee(fee: uint256):
 
 
 @external
-@nonreentrant('lock')
 def set_admin_fee(fee: uint256):
     """
     @notice Set admin fee - fraction of the AMM fee to go to admin
@@ -1708,7 +1703,6 @@ def set_admin_fee(fee: uint256):
 
 
 @external
-@nonreentrant('lock')
 def reset_admin_fees() -> uint256[2]:
     """
     @notice Zero out AMM fees collected
@@ -1722,7 +1716,6 @@ def reset_admin_fees() -> uint256[2]:
     return xy
 
 
-# nonreentrant decorator is in Operator which is admin
 @external
 def set_liquidity_mining_hook(lm_hook: LMGauge):
     """

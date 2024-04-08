@@ -421,7 +421,6 @@ def max_borrowable(market: MarketOperator, coll_amount: uint256, N: uint256) -> 
 
 
 @external
-@nonreentrant('lock')
 def set_global_market_debt_ceiling(debt_ceiling: uint256):
     self._assert_only_owner()
     self.global_market_debt_ceiling = debt_ceiling
@@ -430,7 +429,6 @@ def set_global_market_debt_ceiling(debt_ceiling: uint256):
 
 
 @external
-@nonreentrant('lock')
 def set_implementations(market: address, amm: address):
     """
     @notice Set new implementations (blueprints) for market and amm. Doesn't change existing ones

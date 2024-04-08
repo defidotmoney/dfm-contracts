@@ -337,6 +337,7 @@ def withdraw_allowed(_pk: address=msg.sender) -> uint256:
 
 
 @external
+@nonreentrant("lock")
 def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
     """
     @notice Provide or withdraw coins from the pool to stabilize it
