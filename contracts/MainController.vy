@@ -71,7 +71,6 @@ event AddMarket:
     market: address
     amm: address
     mp_idx: uint256
-    market_idx: uint256
 
 event SetDelegateApproval:
     account: indexed(address)
@@ -172,24 +171,18 @@ MAX_FEE: constant(uint256) = 10**17  # 10%
 MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16
-MAX_MARKETS: constant(uint256) = 2 ** 16 - 1
 MAX_ACTIVE_BAND: constant(int256) = max_value(int256)
 
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(CoreOwner))
-markets: public(address[MAX_MARKETS])
-amms: public(address[MAX_MARKETS])
 market_operator_implementation: public(address)
 amm_implementation: public(address)
 peg_keeper_regulator: public(PegKeeperRegulator)
 
-n_collaterals: public(uint256)
-collaterals: public(address[MAX_MARKETS])
-collaterals_index: public(HashMap[address, DynArray[uint256, 255]])
-monetary_policies: public(address[MAX_MARKETS])
-n_monetary_policies: public(uint256)
-
+collateral_markets: HashMap[address, DynArray[address, 256]]
 market_contracts: public(HashMap[address, MarketContracts])
+monetary_policies: public(address[256])
+n_monetary_policies: public(uint256)
 
 global_market_debt_ceiling: public(uint256)
 total_debt: public(uint256)
@@ -242,10 +235,13 @@ def owner() -> address:
 def get_market(collateral: address, i: uint256 = 0) -> address:
     """
     @notice Get market address for collateral
+    @dev Returns empty(address) if market does not exist
     @param collateral Address of collateral token
     @param i Iterate over several markets for collateral if needed
     """
-    return self.markets[self.collaterals_index[collateral][i]]
+    if i > len(self.collateral_markets[collateral]):
+        return empty(address)
+    return self.collateral_markets[collateral][i]
 
 
 @view
@@ -253,10 +249,14 @@ def get_market(collateral: address, i: uint256 = 0) -> address:
 def get_amm(collateral: address, i: uint256 = 0) -> address:
     """
     @notice Get AMM address for collateral
+    @dev Returns empty(address) if market does not exist
     @param collateral Address of collateral token
     @param i Iterate over several amms for collateral if needed
     """
-    return self.amms[self.collaterals_index[collateral][i]]
+    if i > len(self.collateral_markets[collateral]):
+        return empty(address)
+    market: address = self.collateral_markets[collateral][i]
+    return self.market_contracts[market].amm
 
 
 @view
@@ -596,16 +596,10 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256,
     # `AMM` is deployed in constructor of `MarketOperator`
     amm: address = MarketOperator(market).AMM()
 
-    N: uint256 = self.n_collaterals
-    self.collaterals[N] = token
-    self.collaterals_index[token].append(N)
-    self.markets[N] = market
-    self.amms[N] = amm
-    self.n_collaterals = N + 1
-
+    self.collateral_markets[token].append(market)
     self.market_contracts[market] = MarketContracts({collateral: token, amm: amm, mp_idx: mp_idx})
 
-    log AddMarket(token, market, amm, mp_idx, N)
+    log AddMarket(token, market, amm, mp_idx)
     return [market, amm]
 
 
