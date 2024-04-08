@@ -16,9 +16,8 @@ def get_amm(price_oracle, admin, accounts):
         with boa.env.prank(admin):
             amm = boa.load(
                 "contracts/AMM.vy",
-                borrowed_token.address,
+                [borrowed_token.address, collateral_token.address],
                 10 ** (18 - borrowed_token.decimals()),
-                collateral_token.address,
                 10 ** (18 - collateral_token.decimals()),
                 100,
                 int(sqrt(100 / 99) * 1e18),

@@ -11,7 +11,7 @@ def setup(hooks, collateral, controller, market, alice, deployer):
         collateral._mint_for_testing(acct, 100 * 10**18)
         collateral.approve(controller, 2**256 - 1, {"from": acct})
 
-    controller.set_market_hooks(ZERO_ADDRESS, hooks, 0b1111, {"from": deployer})
+    controller.set_market_hooks(ZERO_ADDRESS, hooks, [True, True, True, True], {"from": deployer})
 
     # magic to ensure we have non-zero fees, so negative debt adjustments don't underflow
     hooks.set_response(INITIAL_FEES, {"from": deployer})

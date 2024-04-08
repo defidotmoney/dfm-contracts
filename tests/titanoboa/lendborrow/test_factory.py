@@ -40,7 +40,7 @@ def test_add_market(
             amm = amm_interface.at(controller.get_amm(collateral_token.address))
 
             assert market.CONTROLLER().lower() == controller.address.lower()
-            assert market.collateral_token().lower() == collateral_token.address.lower()
+            assert market.COLLATERAL_TOKEN().lower() == collateral_token.address.lower()
             assert market.AMM().lower() == amm.address.lower()
             assert (
                 controller.get_monetary_policy_for_market(market.address).lower()
@@ -51,5 +51,5 @@ def test_add_market(
             assert market.debt_ceiling() == 10**8 * 10**18
 
             assert amm.A() == 100
-            assert amm.price_oracle_contract().lower() == price_oracle.address.lower()
+            assert amm.ORACLE().lower() == price_oracle.address.lower()
             assert amm.coins(1).lower() == collateral_token.address.lower()

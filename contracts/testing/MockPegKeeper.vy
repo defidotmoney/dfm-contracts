@@ -5,7 +5,7 @@ This contract is for testing only.
 If you see it on mainnet - it won't be used for anything except testing the actual deployment
 """
 
-pool: public(immutable(address))
+POOL: public(immutable(address))
 IS_INVERSE: public(bool)
 debt: public(uint256)
 
@@ -18,7 +18,7 @@ price: public(uint256)
 
 @external
 def __init__(price: uint256, stablecoin: address):
-    pool = self
+    POOL = self
     self.IS_INVERSE = False
     self.debt = 0
 

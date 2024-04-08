@@ -80,7 +80,7 @@ def test_repay_all(stablecoin, collateral_token, controller, market, existing_lo
     with boa.env.anchor():
         with boa.env.prank(user):
             c_amount = int(2 * 1e6 * 1e18 * 1.5 / 3000)
-            amm = market.amm()
+            amm = market.AMM()
             stablecoin.approve(market, 2**256 - 1)
             controller.close_loan(user, market)
             assert market.debt(user) == 0
