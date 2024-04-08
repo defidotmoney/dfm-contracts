@@ -1,7 +1,7 @@
 # @version 0.3.10
 """
-@title crvUSD Controller
-@author Curve.Fi
+@title CDP Market Operator
+@author Curve.Fi (with edits by defidotmoney)
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 """
 
@@ -289,7 +289,7 @@ def min_collateral(debt: uint256, N: uint256) -> uint256:
     @param N Number of bands to deposit into
     @return Minimal collateral required
     """
-     # Add N**2 to account for precision loss in multiple bands, e.g. N / (y/N) = N**2 / y
+    # Add N**2 to account for precision loss in multiple bands, e.g. N / (y/N) = N**2 / y
     return unsafe_div(
         unsafe_div(
             debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, N, self.loan_discount) + N * (N + 2 * DEAD_SHARES),
@@ -785,7 +785,6 @@ def ln_int(_x: uint256) -> int256:
     # Now res = log2(x)
     # ln(x) = log2(x) / log2(e)
     return convert(res * 10**18 / 1442695040888963328, int256)
-## End of low-level math
 
 
 @view
@@ -875,7 +874,7 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256
     # n1 = floor(log2(y_effective) / self.logAratio)
     # EVM semantics is not doing floor unlike Python, so we do this
     assert y_effective > 0, "Amount too low"
-    n1: int256 = self.log2(y_effective)  # <- switch to faster ln() XXX?
+    n1: int256 = self.log2(y_effective)
     if n1 < 0:
         n1 -= unsafe_sub(LOG2_A_RATIO, 1)  # This is to deal with vyper's rounding of negative numbers
     n1 = unsafe_div(n1, LOG2_A_RATIO)

@@ -1,7 +1,7 @@
 # @version 0.3.10
 """
-@title crvUSD Main Controller
-@author Curve.Fi
+@title CDP Main Controller
+@author Curve.Fi (with edits by defidotmoney)
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 """
 
@@ -613,7 +613,8 @@ def set_global_market_debt_ceiling(debt_ceiling: uint256):
 @external
 def set_implementations(market: address, amm: address):
     """
-    @notice Set new implementations (blueprints) for market and amm. Doesn't change existing ones
+    @notice Set new implementations (blueprints) for market and amm
+    @dev Already-deployed markets are unaffected by this change
     @param market Address of the market blueprint
     @param amm Address of the AMM blueprint
     """

@@ -1,7 +1,7 @@
 #pragma version 0.3.10
 """
-@title LLAMMA - crvUSD AMM
-@author Curve.Fi
+@title LLAMMA AMM
+@author Curve.Fi (with edits by defidotmoney)
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 """
 

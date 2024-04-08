@@ -1,8 +1,8 @@
 # @version 0.3.10
 """
-@title Peg Keeper V2
+@title PegKeeper V2
 @license MIT
-@author Curve.Fi
+@author Curve.Fi  (with edits by defidotmoney)
 @notice Peg Keeper
 @dev Version 2
 """

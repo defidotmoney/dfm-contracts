@@ -1,7 +1,8 @@
 # @version 0.3.10
 """
-@title AggMonetaryPolicy - monetary policy based on aggregated prices for crvUSD
-@author Curve.Fi
+@title AggMonetaryPolicy
+@dev monetary policy based on aggregated prices for the protocol stablecoin
+@author Curve.Fi  (with edits by defidotmoney)
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 """
 
@@ -173,7 +174,7 @@ def calculate_rate(market: address, _price: uint256) -> uint256:
         else:
             power -= convert(pk_debt * 10**18 / total_debt * 10**18 / target_debt_fraction, int256)
 
-    # Rate accounting for crvUSD price and PegKeeper debt
+    # Rate accounting for stablecoin price and PegKeeper debt
     rate: uint256 = self.rate0 * min(self.exp(power), MAX_EXP) / 10**18
 
     # Account for individual debt ceiling to dynamically tune rate depending on filling the market

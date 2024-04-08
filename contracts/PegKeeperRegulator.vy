@@ -1,7 +1,7 @@
 # @version 0.3.10
 """
 @title Peg Keeper Regulator
-@author Curve.Fi
+@author Curve.Fi (with edits by defidotmoney)
 @notice Regulations for Peg Keeper
 @license MIT
 """
@@ -166,7 +166,7 @@ def provide_allowed(_pk: address=msg.sender) -> uint256:
     if self.aggregator.price() < ONE:
         return 0
 
-    price: uint256 = max_value(uint256)  # Will fail if PegKeeper is not in self.price_pairs
+    price: uint256 = max_value(uint256)
     largest_price: uint256 = 0
     debt_ratios: DynArray[uint256, MAX_LEN] = []
     for info in self.peg_keepers:
