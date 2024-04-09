@@ -150,7 +150,7 @@ def owed_debt() -> uint256:
 
 @view
 @external
-def provide_allowed(_pk: address=msg.sender) -> uint256:
+def get_max_provide(pk: PegKeeper) -> uint256:
     """
     @notice Allow PegKeeper to provide stablecoin into the pool
     @dev Can return more amount than available
@@ -171,7 +171,7 @@ def provide_allowed(_pk: address=msg.sender) -> uint256:
     debt_ratios: DynArray[uint256, MAX_LEN] = []
     for info in self.peg_keepers:
         price_oracle: uint256 = self._get_price_oracle(info)
-        if info.peg_keeper.address == _pk:
+        if info.peg_keeper == pk:
             price = price_oracle
             if not self._price_in_range(price, self._get_price(info)):
                 return 0
@@ -183,14 +183,14 @@ def provide_allowed(_pk: address=msg.sender) -> uint256:
     if largest_price < unsafe_sub(price, self.worst_price_threshold):
         return 0
 
-    debt: uint256 = PegKeeper(_pk).debt()
-    total: uint256 = debt + STABLECOIN.balanceOf(_pk)
+    debt: uint256 = pk.debt()
+    total: uint256 = debt + STABLECOIN.balanceOf(pk.address)
     return self._get_max_ratio(debt_ratios) * total / ONE - debt
 
 
 @view
 @external
-def withdraw_allowed(_pk: address=msg.sender) -> uint256:
+def get_max_withdraw(pk: PegKeeper) -> uint256:
     """
     @notice Allow Peg Keeper to withdraw stablecoin from the pool
     @dev Can return more amount than available
@@ -205,7 +205,7 @@ def withdraw_allowed(_pk: address=msg.sender) -> uint256:
     if self.aggregator.price() > ONE:
         return 0
 
-    i: uint256 = self.peg_keeper_i[PegKeeper(_pk)]
+    i: uint256 = self.peg_keeper_i[pk]
     if i > 0:
         info: PegKeeperInfo = self.peg_keepers[i - 1]
         if self._price_in_range(self._get_price(info), self._get_price_oracle(info)):

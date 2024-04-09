@@ -9,8 +9,8 @@
 
 interface Regulator:
     def stablecoin() -> address: view
-    def provide_allowed(_pk: address=msg.sender) -> uint256: view
-    def withdraw_allowed(_pk: address=msg.sender) -> uint256: view
+    def get_max_provide(pk: address) -> uint256: view
+    def get_max_withdraw(pk: address) -> uint256: view
 
 interface CurvePool:
     def balances(i_coin: uint256) -> uint256: view
@@ -144,11 +144,11 @@ def estimate_caller_profit() -> uint256:
 
     call_profit: uint256 = 0
     if balance_peg > balance_pegged:
-        allowed: uint256 = self.regulator.provide_allowed()
+        allowed: uint256 = self.regulator.get_max_provide(self)
         call_profit = self._calc_call_profit(min((balance_peg - balance_pegged) / 5, allowed), True)  # this dumps stablecoin
 
     else:
-        allowed: uint256 = self.regulator.withdraw_allowed()
+        allowed: uint256 = self.regulator.get_max_withdraw(self)
         call_profit = self._calc_call_profit(min((balance_pegged - balance_peg) / 5, allowed), False)  # this pumps stablecoin
 
     return call_profit * self.caller_share / SHARE_PRECISION
@@ -222,12 +222,12 @@ def update(_beneficiary: address) -> (int256, uint256):
 
     debt_adjustment: int256 = 0
     if balance_peg > balance_pegged:
-        allowed: uint256 = self.regulator.provide_allowed()
+        allowed: uint256 = self.regulator.get_max_provide(self)
         assert allowed > 0, "Regulator ban"
         debt_adjustment = self._provide(min(unsafe_sub(balance_peg, balance_pegged) / 5, allowed))  # this dumps stablecoin
 
     else:
-        allowed: uint256 = self.regulator.withdraw_allowed()
+        allowed: uint256 = self.regulator.get_max_withdraw(self)
         assert allowed > 0, "Regulator ban"
         debt_adjustment = self._withdraw(min(unsafe_sub(balance_pegged, balance_peg) / 5, allowed))  # this pumps stablecoin
 

@@ -301,7 +301,7 @@ def get_monetary_policy_for_market(market: address) -> address:
 
 @view
 @external
-def peg_keeper_debt() -> uint256:
+def get_peg_keeper_active_debt() -> uint256:
     """
     @notice Get the total active debt across all peg keepers
     """

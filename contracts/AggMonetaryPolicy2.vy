@@ -12,7 +12,7 @@ interface PriceOracle:
 
 interface Controller:
     def total_debt() -> uint256: view
-    def peg_keeper_debt() -> uint256: view
+    def get_peg_keeper_active_debt() -> uint256: view
 
 interface MarketOperator:
     def total_debt() -> uint256: view
@@ -164,7 +164,7 @@ def calculate_rate(market: address, _price: uint256) -> uint256:
     target_debt_fraction: uint256 = self.target_debt_fraction
 
     p: int256 = convert(_price, int256)
-    pk_debt: uint256 = CONTROLLER.peg_keeper_debt()
+    pk_debt: uint256 = CONTROLLER.get_peg_keeper_active_debt()
 
     power: int256 = (10**18 - p) * 10**18 / sigma  # high price -> negative pow -> low rate
     if pk_debt > 0:
