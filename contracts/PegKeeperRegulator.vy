@@ -236,6 +236,11 @@ def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
 
 @external
 def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
+    """
+    @notice Add a new peg keeper
+    @param pk Address of the peg keeper to add
+    @param debt_ceiling Amount of stablecoin allocated to the peg keeper
+    """
     self._assert_only_owner()
     assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
     assert pk.debt() == 0, "PKRegulator: keeper has debt"
@@ -255,8 +260,40 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     log AddPegKeeper(info.peg_keeper, info.pool, info.is_inverse)
 
 
+
+@external
+def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
+    """
+    @notice Adjust debt ceiling for an active peg keeper
+    @dev If the ceiling is reduced, and the peg keeper does not have
+         a sufficient balance to immediately repay the funds, it will
+         record the remaining amount as "owed debt" and reduce it on
+         subsequent interactions where possible.
+    @param pk Address of the peg keeper to adjust the ceiling for
+    @param debt_ceiling New amount of stablecoin allocated to the peg keeper.
+                        If the ceiling increases, coins are minted.
+                        If the ceiling decreases, coins are burned.
+    """
+    self._assert_only_owner()
+    i: uint256 = self.peg_keeper_i[pk] - 1  # dev: pool not found
+
+    current_debt_ceiling: uint256 = self.peg_keepers[i].debt_ceiling
+    if current_debt_ceiling > debt_ceiling:
+        self._recall_debt(pk, current_debt_ceiling - debt_ceiling)
+    else:
+        self._mint(pk, debt_ceiling - current_debt_ceiling)
+
+    self.peg_keepers[i].debt_ceiling = debt_ceiling
+
+
 @external
 def remove_peg_keeper(pk: PegKeeper):
+    """
+    @notice Remove an existing peg keeper
+    @dev A peg keeper cannot be removed while it has active debt,
+         in that case the debt ceiling should first be set to zero.
+    @param pk Address of the peg keeper to remove
+    """
     self._assert_only_owner()
 
     peg_keepers: DynArray[PegKeeperInfo, MAX_LEN] = self.peg_keepers
@@ -278,20 +315,6 @@ def remove_peg_keeper(pk: PegKeeper):
     self.peg_keeper_i[pk] = empty(uint256)
 
     log RemovePegKeeper(pk)
-
-
-@external
-def adjust_peg_keeper_debt_ceiling(pk: PegKeeper, debt_ceiling: uint256):
-    self._assert_only_owner()
-    i: uint256 = self.peg_keeper_i[pk] - 1  # dev: pool not found
-
-    current_debt_ceiling: uint256 = self.peg_keepers[i].debt_ceiling
-    if current_debt_ceiling > debt_ceiling:
-        self._recall_debt(pk, current_debt_ceiling - debt_ceiling)
-    else:
-        self._mint(pk, debt_ceiling - current_debt_ceiling)
-
-    self.peg_keepers[i].debt_ceiling = debt_ceiling
 
 
 @external

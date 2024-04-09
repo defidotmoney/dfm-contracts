@@ -25,12 +25,12 @@ interface AMM:
 interface MarketOperator:
     def total_debt() -> uint256: view
     def pending_debt() -> uint256: view
-    def max_borrowable(collateral: uint256, N: uint256) -> uint256: view
+    def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256: view
     def minted() -> uint256: view
     def redeemed() -> uint256: view
     def collect_fees() -> (uint256, uint256[2]): nonpayable
     def set_debt_ceiling(ceiling: uint256) -> bool: nonpayable
-    def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, num_bands: uint256) -> uint256: nonpayable
+    def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256) -> uint256: nonpayable
     def adjust_loan(account: address, coll_amount: int256, debt_amount: int256, max_active_band: int256) -> int256: nonpayable
     def close_loan(account: address) -> (int256, uint256, uint256[2]): nonpayable
     def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -> (int256, uint256, uint256[2]): nonpayable
@@ -288,6 +288,9 @@ def get_hooks(market: address) -> (address, address, bool[NUM_HOOK_IDS]):
 @view
 @external
 def get_monetary_policy_for_market(market: address) -> address:
+    """
+    @notice Get the address of the monetary policy for `market`
+    """
     c: MarketContracts = self.market_contracts[market]
 
     if c.collateral == empty(address):
@@ -299,6 +302,9 @@ def get_monetary_policy_for_market(market: address) -> address:
 @view
 @external
 def peg_keeper_debt() -> uint256:
+    """
+    @notice Get the total active debt across all peg keepers
+    """
     regulator: PegKeeperRegulator = self.peg_keeper_regulator
     if regulator.address == empty(address):
         return 0
@@ -307,14 +313,21 @@ def peg_keeper_debt() -> uint256:
 
 @view
 @external
-def max_borrowable(market: MarketOperator, coll_amount: uint256, N: uint256) -> uint256:
+def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint256) -> uint256:
+    """
+    @notice Calculation of maximum which can be borrowed in the given market
+    @param market Market where the loan will be taken
+    @param coll_amount Collateral amount against which to borrow
+    @param n_bands number of bands the collateral will be deposited over
+    @return Maximum amount of stablecoin that can be borrowed
+    """
     debt_ceiling: uint256 = self.global_market_debt_ceiling
     total_debt: uint256 = self.total_debt + market.pending_debt()
     if total_debt >= debt_ceiling:
         return 0
 
     global_max: uint256 = debt_ceiling - total_debt
-    market_max: uint256 = market.max_borrowable(coll_amount, N)
+    market_max: uint256 = market.max_borrowable(coll_amount, n_bands)
 
     return min(global_max, market_max)
 
@@ -348,7 +361,22 @@ def setDelegateApproval(delegate: address, is_approved: bool):
 
 @external
 @nonreentrant('lock')
-def create_loan(account: address, market: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256):
+def create_loan(
+    account: address,
+    market: address,
+    coll_amount: uint256,
+    debt_amount: uint256,
+    n_bands: uint256
+):
+    """
+    @notice Create loan
+    @param account Account to open the loan for
+    @param market Market where the loan will be opened
+    @param coll_amount Collateral amount to deposit
+    @param debt_amount Stablecoin amount to mint
+    @param n_bands Number of bands to deposit collateral into
+                   Can be from market.MIN_TICKS() to market.MAX_TICKS()
+    """
     assert coll_amount > 0 and debt_amount > 0
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_contracts(market)
@@ -383,7 +411,21 @@ def create_loan(account: address, market: address, coll_amount: uint256, debt_am
 
 @external
 @nonreentrant('lock')
-def adjust_loan(account: address, market: address, coll_change: int256, debt_change: int256, max_active_band: int256 = max_value(int256)):
+def adjust_loan(
+    account: address,
+    market: address,
+    coll_change: int256,
+    debt_change: int256,
+    max_active_band: int256 = max_value(int256)
+):
+    """
+    @notice Adjust collateral/debt amounts for an existing loan
+    @param account Account to adjust the loan for
+    @param market Market of the loan being adjusted
+    @param coll_change Collateral adjustment amount. A positive value deposits, negative withdraws.
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @param max_active_band Maximum active band (used to prevent front-running)
+    """
     assert coll_change != 0 or debt_change != 0
 
     self._assert_caller_or_approved_delegate(account)
@@ -430,6 +472,11 @@ def adjust_loan(account: address, market: address, coll_change: int256, debt_cha
 @external
 @nonreentrant('lock')
 def close_loan(account: address, market: address):
+    """
+    @notice Close an existing loan
+    @param account The account to close the loan for
+    @param market Market of the loan being closed
+    """
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_contracts(market)
 
@@ -461,6 +508,13 @@ def close_loan(account: address, market: address):
 @external
 @nonreentrant('lock')
 def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 10**18):
+    """
+    @notice Perform a liquidation (or self-liquidation) on an unhealthy account
+    @param market Market of the loan being liquidated
+    @param target Address of the account to be liquidated
+    @param min_x Minimal amount of stablecoin to receive (to avoid liquidators being sandwiched)
+    @param frac Fraction to liquidate; 100% = 10**18
+    """
     assert frac <= 10**18
     c: MarketContracts = self._get_contracts(market)
 
@@ -505,6 +559,11 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
 @external
 @nonreentrant('lock')
 def collect_fees(market_list: DynArray[address, 255]) -> uint256:
+    """
+    @notice Collect admin fees across markets
+    @param market_list List of markets to collect fees from. Can be left empty
+                       to only claim already-stored interest fees.
+    """
     receiver: address = CORE_OWNER.feeReceiver()
 
     debt_increase_total: uint256 = 0
@@ -604,6 +663,12 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
 
 @external
 def set_global_market_debt_ceiling(debt_ceiling: uint256):
+    """
+    @notice Set the global debt ceiling
+    @dev There is no requirement for the global ceiling to be equal to the sum
+         of the market ceilings. Individual markets may mint up to their own debt
+         ceiling, so long as the aggregate debt does not exceed the global ceiling.
+    """
     self._assert_only_owner()
     self.global_market_debt_ceiling = debt_ceiling
 
@@ -652,6 +717,12 @@ def set_market_hooks(market: address, hooks: address, active_hooks: bool[NUM_HOO
 
 @external
 def set_amm_hook(market: address, hook: address):
+    """
+    @notice Set callback hooks for `market`'s AMM
+    @dev When an AMM hook is set, the AMM also approves the hook to transfer the collateral token.
+    @param market Market to set the hooks for
+    @param hook Address of the AMM hooks contract. Set to empty(address) to disable.
+    """
     self._assert_only_owner()
     amm: address = self._get_contracts(market).amm
     AMM(amm).set_exchange_hook(hook)
@@ -662,6 +733,11 @@ def set_amm_hook(market: address, hook: address):
 
 @external
 def add_new_monetary_policy(monetary_policy: address):
+    """
+    @notice Add a new monetary policy
+    @dev The new policy is assigned an identifier `mp_idx` which is used to
+         associate it to individual markets
+    """
     self._assert_only_owner()
     idx: uint256 = self.n_monetary_policies
     self.monetary_policies[idx] = monetary_policy
@@ -672,6 +748,9 @@ def add_new_monetary_policy(monetary_policy: address):
 
 @external
 def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
+    """
+    @notice Change the monetary policy at an existing `mp_idx`
+    """
     self._assert_only_owner()
     assert mp_idx < self.n_monetary_policies
     self.monetary_policies[mp_idx] = monetary_policy
@@ -681,6 +760,9 @@ def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
 
 @external
 def change_market_monetary_policy(market: address, mp_idx: uint256):
+    """
+    @notice Modify the assigned `mp_idx` for the given market
+    """
     self._assert_only_owner()
     assert mp_idx < self.n_monetary_policies
     self.market_contracts[market].mp_idx = mp_idx

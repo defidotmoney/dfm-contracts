@@ -192,6 +192,7 @@ def set_new_caller_share(_new_caller_share: uint256):
 def set_regulator(_new_regulator: Regulator):
     """
     @notice Set new peg keeper regulator
+    @dev Called during migration to a new regulator
     """
     assert msg.sender == CONTROLLER, "PegKeeper: Only controller"
     assert _new_regulator.address != empty(address)  # dev: bad regulator

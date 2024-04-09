@@ -106,9 +106,9 @@ SQRT_BAND_RATIO: immutable(uint256)
 
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16 # Start liquidating when threshold reached
-MAX_TICKS: constant(int256) = 50
+MAX_TICKS: public(constant(int256)) = 50
 MAX_TICKS_UINT: constant(uint256) = 50
-MIN_TICKS: constant(int256) = 4
+MIN_TICKS: public(constant(int256)) = 4
 MAX_SKIP_TICKS: constant(uint256) = 1024
 MAX_P_BASE_BANDS: constant(int256) = 5
 
@@ -244,13 +244,13 @@ def pending_debt() -> uint256:
 @view
 @external
 @nonreentrant('lock')
-def max_borrowable(collateral: uint256, N: uint256) -> uint256:
+def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
     """
     @notice Calculation of maximum which can be borrowed (details in comments)
-    @dev End users should instead call `MainController.max_borrowable`, which
-         also considers the global debt ceiling
+    @dev Users should instead call `MainController.max_borrowable` which also
+         considers the global debt ceiling in the returned value
     @param collateral Collateral amount against which to borrow
-    @param N number of bands to have the deposit into
+    @param n_bands number of bands to have the deposit into
     @return Maximum amount of stablecoin to borrow
     """
     # Calculation of maximum which can be borrowed.
@@ -270,7 +270,7 @@ def max_borrowable(collateral: uint256, N: uint256) -> uint256:
     total_debt: uint256 = self._get_total_debt()
     debt_ceiling: uint256 = self.debt_ceiling
     if total_debt < debt_ceiling:
-        y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, N, self.loan_discount)
+        y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, n_bands, self.loan_discount)
 
         x: uint256 = unsafe_sub(max(unsafe_div(y_effective * self.max_p_base(), 10**18), 1), 1)
         x = unsafe_div(x * (10**18 - 10**14), 10**18)  # Make it a bit smaller
@@ -282,17 +282,17 @@ def max_borrowable(collateral: uint256, N: uint256) -> uint256:
 @view
 @external
 @nonreentrant('lock')
-def min_collateral(debt: uint256, N: uint256) -> uint256:
+def min_collateral(debt: uint256, n_bands: uint256) -> uint256:
     """
     @notice Minimal amount of collateral required to support debt
     @param debt The debt to support
-    @param N Number of bands to deposit into
+    @param n_bands Number of bands to deposit into
     @return Minimal collateral required
     """
     # Add N**2 to account for precision loss in multiple bands, e.g. N / (y/N) = N**2 / y
     return unsafe_div(
         unsafe_div(
-            debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, N, self.loan_discount) + N * (N + 2 * DEAD_SHARES),
+            debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, n_bands, self.loan_discount) + n_bands * (n_bands + 2 * DEAD_SHARES),
             COLLATERAL_PRECISION
         ) * 10**18,
         10**18 - 10**14
@@ -302,16 +302,16 @@ def min_collateral(debt: uint256, N: uint256) -> uint256:
 @view
 @external
 @nonreentrant('lock')
-def calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256:
+def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> int256:
     """
     @notice Calculate the upper band number for the deposit to sit in to support
             the given debt. Reverts if requested debt is too high.
     @param collateral Amount of collateral (at its native precision)
     @param debt Amount of requested debt
-    @param N Number of bands to deposit into
+    @param n_bands Number of bands to deposit into
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
-    return self._calculate_debt_n1(collateral, debt, N)
+    return self._calculate_debt_n1(collateral, debt, n_bands)
 
 
 
@@ -320,7 +320,7 @@ def calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256:
 @nonreentrant('lock')
 def tokens_to_liquidate(account: address, frac: uint256 = 10 ** 18) -> uint256:
     """
-    @notice Calculate the amount of stablecoins to have in liquidator's wallet to liquidate a account
+    @notice Calculate the required stablecoin balance to liquidate an account
     @param account Address of the account to liquidate
     @param frac Fraction to liquidate; 100% = 10**18
     @return The amount of stablecoins needed
@@ -411,7 +411,7 @@ def user_state(account: address) -> uint256[4]:
     """
     @notice Return the account state in one call
     @param account User to return the state for
-    @return (collateral, stablecoin, debt, N)
+    @return (collateral, stablecoin, debt, n_bands)
     """
     xy: uint256[2] = AMM.get_sum_xy(account)
     ns: int256[2] = AMM.read_user_tick_numbers(account) # ns[1] > ns[0]
@@ -421,19 +421,19 @@ def user_state(account: address) -> uint256[4]:
 @view
 @external
 @nonreentrant('lock')
-def health_calculator(account: address, coll_amount: int256, debt_amount: int256, full: bool, N: uint256 = 0) -> int256:
+def health_calculator(account: address, coll_amount: int256, debt_amount: int256, full: bool, n_bands: uint256 = 0) -> int256:
     """
     @notice Health predictor in case account changes the debt or collateral
     @param account Address of the account
     @param coll_amount Change in collateral amount (signed)
     @param debt_amount Change in debt amount (signed)
     @param full Whether it's a 'full' health or not
-    @param N Number of bands in case loan doesn't yet exist
+    @param n_bands Number of bands in case loan doesn't yet exist
     @return Signed health value
     """
     ns: int256[2] = AMM.read_user_tick_numbers(account)
     debt: int256 = convert(self._debt(account)[0], int256)
-    n: uint256 = N
+    n: uint256 = n_bands
     ld: int256 = 0
     if debt != 0:
         ld = convert(self.liquidation_discounts[account], int256)
@@ -543,22 +543,22 @@ def set_debt_ceiling(debt_ceiling: uint256):
 # --- controller-only nonpayable functions ---
 
 @external
-def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, num_bands: uint256) -> uint256:
+def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256) -> uint256:
     """
     @notice Create loan
     @param coll_amount Amount of collateral to use
     @param debt_amount Stablecoin amount to mint
-    @param num_bands Number of bands to deposit into (to do autoliquidation-deliquidation),
+    @param n_bands Number of bands to deposit into (to do autoliquidation-deliquidation),
            can be from MIN_TICKS to MAX_TICKS
     """
     self._assert_only_controller()
 
     assert self.loan[account].initial_debt == 0, "Loan already created"
-    assert num_bands > MIN_TICKS-1, "Need more ticks"
-    assert num_bands < MAX_TICKS+1, "Need less ticks"
+    assert n_bands > MIN_TICKS-1, "Need more ticks"
+    assert n_bands < MAX_TICKS+1, "Need less ticks"
 
-    n1: int256 = self._calculate_debt_n1(coll_amount, debt_amount, num_bands)
-    n2: int256 = n1 + convert(num_bands - 1, int256)
+    n1: int256 = self._calculate_debt_n1(coll_amount, debt_amount, n_bands)
+    n2: int256 = n1 + convert(n_bands - 1, int256)
 
     rate_mul: uint256 = AMM.get_rate_mul()
     self.loan[account] = Loan({initial_debt: debt_amount, rate_mul: rate_mul})
@@ -813,13 +813,13 @@ def _get_total_debt() -> uint256:
 
 @view
 @internal
-def get_y_effective(collateral: uint256, N: uint256, discount: uint256) -> uint256:
+def get_y_effective(collateral: uint256, n_bands: uint256, discount: uint256) -> uint256:
     """
     @notice Intermediary method which calculates y_effective defined as x_effective / p_base,
             however discounted by loan_discount.
             x_effective is an amount which can be obtained from collateral when liquidating
     @param collateral Amount of collateral to get the value for
-    @param N Number of bands the deposit is made into
+    @param n_bands Number of bands the deposit is made into
     @param discount Loan discount at 1e18 base (e.g. 1e18 == 100%)
     @return y_effective
     """
@@ -830,11 +830,11 @@ def get_y_effective(collateral: uint256, N: uint256, discount: uint256) -> uint2
     # d_y_effective: uint256 = collateral * unsafe_sub(10**18, discount) / (SQRT_BAND_RATIO * N)
     # Make some extra discount to always deposit lower when we have DEAD_SHARES rounding
     d_y_effective: uint256 = collateral * unsafe_sub(
-        10**18, min(discount + unsafe_div((DEAD_SHARES * 10**18), max(unsafe_div(collateral, N), DEAD_SHARES)), 10**18)
-    ) / unsafe_mul(SQRT_BAND_RATIO, N)
+        10**18, min(discount + unsafe_div((DEAD_SHARES * 10**18), max(unsafe_div(collateral, n_bands), DEAD_SHARES)), 10**18)
+    ) / unsafe_mul(SQRT_BAND_RATIO, n_bands)
     y_effective: uint256 = d_y_effective
     for i in range(1, MAX_TICKS_UINT):
-        if i == N:
+        if i == n_bands:
             break
         d_y_effective = unsafe_div(d_y_effective * Aminus1, A)
         y_effective = unsafe_add(y_effective, d_y_effective)
@@ -843,13 +843,13 @@ def get_y_effective(collateral: uint256, N: uint256, discount: uint256) -> uint2
 
 @view
 @internal
-def _calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256:
+def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> int256:
     """
     @notice Calculate the upper band number for the deposit to sit in to support
             the given debt. Reverts if requested debt is too high.
     @param collateral Amount of collateral (at its native precision)
     @param debt Amount of requested debt
-    @param N Number of bands to deposit into
+    @param n_bands Number of bands to deposit into
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
     assert debt > 0, "No loan"
@@ -859,7 +859,7 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256
     # x_effective = y / N * p_oracle_up(n1) * sqrt((A - 1) / A) * sum_{0..N-1}(((A-1) / A)**k)
     # === d_y_effective * p_oracle_up(n1) * sum(...) === y_effective * p_oracle_up(n1)
     # d_y_effective = y / N / sqrt(A / (A - 1))
-    y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, N, self.loan_discount)
+    y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, n_bands, self.loan_discount)
     # p_oracle_up(n1) = base_price * ((A - 1) / A)**n1
 
     # We borrow up until min band touches p_oracle,
@@ -879,7 +879,7 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, N: uint256) -> int256
         n1 -= unsafe_sub(LOG2_A_RATIO, 1)  # This is to deal with vyper's rounding of negative numbers
     n1 = unsafe_div(n1, LOG2_A_RATIO)
 
-    n1 = min(n1, 1024 - convert(N, int256)) + n0
+    n1 = min(n1, 1024 - convert(n_bands, int256)) + n0
     if n1 <= n0:
         assert AMM.can_skip_bands(n1 - 1), "Debt too high"
 
