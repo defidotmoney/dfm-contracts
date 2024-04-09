@@ -22,11 +22,20 @@ interface AMM:
     def set_exchange_hook(hook: address) -> bool: nonpayable
     def set_rate(rate: uint256) -> uint256: nonpayable
     def collateral_balance() -> uint256: view
+    def price_oracle() -> uint256: view
+    def rate() -> uint256: view
+    def get_sum_xy(account: address) -> uint256[2]: view
+    def read_user_tick_numbers(receiver: address) -> int256[2]: view
+    def p_oracle_up(n: int256) -> uint256: view
+    def p_oracle_down(n: int256) -> uint256: view
 
 interface MarketOperator:
     def total_debt() -> uint256: view
     def pending_debt() -> uint256: view
+    def debt_ceiling() -> uint256: view
+    def debt(account: address) -> uint256: view
     def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256: view
+    def health(account: address, full: bool) -> int256: view
     def minted() -> uint256: view
     def redeemed() -> uint256: view
     def collect_fees() -> (uint256, uint256[2]): nonpayable
@@ -38,6 +47,7 @@ interface MarketOperator:
     def AMM() -> address: view
 
 interface MonetaryPolicy:
+    def rate(market: MarketOperator) -> uint256: view
     def rate_write(market: address) -> uint256: nonpayable
 
 interface PegKeeper:
@@ -262,6 +272,91 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
 
 @view
 @external
+def get_market_state(market: MarketOperator) -> uint256[7]:
+    """
+    @notice Get information about the state of `market`
+    @dev To calculate annualized interest rate: (1 + rate/1e18)**31536000 - 1
+    @return Total debt,
+            Total deposited collateral,
+            Market debt ceiling,
+            Remaining mintable debt,
+            Oracle price (normalized to 1e18),
+            Current interest rate per second,
+            Pending interest rate (applied on the next interaction)
+    """
+    c: MarketContracts = self.market_contracts[market.address]
+    if c.collateral == empty(address):
+        return empty(uint256[7])
+
+    total_debt: uint256 = market.total_debt()
+    total_coll: uint256 = AMM(c.amm).collateral_balance()
+    ceiling: uint256 = market.debt_ceiling()
+
+    max_mintable: uint256 = 0
+    if ceiling > total_debt:
+        global_ceiling: uint256 = self.global_market_debt_ceiling
+        global_debt: uint256 = self.total_debt
+        if global_ceiling > global_debt:
+            max_mintable = min(ceiling - total_debt, global_ceiling - global_debt)
+
+    oracle_price: uint256 = AMM(c.amm).price_oracle()
+    current_rate: uint256 = AMM(c.amm).rate()
+    pending_rate: uint256 = self.monetary_policies[c.mp_idx].rate(market)
+
+    return [total_debt, total_coll, ceiling, max_mintable, oracle_price, current_rate, pending_rate]
+
+
+@view
+@external
+def get_market_state_for_account(market: MarketOperator, account: address) -> (uint256, uint256[2], uint256, int256, uint256[2]):
+    """
+    @notice Get information about the open loan for `account` within `market`
+    @return Account debt,
+            AMM balances (collateral, stablecoin),
+            Number of bands,
+            Account health (liquidation is possible at 0),
+            Liquidation price range (high, low)
+    """
+    debt: uint256 = 0
+    c: MarketContracts = self.market_contracts[market.address]
+    if c.collateral != empty(address):
+        debt = market.debt(account)
+    if debt == 0:
+        return 0, [0, 0], 0, 0, [0, 0]
+
+    amm: AMM = AMM(c.amm)
+    debt = market.debt(account)
+    xy: uint256[2] = amm.get_sum_xy(account)
+    health: int256 = market.health(account, True)
+    ns: int256[2] = amm.read_user_tick_numbers(account)
+    liquidation_range: uint256[2] = [amm.p_oracle_up(ns[0]), amm.p_oracle_down(ns[1])]
+
+    return debt, [xy[1], xy[0]], convert(ns[1]-ns[0]+1, uint256), health, liquidation_range
+
+
+@view
+@external
+def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint256) -> uint256:
+    """
+    @notice Calculation of maximum which can be borrowed in the given market
+    @param market Market where the loan will be taken
+    @param coll_amount Collateral amount against which to borrow
+    @param n_bands number of bands the collateral will be deposited over
+    @return Maximum amount of stablecoin that can be borrowed
+    """
+    debt_ceiling: uint256 = self.global_market_debt_ceiling
+    total_debt: uint256 = self.total_debt + market.pending_debt()
+    if total_debt >= debt_ceiling:
+        return 0
+
+    global_max: uint256 = debt_ceiling - total_debt
+    market_max: uint256 = market.max_borrowable(coll_amount, n_bands)
+
+    return min(global_max, market_max)
+
+
+@view
+@external
 def get_hooks(market: address) -> (address, address, bool[NUM_HOOK_IDS]):
     """
     @notice Get the hook contracts and active hooks for the given market
@@ -310,27 +405,6 @@ def get_peg_keeper_active_debt() -> uint256:
     if regulator.address == empty(address):
         return 0
     return regulator.active_debt()
-
-
-@view
-@external
-def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint256) -> uint256:
-    """
-    @notice Calculation of maximum which can be borrowed in the given market
-    @param market Market where the loan will be taken
-    @param coll_amount Collateral amount against which to borrow
-    @param n_bands number of bands the collateral will be deposited over
-    @return Maximum amount of stablecoin that can be borrowed
-    """
-    debt_ceiling: uint256 = self.global_market_debt_ceiling
-    total_debt: uint256 = self.total_debt + market.pending_debt()
-    if total_debt >= debt_ceiling:
-        return 0
-
-    global_max: uint256 = debt_ceiling - total_debt
-    market_max: uint256 = market.max_borrowable(coll_amount, n_bands)
-
-    return min(global_max, market_max)
 
 
 @view
