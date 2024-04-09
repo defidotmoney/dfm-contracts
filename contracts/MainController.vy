@@ -92,11 +92,11 @@ event SetAmmHooks:
 
 event AddMonetaryPolicy:
     mp_idx: indexed(uint256)
-    monetary_policy: address
+    monetary_policy: MonetaryPolicy
 
 event ChangeMonetaryPolicy:
     mp_idx: indexed(uint256)
-    monetary_policy: address
+    monetary_policy: MonetaryPolicy
 
 event ChangeMonetaryPolicyForMarket:
     market: indexed(address)
@@ -181,7 +181,7 @@ peg_keeper_regulator: public(PegKeeperRegulator)
 
 collateral_markets: HashMap[address, DynArray[address, 256]]
 market_contracts: public(HashMap[address, MarketContracts])
-monetary_policies: public(address[256])
+monetary_policies: public(MonetaryPolicy[256])
 n_monetary_policies: public(uint256)
 
 global_market_debt_ceiling: public(uint256)
@@ -202,7 +202,7 @@ def __init__(
     stable: ERC20,
     market_impl: address,
     amm_impl: address,
-    monetary_policies: DynArray[address, 10],
+    monetary_policies: DynArray[MonetaryPolicy, 10],
     debt_ceiling: uint256
 ):
     CORE_OWNER = core
@@ -287,14 +287,14 @@ def get_hooks(market: address) -> (address, address, bool[NUM_HOOK_IDS]):
 
 @view
 @external
-def get_monetary_policy_for_market(market: address) -> address:
+def get_monetary_policy_for_market(market: address) -> MonetaryPolicy:
     """
     @notice Get the address of the monetary policy for `market`
     """
     c: MarketContracts = self.market_contracts[market]
 
     if c.collateral == empty(address):
-        return empty(address)
+        return empty(MonetaryPolicy)
 
     return self.monetary_policies[c.mp_idx]
 
@@ -732,7 +732,7 @@ def set_amm_hook(market: address, hook: address):
 
 
 @external
-def add_new_monetary_policy(monetary_policy: address):
+def add_new_monetary_policy(monetary_policy: MonetaryPolicy):
     """
     @notice Add a new monetary policy
     @dev The new policy is assigned an identifier `mp_idx` which is used to
@@ -747,7 +747,7 @@ def add_new_monetary_policy(monetary_policy: address):
 
 
 @external
-def change_existing_monetary_policy(monetary_policy: address, mp_idx: uint256):
+def change_existing_monetary_policy(monetary_policy: MonetaryPolicy, mp_idx: uint256):
     """
     @notice Change the monetary policy at an existing `mp_idx`
     """
@@ -876,5 +876,5 @@ def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int25
 
 @internal
 def _update_rate(market: address, amm: address, mp_idx: uint256):
-    mp_rate: uint256 = MonetaryPolicy(self.monetary_policies[mp_idx]).rate_write(market)
+    mp_rate: uint256 = self.monetary_policies[mp_idx].rate_write(market)
     AMM(amm).set_rate(mp_rate)

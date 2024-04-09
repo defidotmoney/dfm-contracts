@@ -76,7 +76,7 @@ def owner() -> address:
 
 @view
 @external
-def rate(market: address = empty(address)) -> uint256:
+def rate(market: address) -> uint256:
     return self.calculate_rate(market, PRICE_ORACLE.price())
 
 
