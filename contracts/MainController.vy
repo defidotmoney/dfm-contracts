@@ -21,6 +21,7 @@ interface PriceOracle:
 interface AMM:
     def set_exchange_hook(hook: address) -> bool: nonpayable
     def set_rate(rate: uint256) -> uint256: nonpayable
+    def collateral_balance() -> uint256: view
 
 interface MarketOperator:
     def total_debt() -> uint256: view
@@ -725,7 +726,9 @@ def set_amm_hook(market: address, hook: address):
     """
     self._assert_only_owner()
     amm: address = self._get_contracts(market).amm
+    amount: uint256 = AMM(amm).collateral_balance()
     AMM(amm).set_exchange_hook(hook)
+    assert AMM(amm).collateral_balance() == amount
     self.amm_hooks[amm] = hook
 
     log SetAmmHooks(market, hook)

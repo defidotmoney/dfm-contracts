@@ -35,6 +35,7 @@
 # =======================
 
 interface ERC20:
+    def balanceOf(user: address) -> uint256: view
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
     def approve(_spender: address, _value: uint256) -> bool: nonpayable
@@ -48,6 +49,7 @@ interface LMGauge:
     def callback_user_shares(user: address, n: int256, user_shares: DynArray[uint256, MAX_TICKS_UINT]): nonpayable
 
 interface AmmHooks:
+    def collateral_balance() -> uint256: view
     def on_add_hook(market: address, amm: address): nonpayable
     def on_remove_hook(): nonpayable
     def before_collateral_out(amount: uint256): nonpayable
@@ -141,7 +143,7 @@ user_shares: HashMap[address, UserTicks]
 DEAD_SHARES: constant(uint256) = 1000
 
 lm_hook: public(LMGauge)
-exchange_hook: public(address)
+exchange_hook: public(AmmHooks)
 
 
 @external
@@ -210,6 +212,20 @@ def __init__(
 
 
 # --- external view functions ---
+
+
+@view
+@external
+def collateral_balance() -> uint256:
+    """
+    @notice The total collateral balance held within the AMM
+    """
+    hook: AmmHooks = self.exchange_hook
+    if hook == empty(AmmHooks):
+        return COLLATERAL_TOKEN.balanceOf(self)
+    else:
+        return hook.collateral_balance()
+
 
 @view
 @external
@@ -846,16 +862,16 @@ def set_rate(rate: uint256) -> uint256:
 
 
 @external
-def set_exchange_hook(hook: address) -> bool:
+def set_exchange_hook(hook: AmmHooks) -> bool:
     assert msg.sender == CONTROLLER
-    old_hook: address = self.exchange_hook
-    if old_hook != empty(address):
-        AmmHooks(old_hook).on_remove_hook()
-        assert COLLATERAL_TOKEN.approve(old_hook, 0, default_return_value=True)
+    old_hook: AmmHooks = self.exchange_hook
+    if old_hook != empty(AmmHooks):
+        old_hook.on_remove_hook()
+        assert COLLATERAL_TOKEN.approve(old_hook.address, 0, default_return_value=True)
 
-    if hook != empty(address):
-        assert COLLATERAL_TOKEN.approve(hook, max_value(uint256), default_return_value=True)
-        AmmHooks(hook).on_add_hook(MARKET_OPERATOR, self)
+    if hook != empty(AmmHooks):
+        assert COLLATERAL_TOKEN.approve(hook.address, max_value(uint256), default_return_value=True)
+        hook.on_add_hook(MARKET_OPERATOR, self)
 
     self.exchange_hook = hook
 
@@ -1740,12 +1756,12 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
 
     assert in_coin.transferFrom(msg.sender, self, in_amount_done, default_return_value=True)
 
-    hook: address = self.exchange_hook
-    if hook != empty(address):
+    hook: AmmHooks = self.exchange_hook
+    if hook != empty(AmmHooks):
         if in_coin == COLLATERAL_TOKEN:
-            AmmHooks(hook).after_collateral_in(in_amount_done)
+            hook.after_collateral_in(in_amount_done)
         else:
-            AmmHooks(hook).before_collateral_out(out_amount_done)
+            hook.before_collateral_out(out_amount_done)
 
     assert out_coin.transfer(_for, out_amount_done, default_return_value=True)
 

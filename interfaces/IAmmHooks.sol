@@ -29,4 +29,9 @@ interface IAmmHooks {
         @dev Called by the controller or AMM after transferring `amount` tokens into the AMM.
      */
     function after_collateral_in(uint256 amount) external;
+
+    /**
+        @dev Gets the total collateral balance for the AMM
+     */
+    function collateral_balance() external view returns (uint256);
 }

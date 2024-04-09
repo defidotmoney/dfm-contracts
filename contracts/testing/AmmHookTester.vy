@@ -43,3 +43,8 @@ def after_collateral_in(amount: uint256) -> bool:
     COLLATERAL.transferFrom(AMM, self, amount)
     log AfterCollIn()
     return True
+
+@view
+@external
+def collateral_balance() -> uint256:
+    return COLLATERAL.balanceOf(self)
