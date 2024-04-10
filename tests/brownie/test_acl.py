@@ -203,10 +203,10 @@ def test_set_liquidity_mining_hook(amm, alice):
 
 
 def test_set_rate(amm, alice):
-    with brownie.reverts("DFM:A Only controller"):
+    with brownie.reverts():  # controller only, but bytecode size prevents revert string
         amm.set_rate(0, {"from": alice})
 
 
 def test_set_exchange_hook(amm, alice):
-    with brownie.reverts("DFM:A Only controller"):
+    with brownie.reverts():  # controller only, but bytecode size prevents revert string
         amm.set_exchange_hook(ZERO_ADDRESS, {"from": alice})
