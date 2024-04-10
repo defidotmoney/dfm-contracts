@@ -8,7 +8,6 @@
 """
 
 interface Regulator:
-    def stablecoin() -> address: view
     def get_max_provide(pk: address) -> uint256: view
     def get_max_withdraw(pk: address) -> uint256: view
 
@@ -31,7 +30,6 @@ interface ERC20:
 
 interface CoreOwner:
     def owner() -> address: view
-    def stableCoin() -> ERC20: view
     def feeReceiver() -> address: view
 
 

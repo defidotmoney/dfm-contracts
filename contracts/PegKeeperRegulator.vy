@@ -27,11 +27,9 @@ interface PegKeeper:
 
 interface Aggregator:
     def price() -> uint256: view
-    def price_w() -> uint256: nonpayable
 
 interface CoreOwner:
     def owner() -> address: view
-    def stableCoin() -> ERC20: view
     def feeReceiver() -> address: view
 
 

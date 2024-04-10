@@ -23,7 +23,6 @@ interface LLAMMA:
     def set_admin_fee(fee: uint256): nonpayable
     def price_oracle() -> uint256: view
     def can_skip_bands(n_end: int256) -> bool: view
-    def set_price_oracle(price_oracle: PriceOracle): nonpayable
     def admin_fees_x() -> uint256: view
     def admin_fees_y() -> uint256: view
     def reset_admin_fees() -> uint256[2]: nonpayable
@@ -33,26 +32,17 @@ interface LLAMMA:
     def set_liquidity_mining_hook(account: address): nonpayable
 
 interface ERC20:
-    def mint(_to: address, _value: uint256) -> bool: nonpayable
-    def burn(_to: address, _value: uint256) -> bool: nonpayable
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
     def decimals() -> uint256: view
     def approve(_spender: address, _value: uint256) -> bool: nonpayable
     def balanceOf(_from: address) -> uint256: view
 
-interface MonetaryPolicy:
-    def rate_write() -> uint256: nonpayable
-
 interface Controller:
     def STABLECOIN() -> ERC20: view
 
 interface CoreOwner:
     def owner() -> address: view
-
-interface PriceOracle:
-    def price() -> uint256: view
-    def price_w() -> uint256: nonpayable
 
 
 event UserState:

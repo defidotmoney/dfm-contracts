@@ -10,9 +10,6 @@ interface ERC20:
     def burn(_to: address, _value: uint256) -> bool: nonpayable
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
-    def decimals() -> uint256: view
-    def approve(_spender: address, _value: uint256) -> bool: nonpayable
-    def balanceOf(_from: address) -> uint256: view
 
 interface PriceOracle:
     def price() -> uint256: view
@@ -36,10 +33,7 @@ interface MarketOperator:
     def debt(account: address) -> uint256: view
     def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256: view
     def health(account: address, full: bool) -> int256: view
-    def minted() -> uint256: view
-    def redeemed() -> uint256: view
     def collect_fees() -> (uint256, uint256[2]): nonpayable
-    def set_debt_ceiling(ceiling: uint256) -> bool: nonpayable
     def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256) -> uint256: nonpayable
     def adjust_loan(account: address, coll_amount: int256, debt_amount: int256, max_active_band: int256) -> int256: nonpayable
     def close_loan(account: address) -> (int256, uint256, uint256[2]): nonpayable
@@ -54,16 +48,12 @@ interface PegKeeper:
     def set_regulator(regulator: address): nonpayable
 
 interface PegKeeperRegulator:
-    def max_debt() -> uint256: view
-    def owed_debt() -> uint256: view
     def active_debt() -> uint256: view
-    def recall_debt(amount: uint256): nonpayable
     def get_peg_keepers_with_debt_ceilings() -> (DynArray[PegKeeper, 256], DynArray[uint256, 256]): view
     def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, 256], debt_ceilings: DynArray[uint256, 256]): nonpayable
 
 interface CoreOwner:
     def owner() -> address: view
-    def stableCoin() -> ERC20: view
     def feeReceiver() -> address: view
 
 interface ControllerHooks:
