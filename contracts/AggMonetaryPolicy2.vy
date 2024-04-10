@@ -117,7 +117,7 @@ def set_target_debt_fraction(target_debt_fraction: uint256):
 @view
 @internal
 def _assert_only_owner():
-    assert msg.sender == CORE_OWNER.owner(), "AggMonetaryPolicy2: Only owner"
+    assert msg.sender == CORE_OWNER.owner(), "DFM:MP Only owner"
 
 
 @pure

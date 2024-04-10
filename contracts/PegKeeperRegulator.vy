@@ -224,7 +224,7 @@ def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
     @param beneficiary Address to send earned profits to
     @return Amount of profit received by beneficiary
     """
-    assert self.peg_keeper_i[pk] != 0, "Unknown PegKeeper"
+    assert self.peg_keeper_i[pk] != 0, "DFM:R Unknown PegKeeper"
     debt_adjustment: int256 = 0
     caller_profit: uint256 = 0
     (debt_adjustment, caller_profit) = pk.update(beneficiary)
@@ -243,7 +243,7 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     """
     self._assert_only_owner()
     assert self.peg_keeper_i[pk] == empty(uint256)  # dev: duplicate
-    assert pk.debt() == 0, "PKRegulator: keeper has debt"
+    assert pk.debt() == 0, "DFM:R keeper has debt"
 
     info: PegKeeperInfo = PegKeeperInfo({
         peg_keeper: pk,
@@ -304,7 +304,7 @@ def remove_peg_keeper(pk: PegKeeper):
     if debt_ceiling > 0:
         self._recall_debt(pk, debt_ceiling)
 
-    assert pk.debt() == 0, "PKRegulator: keeper has debt"
+    assert pk.debt() == 0, "DFM:R keeper has debt"
 
     max_n: uint256 = len(self.peg_keepers) - 1
     if i < max_n:
@@ -375,8 +375,8 @@ def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_cei
     @notice Add peg keepers and debt ceilings from another PegKeeperRegulator deployment
     @dev Called via `MainController.set_peg_keeper_regulator`
     """
-    assert msg.sender == CONTROLLER, "PegKeeperRegulator: !controller"
-    assert len(self.peg_keepers) == 0, "PegKeeperRegulator: already set"
+    assert msg.sender == CONTROLLER, "DFM:R Only controller"
+    assert len(self.peg_keepers) == 0, "DFM:R Already set"
 
     max_debt: uint256 = 0
     active_debt: uint256 = 0
@@ -410,7 +410,7 @@ def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_cei
 @view
 @internal
 def _assert_only_owner():
-    assert msg.sender == CORE_OWNER.owner(), "PegKeeperRegulator: Only owner"
+    assert msg.sender == CORE_OWNER.owner(), "DFM:R Only owner"
 
 
 @pure

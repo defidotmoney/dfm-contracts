@@ -178,7 +178,7 @@ def set_new_caller_share(_new_caller_share: uint256):
     @notice Set new update caller's part
     @param _new_caller_share Part with SHARE_PRECISION
     """
-    assert msg.sender == CORE_OWNER.owner(), "PegKeeper: Only owner"
+    assert msg.sender == CORE_OWNER.owner(), "DFM:PK Only owner"
     assert _new_caller_share <= SHARE_PRECISION  # dev: bad part value
 
     self.caller_share = _new_caller_share
@@ -194,8 +194,8 @@ def set_regulator(_new_regulator: Regulator):
     @notice Set new peg keeper regulator
     @dev Called during migration to a new regulator
     """
-    assert msg.sender == CONTROLLER, "PegKeeper: Only controller"
-    assert _new_regulator.address != empty(address)  # dev: bad regulator
+    assert msg.sender == CONTROLLER, "DFM:PK Only controller"
+    assert _new_regulator.address != empty(address), "DFM:PK Invalid regulator"
 
     self.regulator = _new_regulator
     log SetNewRegulator(_new_regulator.address)
@@ -223,17 +223,17 @@ def update(_beneficiary: address) -> (int256, uint256):
     debt_adjustment: int256 = 0
     if balance_peg > balance_pegged:
         allowed: uint256 = self.regulator.get_max_provide(self)
-        assert allowed > 0, "Regulator ban"
+        assert allowed > 0, "DFM:PK Regulator ban"
         debt_adjustment = self._provide(min(unsafe_sub(balance_peg, balance_pegged) / 5, allowed))  # this dumps stablecoin
 
     else:
         allowed: uint256 = self.regulator.get_max_withdraw(self)
-        assert allowed > 0, "Regulator ban"
+        assert allowed > 0, "DFM:PK Regulator ban"
         debt_adjustment = self._withdraw(min(unsafe_sub(balance_pegged, balance_peg) / 5, allowed))  # this pumps stablecoin
 
     # Send generated profit
     new_profit: uint256 = self._calc_profit()
-    assert new_profit > initial_profit, "peg unprofitable"
+    assert new_profit > initial_profit, "DFM:PK Peg unprofitable"
     lp_amount: uint256 = new_profit - initial_profit
     caller_profit: uint256 = lp_amount * self.caller_share / SHARE_PRECISION
     if caller_profit > 0:
@@ -270,7 +270,7 @@ def recall_debt(amount: uint256) -> uint256:
 @view
 @internal
 def _assert_only_regulator():
-    assert msg.sender == self.regulator.address, "PegKeeper: Only regulator"
+    assert msg.sender == self.regulator.address, "DFM:PK Only regulator"
 
 
 @pure

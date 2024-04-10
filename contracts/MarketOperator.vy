@@ -399,7 +399,8 @@ def user_prices(account: address) -> uint256[2]:  # Upper, lower
     @param account User address
     @return (upper_price, lower_price)
     """
-    assert AMM.has_liquidity(account)
+    if not AMM.has_liquidity(account):
+        return [0, 0]
     ns: int256[2] = AMM.read_user_tick_numbers(account) # ns[1] > ns[0]
     return [AMM.p_oracle_up(ns[0]), AMM.p_oracle_down(ns[1])]
 
@@ -446,7 +447,7 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
     collateral: int256 = 0
     x_eff: int256 = 0
     debt += debt_amount
-    assert debt > 0, "Non-positive debt"
+    assert debt > 0, "DFM:M Non-positive debt"
 
     active_band: int256 = AMM.active_band_with_skip()
 
@@ -483,7 +484,7 @@ def set_amm_fee(fee: uint256):
     @param fee The fee which should be no higher than MAX_FEE
     """
     self._assert_only_owner()
-    assert fee <= MAX_FEE and fee >= MIN_FEE, "Fee"
+    assert fee <= MAX_FEE and fee >= MIN_FEE, "DFM:M Invalid AMM fee"
     AMM.set_fee(fee)
 
     log SetAmmFee(fee)
@@ -496,7 +497,7 @@ def set_amm_admin_fee(fee: uint256):
     @param fee New admin fee (not higher than MAX_ADMIN_FEE)
     """
     self._assert_only_owner()
-    assert fee <= MAX_ADMIN_FEE, "High fee"
+    assert fee <= MAX_ADMIN_FEE, "DFM:M Fee too high"
     AMM.set_admin_fee(fee)
 
     log SetAmmAdminFee(fee)
@@ -553,9 +554,9 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
     """
     self._assert_only_controller()
 
-    assert self.loan[account].initial_debt == 0, "Loan already created"
-    assert n_bands > MIN_TICKS-1, "Need more ticks"
-    assert n_bands < MAX_TICKS+1, "Need less ticks"
+    assert self.loan[account].initial_debt == 0, "DFM:M Loan already exists"
+    assert n_bands > MIN_TICKS-1, "DFM:M Need more ticks"
+    assert n_bands < MAX_TICKS+1, "DFM:M Need less ticks"
 
     n1: int256 = self._calculate_debt_n1(coll_amount, debt_amount, n_bands)
     n2: int256 = n1 + convert(n_bands - 1, int256)
@@ -586,15 +587,15 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
     account_debt, rate_mul = self._debt(account)
-    assert account_debt > 0, "Loan doesn't exist"
+    assert account_debt > 0, "DFM:M Loan doesn't exist"
     account_debt = self._uint_plus_int(account_debt, debt_change)
-    assert account_debt > 0, "Use close_loan to fully repay"
+    assert account_debt > 0, "DFM:M No remaining debt"
 
     ns: int256[2] = AMM.read_user_tick_numbers(account)
     size: uint256 = convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)
 
     active_band: int256 = AMM.active_band_with_skip()
-    assert active_band <= max_active_band
+    assert active_band <= max_active_band, "DFM:M band > max_active_band"
 
     if ns[0] > active_band:
         # Not in liquidation - can move bands
@@ -609,7 +610,7 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
         self.liquidation_discounts[account] = liquidation_discount
         log UserState(account, coll_amount, account_debt, n1, n2, liquidation_discount)
     else:
-        assert debt_change < 0 and coll_change == 0, "Can only repay when underwater"
+        assert debt_change < 0 and coll_change == 0, "DFM:M Unhealthy loan, repay only"
         # Underwater - cannot move band but can avoid a bad liquidation
         log UserState(account, max_value(uint256), account_debt, ns[0], ns[1], self.liquidation_discounts[account])
 
@@ -631,7 +632,7 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
     account_debt, rate_mul = self._debt(account)
-    assert account_debt > 0, "Loan doesn't exist"
+    assert account_debt > 0, "DFM:M Loan doesn't exist"
 
     xy: uint256[2] = AMM.withdraw(account, 10**18)
 
@@ -663,11 +664,11 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
     debt, rate_mul = self._debt(target)
 
     if health_limit != 0:
-        assert self._health(target, debt, True, health_limit) < 0, "Not enough rekt"
+        assert self._health(target, debt, True, health_limit) < 0, "DFM:M Not enough rekt"
 
     final_debt: uint256 = debt
     debt = unsafe_div(debt * frac, 10**18)
-    assert debt > 0
+    assert debt > 0, "DFM:M No Debt"
     final_debt = unsafe_sub(final_debt, debt)
 
     # Withdraw sender's stablecoin and collateral to our contract
@@ -679,7 +680,7 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
 
     # x increase in same block -> price up -> good
     # x decrease in same block -> price down -> bad
-    assert xy[0] >= min_x, "Slippage"
+    assert xy[0] >= min_x, "DFM:M Slippage"
 
     self.loan[target] = Loan({initial_debt: final_debt, rate_mul: rate_mul})
     if final_debt == 0:
@@ -715,13 +716,13 @@ def collect_fees() -> (uint256, uint256[2]):
 @view
 @internal
 def _assert_only_owner():
-    assert msg.sender == CORE_OWNER.owner(), "MarketOperator: Only owner"
+    assert msg.sender == CORE_OWNER.owner(), "DFM:M Only owner"
 
 
 @view
 @internal
 def _assert_only_controller():
-    assert msg.sender == CONTROLLER, "MarketOperator: Only controller"
+    assert msg.sender == CONTROLLER, "DFM:M Only controller"
 
 
 @pure
@@ -852,7 +853,7 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> 
     @param n_bands Number of bands to deposit into
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
-    assert debt > 0, "No loan"
+    assert debt > 0, "DFM:M No loan"
     n0: int256 = AMM.active_band()
     p_base: uint256 = AMM.p_oracle_up(n0)
 
@@ -873,7 +874,7 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> 
 
     # n1 = floor(log2(y_effective) / self.logAratio)
     # EVM semantics is not doing floor unlike Python, so we do this
-    assert y_effective > 0, "Amount too low"
+    assert y_effective > 0, "DFM:M Amount too low"
     n1: int256 = self.log2(y_effective)
     if n1 < 0:
         n1 -= unsafe_sub(LOG2_A_RATIO, 1)  # This is to deal with vyper's rounding of negative numbers
@@ -881,11 +882,11 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> 
 
     n1 = min(n1, 1024 - convert(n_bands, int256)) + n0
     if n1 <= n0:
-        assert AMM.can_skip_bands(n1 - 1), "Debt too high"
+        assert AMM.can_skip_bands(n1 - 1), "DFM:M Debt too high"
 
     # Let's not rely on active_band corresponding to price_oracle:
     # this will be not correct if we are in the area of empty bands
-    assert AMM.p_oracle_up(n1) < AMM.price_oracle(), "Debt too high"
+    assert AMM.p_oracle_up(n1) < AMM.price_oracle(), "DFM:M Debt too high"
 
     return n1
 
@@ -939,7 +940,7 @@ def _health(account: address, debt: uint256, full: bool, liquidation_discount: u
     @param liquidation_discount Liquidation discount to use (can be 0)
     @return Health: > 0 = good.
     """
-    assert debt > 0, "Loan doesn't exist"
+    assert debt > 0, "DFM:M Loan doesn't exist"
     health: int256 = 10**18 - convert(liquidation_discount, int256)
     health = unsafe_div(convert(AMM.get_x_down(account), int256) * health, convert(debt, int256)) - 10**18
 
@@ -972,7 +973,7 @@ def _increase_total_debt(amount: uint256, rate_mul: uint256) -> uint256:
     total_debt: uint256 = stored_debt * rate_mul / self._total_debt.rate_mul
     if amount > 0:
         total_debt += amount
-        assert total_debt <= self.debt_ceiling, "Exceeds debt ceiling"
+        assert total_debt <= self.debt_ceiling, "DFM:M Exceeds debt ceiling"
 
     self._total_debt = Loan({initial_debt: total_debt, rate_mul: rate_mul})
     return total_debt - stored_debt

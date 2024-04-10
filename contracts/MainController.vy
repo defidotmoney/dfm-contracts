@@ -452,7 +452,7 @@ def create_loan(
     @param n_bands Number of bands to deposit collateral into
                    Can be from market.MIN_TICKS() to market.MAX_TICKS()
     """
-    assert coll_amount > 0 and debt_amount > 0
+    assert coll_amount > 0 and debt_amount > 0, "DFM:C 0 coll or debt"
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_contracts(market)
 
@@ -501,7 +501,7 @@ def adjust_loan(
     @param debt_change Debt adjustment amount. A positive value mints, negative burns.
     @param max_active_band Maximum active band (used to prevent front-running)
     """
-    assert coll_change != 0 or debt_change != 0
+    assert coll_change != 0 or debt_change != 0, "DFM:C No change"
 
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_contracts(market)
@@ -590,7 +590,7 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
     @param min_x Minimal amount of stablecoin to receive (to avoid liquidators being sandwiched)
     @param frac Fraction to liquidate; 100% = 10**18
     """
-    assert frac <= 10**18
+    assert frac <= 10**18, "DFM:C frac too high"
     c: MarketContracts = self._get_contracts(market)
 
     debt_adjustment: int256 = 0
@@ -698,18 +698,18 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
     @return (MarketOperator, AMM)
     """
     self._assert_only_owner()
-    assert A >= MIN_A and A <= MAX_A, "Wrong A"
-    assert fee <= MAX_FEE, "Fee too high"
-    assert fee >= MIN_FEE, "Fee too low"
-    assert admin_fee < MAX_ADMIN_FEE, "Admin fee too high"
-    assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT, "Liquidation discount too low"
-    assert loan_discount <= MAX_LOAN_DISCOUNT, "Loan discount too high"
-    assert loan_discount > liquidation_discount, "need loan_discount>liquidation_discount"
-    assert mp_idx < self.n_monetary_policies, "Invalid monetary policy index"
+    assert A >= MIN_A and A <= MAX_A, "DFM:C Wrong A"
+    assert fee <= MAX_FEE, "DFM:C Fee too high"
+    assert fee >= MIN_FEE, "DFM:C Fee too low"
+    assert admin_fee < MAX_ADMIN_FEE, "DFM:C Admin fee too high"
+    assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT, "DFM:C liq discount too low"
+    assert loan_discount <= MAX_LOAN_DISCOUNT, "DFM:C Loan discount too high"
+    assert loan_discount > liquidation_discount, "DFM:C loan discount<liq discount"
+    assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
 
     p: uint256 = oracle.price()
-    assert p > 0
-    assert oracle.price_w() == p
+    assert p > 0, "DFM:C p == 0"
+    assert oracle.price_w() == p, "DFM:C p != price_w"
 
     market: address = create_from_blueprint(
         self.market_operator_implementation,
@@ -759,8 +759,7 @@ def set_implementations(market: address, amm: address):
     @param amm Address of the AMM blueprint
     """
     self._assert_only_owner()
-    assert market != empty(address)
-    assert amm != empty(address)
+    assert market != empty(address) and amm != empty(address), "DFM:C empty implementation"
     self.market_operator_implementation = market
     self.amm_implementation = amm
     log SetImplementations(amm, market)
@@ -802,7 +801,7 @@ def set_amm_hook(market: address, hook: address):
     amm: address = self._get_contracts(market).amm
     amount: uint256 = AMM(amm).collateral_balance()
     AMM(amm).set_exchange_hook(hook)
-    assert AMM(amm).collateral_balance() == amount
+    assert AMM(amm).collateral_balance() == amount, "DFM:C balance changed"
     self.amm_hooks[amm] = hook
 
     log SetAmmHooks(market, hook)
@@ -829,7 +828,7 @@ def change_existing_monetary_policy(monetary_policy: MonetaryPolicy, mp_idx: uin
     @notice Change the monetary policy at an existing `mp_idx`
     """
     self._assert_only_owner()
-    assert mp_idx < self.n_monetary_policies
+    assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
     self.monetary_policies[mp_idx] = monetary_policy
 
     log ChangeMonetaryPolicy(mp_idx, monetary_policy)
@@ -841,7 +840,7 @@ def change_market_monetary_policy(market: address, mp_idx: uint256):
     @notice Modify the assigned `mp_idx` for the given market
     """
     self._assert_only_owner()
-    assert mp_idx < self.n_monetary_policies
+    assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
     self.market_contracts[market].mp_idx = mp_idx
 
     log ChangeMonetaryPolicyForMarket(market, mp_idx)
@@ -859,7 +858,7 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool
     """
     self._assert_only_owner()
     old: PegKeeperRegulator = self.peg_keeper_regulator
-    assert old != regulator
+    assert old != regulator, "DFM:C regulator unchanged"
 
     if with_migration:
         peg_keepers: DynArray[PegKeeper, 256] = []
@@ -879,20 +878,20 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool
 @view
 @internal
 def _assert_only_owner():
-    assert msg.sender == CORE_OWNER.owner(), "MainController: Only owner"
+    assert msg.sender == CORE_OWNER.owner(), "DFM:C Only owner"
 
 
 @view
 @internal
 def _assert_caller_or_approved_delegate(account: address):
     if msg.sender != account:
-        assert self.isApprovedDelegate[account][msg.sender], "Delegate not approved"
+        assert self.isApprovedDelegate[account][msg.sender], "DFM:C Delegate not approved"
 
 
 @view
 @internal
 def _assert_below_debt_ceiling(total_debt: uint256):
-    assert total_debt <= self.global_market_debt_ceiling, "Exceeds global debt ceiling"
+    assert total_debt <= self.global_market_debt_ceiling, "DFM:C global debt ceiling"
 
 
 @pure
@@ -909,7 +908,7 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
 def _get_contracts(market: address) -> MarketContracts:
     c: MarketContracts = self.market_contracts[market]
 
-    assert c.collateral != empty(address), "Invalid market"
+    assert c.collateral != empty(address), "DFM:C Invalid market"
 
     return c
 
