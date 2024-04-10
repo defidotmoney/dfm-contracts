@@ -223,8 +223,7 @@ def collateral_balance() -> uint256:
     hook: AmmHooks = self.exchange_hook
     if hook == empty(AmmHooks):
         return COLLATERAL_TOKEN.balanceOf(self)
-    else:
-        return hook.collateral_balance()
+    return hook.collateral_balance()
 
 
 @view
@@ -335,7 +334,6 @@ def read_user_tick_numbers(user: address) -> int256[2]:
 
 @view
 @external
-@nonreentrant('lock')
 def can_skip_bands(n_end: int256) -> bool:
     """
     @notice Check that we have no liquidity between active_band and `n_end`
@@ -362,7 +360,6 @@ def can_skip_bands(n_end: int256) -> bool:
 
 @view
 @external
-@nonreentrant('lock')
 def active_band_with_skip() -> int256:
     n0: int256 = self.active_band
     n: int256 = n0
@@ -379,7 +376,6 @@ def active_band_with_skip() -> int256:
 
 @view
 @external
-@nonreentrant('lock')
 def has_liquidity(user: address) -> bool:
     """
     @notice Check if `user` has any liquidity in the AMM
@@ -389,7 +385,6 @@ def has_liquidity(user: address) -> bool:
 
 @view
 @external
-@nonreentrant('lock')
 def get_dy(i: uint256, j: uint256, in_amount: uint256) -> uint256:
     """
     @notice Method to use to calculate out amount
@@ -403,7 +398,6 @@ def get_dy(i: uint256, j: uint256, in_amount: uint256) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def get_dxdy(i: uint256, j: uint256, in_amount: uint256) -> (uint256, uint256):
     """
     @notice Method to use to calculate out amount and spent in amount
@@ -419,7 +413,6 @@ def get_dxdy(i: uint256, j: uint256, in_amount: uint256) -> (uint256, uint256):
 
 @view
 @external
-@nonreentrant('lock')
 def get_dx(i: uint256, j: uint256, out_amount: uint256) -> uint256:
     """
     @notice Method to use to calculate in amount required to receive the desired out_amount
@@ -431,13 +424,12 @@ def get_dx(i: uint256, j: uint256, out_amount: uint256) -> uint256:
     # i = 0: borrowable (USD) in, collateral (ETH) out; going up
     # i = 1: collateral (ETH) in, borrowable (USD) out; going down
     trade: DetailedTrade = self._get_dxdy(i, j, out_amount, False)
-    assert trade.out_amount == out_amount, "DFM:A wrong out_amount"
+    assert trade.out_amount == out_amount
     return trade.in_amount
 
 
 @view
 @external
-@nonreentrant('lock')
 def get_dydx(i: uint256, j: uint256, out_amount: uint256) -> (uint256, uint256):
     """
     @notice Method to use to calculate in amount required and out amount received
@@ -455,7 +447,6 @@ def get_dydx(i: uint256, j: uint256, out_amount: uint256) -> (uint256, uint256):
 
 @view
 @external
-@nonreentrant('lock')
 def get_y_up(user: address) -> uint256:
     """
     @notice Measure the amount of y (collateral) in the band n if we adiabatically trade near p_oracle on the way up
@@ -467,7 +458,6 @@ def get_y_up(user: address) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def get_x_down(user: address) -> uint256:
     """
     @notice Measure the amount of x (stablecoin) if we trade adiabatically down
@@ -479,7 +469,6 @@ def get_x_down(user: address) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def get_sum_xy(user: address) -> uint256[2]:
     """
     @notice A low-gas function to measure amounts of stablecoins and collateral which user currently owns
@@ -492,7 +481,6 @@ def get_sum_xy(user: address) -> uint256[2]:
 
 @view
 @external
-@nonreentrant('lock')
 def get_xy(user: address) -> DynArray[uint256, MAX_TICKS_UINT][2]:
     """
     @notice A low-gas function to measure amounts of stablecoins and collateral by bands which user currently owns
@@ -504,7 +492,6 @@ def get_xy(user: address) -> DynArray[uint256, MAX_TICKS_UINT][2]:
 
 @view
 @external
-@nonreentrant('lock')
 def get_amount_for_price(p: uint256) -> (uint256, bool):
     """
     @notice Amount necessary to be exchanged to have the AMM at the final price `p`
@@ -650,7 +637,8 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
     n0: int256 = self.active_band
 
     # We assume that n1,n2 area already sorted (and they are in Operator)
-    assert n2 < 2**127 and n1 > -2**127, "DFM:A Band out of range"
+    assert n2 < 2**127
+    assert n1 > -2**127
 
     n_bands: uint256 = unsafe_add(convert(unsafe_sub(n2, n1), uint256), 1)
     assert n_bands <= MAX_TICKS_UINT
@@ -702,8 +690,10 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
             # If initial s == 0 - s becomes equal to y which is > 100 => nonzero
             collateral_shares.append(unsafe_div(total_y * 10**18, s))
 
-    self.min_band = min(self.min_band, n1)
-    self.max_band = max(self.max_band, n2)
+    if n1 < self.min_band:
+        self.min_band = n1
+    if n2 > self.max_band:
+        self.max_band = n2
 
     self.save_user_shares(user, user_shares)
 
@@ -853,7 +843,7 @@ def set_rate(rate: uint256) -> uint256:
     @param rate New rate in units of int(fraction * 1e18) per second
     @return rate_mul multiplier (e.g. 1.0 + integral(rate, dt))
     """
-    self._assert_controller()
+    assert msg.sender == CONTROLLER
     rate_mul: uint256 = self._rate_mul()
     self.rate_mul = rate_mul
     self.rate_time = block.timestamp
@@ -864,7 +854,7 @@ def set_rate(rate: uint256) -> uint256:
 
 @external
 def set_exchange_hook(hook: AmmHooks):
-    self._assert_controller()
+    assert msg.sender == CONTROLLER
     old_hook: AmmHooks = self.exchange_hook
     if old_hook != empty(AmmHooks):
         old_hook.on_remove_hook()
@@ -883,12 +873,6 @@ def set_exchange_hook(hook: AmmHooks):
 @internal
 def _assert_market_operator():
     assert msg.sender == MARKET_OPERATOR, "DFM:A Only operator"
-
-
-@view
-@internal
-def _assert_controller():
-    assert msg.sender == CONTROLLER, "DFM:A Only controller"
 
 
 @view
@@ -1344,6 +1328,7 @@ def calc_swap_out(pump: bool, in_amount: uint256, p_o: uint256[2], in_precision:
 
 @view
 @internal
+@nonreentrant('lock')
 def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedTrade:
     """
     @notice Method to use to calculate out amount and spent in amount
@@ -1526,6 +1511,7 @@ def calc_swap_in(pump: bool, out_amount: uint256, p_o: uint256[2], in_precision:
 
 @view
 @internal
+@nonreentrant('lock')
 def get_xy_up(user: address, use_y: bool) -> uint256:
     """
     @notice Measure the amount of y (collateral) in the band n if we adiabatically trade near p_oracle on the way up,
@@ -1661,6 +1647,7 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
 
 @view
 @internal
+@nonreentrant('lock')
 def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]:
     """
     @notice A low-gas function to measure amounts of stablecoins and collateral which user currently owns
@@ -1810,7 +1797,7 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
 
     hook: AmmHooks = self.exchange_hook
     if hook != empty(AmmHooks):
-        if in_coin == COLLATERAL_TOKEN:
+        if j == 0:
             hook.after_collateral_in(in_amount_done)
         else:
             hook.before_collateral_out(out_amount_done)
