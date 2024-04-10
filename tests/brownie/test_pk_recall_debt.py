@@ -107,7 +107,7 @@ def test_cannot_remove_with_owed_debt(swap, regulator, pk, peg_keepers, alice, d
 
     regulator.update(pk, {"from": alice})
 
-    with brownie.reverts("PKRegulator: keeper has debt"):
+    with brownie.reverts("DFM:R keeper has debt"):
         regulator.remove_peg_keeper(pk, {"from": deployer})
 
     # we CAN remove a different peg keeper without debt

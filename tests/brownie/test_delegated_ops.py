@@ -93,7 +93,7 @@ def test_repay_partial(market, amm, collateral, stable, controller, alice, bob):
 
 
 def test_not_delegated(market, controller, alice, bob):
-    with brownie.reverts("Delegate not approved"):
+    with brownie.reverts("DFM:C Delegate not approved"):
         controller.create_loan(alice, market, 50 * 10**18, 1000 * 10**18, 5, {"from": bob})
 
 
@@ -104,5 +104,5 @@ def test_set_delegate_approval(market, controller, alice, bob):
 
     assert not controller.isApprovedDelegate(bob, alice)
 
-    with brownie.reverts("Delegate not approved"):
+    with brownie.reverts("DFM:C Delegate not approved"):
         controller.create_loan(bob, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})

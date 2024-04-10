@@ -62,12 +62,12 @@ def test_migrate_pk_regulator(
     for pk in peg_keepers:
         assert pk.regulator() == regulator2
 
-    with brownie.reverts("PegKeeper: Only regulator"):
+    with brownie.reverts("DFM:PK Only regulator"):
         regulator.adjust_peg_keeper_debt_ceiling(
             peg_keepers[1], MAX_PK_DEBT * 2, {"from": deployer}
         )
 
-    with brownie.reverts("PegKeeper: Only regulator"):
+    with brownie.reverts("DFM:PK Only regulator"):
         regulator.adjust_peg_keeper_debt_ceiling(peg_keepers[1], 12345, {"from": deployer})
 
     regulator2.adjust_peg_keeper_debt_ceiling(peg_keepers[1], MAX_PK_DEBT * 2, {"from": deployer})

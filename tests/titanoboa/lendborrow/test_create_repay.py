@@ -20,18 +20,18 @@ def test_create_loan(
                 controller.create_loan(user, market, c_amount, l_amount, 5)
 
             l_amount = 5 * 10**5 * 10**18
-            with boa.reverts("Need more ticks"):
+            with boa.reverts("DFM:M Need more ticks"):
                 controller.create_loan(user, market, c_amount, l_amount, 3)
-            with boa.reverts("Need less ticks"):
+            with boa.reverts("DFM:M Need less ticks"):
                 controller.create_loan(user, market, c_amount, l_amount, 400)
 
-            with boa.reverts("Debt too high"):
+            with boa.reverts("DFM:M Debt too high"):
                 controller.create_loan(user, market, c_amount // 100, l_amount, 5)
 
             # Phew, the loan finally was created
             controller.create_loan(user, market, c_amount, l_amount, 5)
             # But cannot do it again
-            with boa.reverts("Loan already created"):
+            with boa.reverts("DFM:M Loan already exists"):
                 controller.create_loan(user, market, c_amount, 1, 5)
 
             assert stablecoin.balanceOf(user) == l_amount
@@ -58,7 +58,7 @@ def test_create_loan(
 )
 def test_max_borrowable(market, accounts, collateral_amount, n):
     max_borrowable = market.max_borrowable(collateral_amount, n)
-    with boa.reverts("Debt too high"):
+    with boa.reverts("DFM:M Debt too high"):
         market.calculate_debt_n1(collateral_amount, int(max_borrowable * 1.001), n)
     market.calculate_debt_n1(collateral_amount, max_borrowable, n)
 

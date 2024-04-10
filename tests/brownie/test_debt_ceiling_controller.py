@@ -47,19 +47,19 @@ def test_initial_max_borrowable(market, market2, market3, controller):
 
 
 def test_exceed_ceiling_create_loan(market, controller, alice):
-    with brownie.reverts("Exceeds global debt ceiling"):
+    with brownie.reverts("DFM:C global debt ceiling"):
         controller.create_loan(alice, market, COLL_AMOUNT, REMAINING_DEBT + 1, 5, {"from": alice})
 
-    with brownie.reverts("Exceeds global debt ceiling"):
+    with brownie.reverts("DFM:C global debt ceiling"):
         controller.create_loan(alice, market, COLL_AMOUNT, MARKET_CEILING, 5, {"from": alice})
 
-    with brownie.reverts("Exceeds debt ceiling"):
+    with brownie.reverts("DFM:M Exceeds debt ceiling"):
         controller.create_loan(alice, market, COLL_AMOUNT, MARKET_CEILING + 1, 5, {"from": alice})
 
 
 def test_exceed_ceiling_adjust_loan(market, controller, alice):
     controller.create_loan(alice, market, COLL_AMOUNT, REMAINING_DEBT // 2, 5, {"from": alice})
-    with brownie.reverts("Exceeds global debt ceiling"):
+    with brownie.reverts("DFM:C global debt ceiling"):
         controller.adjust_loan(alice, market, 0, REMAINING_DEBT // 2 + 1, {"from": alice})
 
 

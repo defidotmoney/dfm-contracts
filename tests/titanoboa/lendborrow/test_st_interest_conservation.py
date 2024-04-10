@@ -43,7 +43,7 @@ class StatefulLendBorrow(RuleBasedStateMachine):
                 return
 
             if self.market.loan_exists(user):
-                with boa.reverts("Loan already created"):
+                with boa.reverts("DFM:M Loan already exists"):
                     self.controller.create_loan(user, self.market, c_amount, amount, n)
                 return
 
@@ -53,7 +53,7 @@ class StatefulLendBorrow(RuleBasedStateMachine):
             except Exception as e:
                 too_high = "Debt too high" in str(e)
             if too_high:
-                with boa.reverts("Debt too high"):
+                with boa.reverts("DFM:M Debt too high"):
                     self.controller.create_loan(user, self.market, c_amount, amount, n)
                 return
 
@@ -105,7 +105,7 @@ class StatefulLendBorrow(RuleBasedStateMachine):
                 return
 
             if not self.market.loan_exists(user):
-                with boa.reverts("Loan doesn't exist"):
+                with boa.reverts("DFM:M Loan doesn't exist"):
                     self.controller.close_loan(user, self.market)
                 return
 
@@ -139,7 +139,7 @@ class StatefulLendBorrow(RuleBasedStateMachine):
                 return
 
             if not self.market.loan_exists(user):
-                with boa.reverts("Loan doesn't exist"):
+                with boa.reverts("DFM:M Loan doesn't exist"):
                     self.controller.adjust_loan(user, self.market, c_amount, 0)
                 return
 
@@ -168,7 +168,7 @@ class StatefulLendBorrow(RuleBasedStateMachine):
                 return  # Probably overflow
 
             if not self.market.loan_exists(user):
-                with boa.reverts("Loan doesn't exist"):
+                with boa.reverts("DFM:M Loan doesn't exist"):
                     self.controller.adjust_loan(user, self.market, c_amount, amount)
                 return
 
@@ -185,7 +185,7 @@ class StatefulLendBorrow(RuleBasedStateMachine):
             except Exception as e:
                 too_high = "Debt too high" in str(e)
             if too_high:
-                with boa.reverts("Debt too high"):
+                with boa.reverts("DFM:M Debt too high"):
                     self.controller.adjust_loan(user, self.market, c_amount, amount)
                 return
 

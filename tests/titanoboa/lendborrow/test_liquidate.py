@@ -91,7 +91,7 @@ def test_liquidate(
         stablecoin.transfer(fee_receiver, 10**10)
 
     with boa.env.prank(fee_receiver):
-        with boa.reverts("Slippage"):
+        with boa.reverts("DFM:M Slippage"):
             controller.liquidate(market.address, user, x + 1)
         controller.liquidate(market.address, user, int(x * 0.999999))
 
@@ -112,11 +112,11 @@ def test_self_liquidate(
             stablecoin.transfer(user, stablecoin.balanceOf(fee_receiver))
 
         with boa.env.prank(accounts[1]):
-            with boa.reverts("Not enough rekt"):
+            with boa.reverts("DFM:M Not enough rekt"):
                 controller.liquidate(market.address, user, 0)
 
         with boa.env.prank(user):
-            with boa.reverts("Slippage"):
+            with boa.reverts("DFM:M Slippage"):
                 controller.liquidate(market.address, user, x + 1)
 
             controller.liquidate(market.address, user, int(x * 0.999999))

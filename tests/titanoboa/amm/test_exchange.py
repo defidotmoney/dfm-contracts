@@ -5,9 +5,11 @@ from hypothesis import strategies as st
 
 
 @given(
-        amounts=st.lists(st.integers(min_value=10**16, max_value=10**6 * 10**18), min_size=5, max_size=5),
-        ns=st.lists(st.integers(min_value=1, max_value=20), min_size=5, max_size=5),
-        dns=st.lists(st.integers(min_value=0, max_value=20), min_size=5, max_size=5),
+    amounts=st.lists(
+        st.integers(min_value=10**16, max_value=10**6 * 10**18), min_size=5, max_size=5
+    ),
+    ns=st.lists(st.integers(min_value=1, max_value=20), min_size=5, max_size=5),
+    dns=st.lists(st.integers(min_value=0, max_value=20), min_size=5, max_size=5),
 )
 def test_dxdy_limits(amm, amounts, accounts, ns, dns, collateral_token, admin):
     with boa.env.prank(admin):
@@ -25,35 +27,38 @@ def test_dxdy_limits(amm, amounts, accounts, ns, dns, collateral_token, admin):
     # Small swap
     dx, dy = amm.get_dxdy(0, 1, 10**2)  # $0.0001
     assert dx == 10**2
-    assert approx(dy, dx * 10**(18 - 6) / 3000, 4e-2 + 2 * min(ns) / amm.A())
+    assert approx(dy, dx * 10 ** (18 - 6) / 3000, 4e-2 + 2 * min(ns) / amm.A())
     dx, dy = amm.get_dxdy(1, 0, 10**16)  # No liquidity
     assert dx == 0
     assert dy == 0  # Rounded down
 
     # Huge swap
     dx, dy = amm.get_dxdy(0, 1, 10**12 * 10**6)
-    assert dx < 10**12 * 10**6               # Less than all is spent
-    assert abs(dy - sum(amounts)) <= 1000    # but everything is bought
+    assert dx < 10**12 * 10**6  # Less than all is spent
+    assert abs(dy - sum(amounts)) <= 1000  # but everything is bought
     dx, dy = amm.get_dxdy(1, 0, 10**12 * 10**18)
     assert dx == 0
     assert dy == 0  # Rounded down
 
 
 @given(
-        amounts=st.lists(st.integers(min_value=10**16, max_value=10**6 * 10**18), min_size=5, max_size=5),
-        ns=st.lists(st.integers(min_value=1, max_value=20), min_size=5, max_size=5),
-        dns=st.lists(st.integers(min_value=0, max_value=20), min_size=5, max_size=5),
-        amount=st.integers(min_value=0, max_value=10**9 * 10**6)
+    amounts=st.lists(
+        st.integers(min_value=10**16, max_value=10**6 * 10**18), min_size=5, max_size=5
+    ),
+    ns=st.lists(st.integers(min_value=1, max_value=20), min_size=5, max_size=5),
+    dns=st.lists(st.integers(min_value=0, max_value=20), min_size=5, max_size=5),
+    amount=st.integers(min_value=0, max_value=10**9 * 10**6),
 )
-def test_exchange_down_up(amm, amounts, accounts, ns, dns, amount,
-                          borrowed_token, collateral_token, admin):
+def test_exchange_down_up(
+    amm, amounts, accounts, ns, dns, amount, borrowed_token, collateral_token, admin
+):
     u = accounts[6]
 
     with boa.env.prank(admin):
         for user, amount, n1, dn in zip(accounts[1:6], amounts, ns, dns):
             n2 = n1 + dn
             if amount // (dn + 1) <= 100:
-                with boa.reverts("Amount too low"):
+                with boa.reverts("DFM:A Amount too low"):
                     amm.deposit_range(user, amount, n1, n2)
             else:
                 amm.deposit_range(user, amount, n1, n2)
@@ -72,7 +77,7 @@ def test_exchange_down_up(amm, amounts, accounts, ns, dns, amount,
 
     sum_borrowed = sum(amm.bands_x(i) for i in range(50))
     sum_collateral = sum(amm.bands_y(i) for i in range(50))
-    assert abs(borrowed_token.balanceOf(amm) - sum_borrowed // 10**(18 - 6)) <= 1
+    assert abs(borrowed_token.balanceOf(amm) - sum_borrowed // 10 ** (18 - 6)) <= 1
     assert abs(collateral_token.balanceOf(amm) - sum_collateral) <= 1
 
     in_amount = int(dy2 / 0.98)  # two trades charge 1% twice

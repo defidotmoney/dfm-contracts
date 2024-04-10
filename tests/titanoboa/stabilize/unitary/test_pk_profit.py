@@ -167,7 +167,7 @@ def test_unprofitable_peg(
                 swap.apply_new_fee()
 
             boa.env.time_travel(15 * 60)
-            with boa.reverts("peg unprofitable"):  # dev: peg was unprofitable
+            with boa.reverts("DFM:PK Peg unprofitable"):  # dev: peg was unprofitable
                 with boa.env.prank(alice):
                     pk_regulator.update(peg_keeper)
 

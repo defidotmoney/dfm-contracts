@@ -56,6 +56,6 @@ def test_almost_balanced(
             amounts = [diff if diff > 0 else 0, -diff if diff < 0 else 0]
             amounts[0] += 10
             swap.add_liquidity(amounts, 0)
-        with boa.reverts("peg unprofitable"):  # dev: peg was unprofitable
+        with boa.reverts("DFM:PK Peg unprofitable"):  # dev: peg was unprofitable
             with boa.env.prank(peg_keeper_updater):
                 pk_regulator.update(peg_keeper)
