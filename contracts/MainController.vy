@@ -19,7 +19,7 @@ interface PriceOracle:
     def price_w() -> uint256: nonpayable
 
 interface AMM:
-    def set_exchange_hook(hook: address) -> bool: nonpayable
+    def set_exchange_hook(hook: address): nonpayable
     def set_rate(rate: uint256) -> uint256: nonpayable
     def collateral_balance() -> uint256: view
     def price_oracle() -> uint256: view

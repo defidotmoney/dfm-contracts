@@ -208,7 +208,7 @@ def __init__(
     MAX_ORACLE_DN_POW = pow
 
     for token in _tokens:
-        token.approve(controller, max_value(uint256), default_return_value=True)
+        self._approve_token(token, controller, max_value(uint256))
 
 
 # --- external view functions ---
@@ -431,7 +431,7 @@ def get_dx(i: uint256, j: uint256, out_amount: uint256) -> uint256:
     # i = 0: borrowable (USD) in, collateral (ETH) out; going up
     # i = 1: collateral (ETH) in, borrowable (USD) out; going down
     trade: DetailedTrade = self._get_dxdy(i, j, out_amount, False)
-    assert trade.out_amount == out_amount
+    assert trade.out_amount == out_amount, "DFM:A wrong out_amount"
     return trade.in_amount
 
 
@@ -650,14 +650,14 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
     n0: int256 = self.active_band
 
     # We assume that n1,n2 area already sorted (and they are in Operator)
-    assert n2 < 2**127
-    assert n1 > -2**127
+    assert n2 < 2**127 and n1 > -2**127, "DFM:A Band out of range"
 
     n_bands: uint256 = unsafe_add(convert(unsafe_sub(n2, n1), uint256), 1)
     assert n_bands <= MAX_TICKS_UINT
 
     y_per_band: uint256 = unsafe_div(amount * COLLATERAL_PRECISION, n_bands)
-    assert y_per_band > 100, "Amount too low"
+    if y_per_band <= 100:
+        self._raise_amount_too_low()
 
     assert self.user_shares[user].ticks[0] == 0  # dev: User must have no liquidity
     self.user_shares[user].ns = unsafe_add(n1, unsafe_mul(n2, 2**128))
@@ -670,7 +670,7 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
             if i != 0:
                 self.active_band = n0
             break
-        assert self.bands_x[n0] == 0 and i < MAX_SKIP_TICKS, "Deposit below current band"
+        assert self.bands_x[n0] == 0 and i < MAX_SKIP_TICKS, "DFM:A Deposit below current band"
         n0 -= 1
 
     for i in range(MAX_TICKS):
@@ -678,7 +678,7 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
         if band > n2:
             break
 
-        assert self.bands_x[band] == 0, "Band not empty"
+        assert self.bands_x[band] == 0, "DFM:A Band not empty"
         y: uint256 = y_per_band
         if i == 0:
             y = amount * COLLATERAL_PRECISION - y * unsafe_sub(n_bands, 1)
@@ -688,7 +688,8 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
         # Total / user share
         s: uint256 = self.total_shares[band]
         ds: uint256 = unsafe_div((s + DEAD_SHARES) * y, total_y + 1)
-        assert ds > 0, "Amount too low"
+        if ds == 0:
+            self._raise_amount_too_low()
         user_shares.append(ds)
         s += ds
         assert s <= 2**128 - 1
@@ -728,7 +729,7 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
     ns: int256[2] = self._read_user_tick_numbers(user)
     n: int256 = ns[0]
     user_shares: DynArray[uint256, MAX_TICKS_UINT] = self._read_user_ticks(user, ns)
-    assert user_shares[0] > 0, "No deposits"
+    assert user_shares[0] > 0, "DFM:A No deposits"
 
     total_x: uint256 = 0
     total_y: uint256 = 0
@@ -852,7 +853,7 @@ def set_rate(rate: uint256) -> uint256:
     @param rate New rate in units of int(fraction * 1e18) per second
     @return rate_mul multiplier (e.g. 1.0 + integral(rate, dt))
     """
-    assert msg.sender == CONTROLLER
+    self._assert_controller()
     rate_mul: uint256 = self._rate_mul()
     self.rate_mul = rate_mul
     self.rate_time = block.timestamp
@@ -862,20 +863,18 @@ def set_rate(rate: uint256) -> uint256:
 
 
 @external
-def set_exchange_hook(hook: AmmHooks) -> bool:
-    assert msg.sender == CONTROLLER
+def set_exchange_hook(hook: AmmHooks):
+    self._assert_controller()
     old_hook: AmmHooks = self.exchange_hook
     if old_hook != empty(AmmHooks):
         old_hook.on_remove_hook()
-        assert COLLATERAL_TOKEN.approve(old_hook.address, 0, default_return_value=True)
+        self._approve_token(COLLATERAL_TOKEN, old_hook.address, 0)
 
     if hook != empty(AmmHooks):
-        assert COLLATERAL_TOKEN.approve(hook.address, max_value(uint256), default_return_value=True)
+        self._approve_token(COLLATERAL_TOKEN, hook.address, max_value(uint256))
         hook.on_add_hook(MARKET_OPERATOR, self)
 
     self.exchange_hook = hook
-
-    return True
 
 
 # --- internal functions ---
@@ -883,7 +882,31 @@ def set_exchange_hook(hook: AmmHooks) -> bool:
 @view
 @internal
 def _assert_market_operator():
-    assert msg.sender == MARKET_OPERATOR, "AMM: Only operator"
+    assert msg.sender == MARKET_OPERATOR, "DFM:A Only operator"
+
+
+@view
+@internal
+def _assert_controller():
+    assert msg.sender == CONTROLLER, "DFM:A Only controller"
+
+
+@view
+@internal
+def _assert_valid_index(i: uint256, j: uint256):
+    assert i + j == 1, "DFM:A Wrong index"
+
+
+@view
+@internal
+def _raise_slippage():
+    raise "DFM:A Slippage"
+
+
+@view
+@internal
+def _raise_amount_too_low():
+    raise "DFM:A Amount too low"
 
 
 @pure
@@ -1073,8 +1096,8 @@ def _get_y0(x: uint256, y: uint256, p_o: uint256, p_o_up: uint256) -> uint256:
     if x > 0 and y > 0:
         D: uint256 = b**2 + unsafe_div((unsafe_mul(4, A) * p_o) * y, 10**18) * x
         return unsafe_div((b + self.sqrt_int(D)) * 10**18, unsafe_mul(unsafe_mul(2, A), p_o))
-    else:
-        return unsafe_div(b * 10**18, unsafe_mul(A, p_o))
+
+    return unsafe_div(b * 10**18, unsafe_mul(A, p_o))
 
 
 @view
@@ -1313,22 +1336,21 @@ def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedT
     """
     # i = 0: borrowable (USD) in, collateral (ETH) out; going up
     # i = 1: collateral (ETH) in, borrowable (USD) out; going down
-    assert i + j == 1, "Wrong index"
+    self._assert_valid_index(i, j)
     out: DetailedTrade = empty(DetailedTrade)
-    if amount == 0:
-        return out
-    in_precision: uint256 = COLLATERAL_PRECISION
-    out_precision: uint256 = BORROWED_PRECISION
-    if i == 0:
-        in_precision = BORROWED_PRECISION
-        out_precision = COLLATERAL_PRECISION
-    p_o: uint256[2] = self._price_oracle_ro()
-    if is_in:
-        out = self.calc_swap_out(i == 0, amount * in_precision, p_o, in_precision, out_precision)
-    else:
-        out = self.calc_swap_in(i == 0, amount * out_precision, p_o, in_precision, out_precision)
-    out.in_amount = unsafe_div(out.in_amount, in_precision)
-    out.out_amount = unsafe_div(out.out_amount, out_precision)
+    if amount != 0:
+        in_precision: uint256 = COLLATERAL_PRECISION
+        out_precision: uint256 = BORROWED_PRECISION
+        if i == 0:
+            in_precision = BORROWED_PRECISION
+            out_precision = COLLATERAL_PRECISION
+        p_o: uint256[2] = self._price_oracle_ro()
+        if is_in:
+            out = self.calc_swap_out(i == 0, amount * in_precision, p_o, in_precision, out_precision)
+        else:
+            out = self.calc_swap_in(i == 0, amount * out_precision, p_o, in_precision, out_precision)
+        out.in_amount = unsafe_div(out.in_amount, in_precision)
+        out.out_amount = unsafe_div(out.out_amount, out_precision)
     return out
 
 
@@ -1610,8 +1632,8 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
 
     if use_y:
         return unsafe_div(XY, COLLATERAL_PRECISION)
-    else:
-        return unsafe_div(XY, BORROWED_PRECISION)
+
+    return unsafe_div(XY, BORROWED_PRECISION)
 
 
 @view
@@ -1654,6 +1676,11 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
 
 
 @internal
+def _approve_token(token: ERC20, spender: address, amount: uint256):
+    assert token.approve(spender, amount, default_return_value=True)
+
+
+@internal
 def save_user_shares(user: address, user_shares: DynArray[uint256, MAX_TICKS_UINT]):
     ptr: uint256 = 0
     for j in range(MAX_TICKS_UINT / 2):
@@ -1680,7 +1707,7 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
     @param use_in_amount Whether input or output amount is specified
     @return Amount of coins given in and out
     """
-    assert (i == 0 and j == 1) or (i == 1 and j == 0), "Wrong index"
+    self._assert_valid_index(i, j)
     p_o: uint256[2] = self._price_oracle_w()  # Let's update the oracle even if we exchange 0
     if amount == 0:
         return empty(uint256[2])
@@ -1709,9 +1736,11 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
     in_amount_done: uint256 = unsafe_div(out.in_amount, in_precision)
     out_amount_done: uint256 = unsafe_div(out.out_amount, out_precision)
     if use_in_amount:
-        assert out_amount_done >= minmax_amount, "Slippage"
+        if out_amount_done < minmax_amount:
+            self._raise_slippage()
     else:
-        assert in_amount_done <= minmax_amount and (out_amount_done == amount or amount == max_value(uint256)), "Slippage"
+        if in_amount_done > minmax_amount or (out_amount_done != amount and amount != max_value(uint256)):
+            self._raise_slippage()
     if out_amount_done == 0 or in_amount_done == 0:
         return empty(uint256[2])
 
