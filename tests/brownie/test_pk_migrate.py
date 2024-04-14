@@ -74,3 +74,14 @@ def test_migrate_pk_regulator(
     assert stable.balanceOf(peg_keepers[1]) == MAX_PK_DEBT * 2
     regulator2.adjust_peg_keeper_debt_ceiling(peg_keepers[1], 12345, {"from": deployer})
     assert stable.balanceOf(peg_keepers[1]) == 12345
+
+
+def test_migrate_pk_unchanged(controller, regulator, deployer):
+    with brownie.reverts("DFM:C regulator unchanged"):
+        controller.set_peg_keeper_regulator(regulator, True, {"from": deployer})
+
+
+def test_migrate_already_set(regulator, regulator2, deployer, controller):
+    controller.set_peg_keeper_regulator(regulator2, True, {"from": deployer})
+    with brownie.reverts("DFM:R Already set"):
+        controller.set_peg_keeper_regulator(regulator, True, {"from": deployer})

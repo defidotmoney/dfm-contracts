@@ -127,17 +127,22 @@ def pk(peg_keepers):
 
 @pytest.fixture(scope="module")
 def collateral():
-    return ERC20()
+    return ERC20(success=True, fail="revert")
 
 
 @pytest.fixture(scope="module")
 def collateral2():
-    return ERC20()
+    return ERC20(success=None, fail="revert")
 
 
 @pytest.fixture(scope="module")
 def collateral3():
-    return ERC20()
+    return ERC20(success=True, fail=False)
+
+
+@pytest.fixture(scope="module")
+def collateral_list(collateral, collateral2, collateral3):
+    return [collateral, collateral2, collateral3]
 
 
 @pytest.fixture(scope="module")
@@ -176,6 +181,11 @@ def market3(_deploy_market, collateral3):
 
 
 @pytest.fixture(scope="module")
+def market_list(market, market2, market3):
+    return [market, market2, market3]
+
+
+@pytest.fixture(scope="module")
 def amm(AMM, controller, market):
     return AMM.at(controller.market_contracts(market)["amm"])
 
@@ -191,10 +201,15 @@ def amm3(AMM, controller, market3):
 
 
 @pytest.fixture(scope="module")
+def amm_list(amm, amm2, amm3):
+    return [amm, amm2, amm3]
+
+
+@pytest.fixture(scope="module")
 def hooks(ControllerHookTester, deployer):
     return ControllerHookTester.deploy({"from": deployer})
 
 
 @pytest.fixture(scope="module")
-def amm_hook(AmmHookTester, collateral, amm, deployer):
-    return AmmHookTester.deploy(collateral, amm, {"from": deployer})
+def amm_hook(AmmHookTester, controller, collateral, amm, deployer):
+    return AmmHookTester.deploy(controller, collateral, amm, {"from": deployer})

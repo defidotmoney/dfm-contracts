@@ -11,33 +11,20 @@ COLL_AMOUNT = 50 * 10**18
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup(
-    stable,
-    market,
-    market2,
-    market3,
-    collateral,
-    collateral2,
-    collateral3,
-    controller,
-    alice,
-    bob,
-    deployer,
-):
-
-    for acct, coll in itertools.product([alice, bob], [collateral, collateral2, collateral3]):
+def setup(stable, market_list, collateral_list, controller, alice, bob, deployer):
+    for acct, coll in itertools.product([alice, bob], collateral_list):
         coll._mint_for_testing(acct, 100 * 10**18)
         coll.approve(controller, 2**256 - 1, {"from": acct})
 
     # hacky but doesn't affect tests - alice needs extra stable for interest when closing loans
     stable.mint(alice, MARKET_CEILING, {"from": controller})
 
-    for mkt in [market, market2, market3]:
+    for mkt in market_list:
         mkt.set_debt_ceiling(MARKET_CEILING, {"from": deployer})
 
     controller.set_global_market_debt_ceiling(GLOBAL_CEILING, {"from": deployer})
 
-    controller.create_loan(alice, market3, COLL_AMOUNT, INITIAL_DEBT, 5, {"from": alice})
+    controller.create_loan(alice, market_list[2], COLL_AMOUNT, INITIAL_DEBT, 5, {"from": alice})
 
 
 def test_initial_max_borrowable(market, market2, market3, controller):
@@ -101,7 +88,7 @@ def test_adjust_loan_reduce_debt_ceiling_not_applied(market, market3, controller
     assert controller.max_borrowable(market, COLL_AMOUNT, 5) == 0
 
 
-def test_close_loan_ceiling_not_applied(market, market2, market3, controller, policy, alice, bob):
+def test_close_loan_ceiling_not_applied(market, market2, market3, controller, policy, alice):
     controller.create_loan(alice, market, COLL_AMOUNT, REMAINING_DEBT * 0.9, 5, {"from": alice})
     controller.create_loan(alice, market2, COLL_AMOUNT, REMAINING_DEBT * 0.1, 5, {"from": alice})
     policy.set_rate(1e18 / 365 / 86400, {"from": alice})
