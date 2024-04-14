@@ -502,9 +502,9 @@ def set_borrowing_discounts(loan_discount: uint256, liquidation_discount: uint25
     @param liquidation_discount Discount where bad liquidation starts
     """
     self._assert_only_owner()
-    assert loan_discount > liquidation_discount
-    assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT
-    assert loan_discount <= MAX_LOAN_DISCOUNT
+    assert loan_discount > liquidation_discount, "DFM:M loan discount<liq discount"
+    assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT, "DFM:M liq discount too low"
+    assert loan_discount <= MAX_LOAN_DISCOUNT, "DFM:M Loan discount too high"
     self.liquidation_discount = liquidation_discount
     self.loan_discount = loan_discount
     log SetBorrowingDiscounts(loan_discount, liquidation_discount)
