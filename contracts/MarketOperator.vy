@@ -105,7 +105,7 @@ MAX_P_BASE_BANDS: constant(int256) = 5
 MAX_RATE: constant(uint256) = 43959106799  # 300% APY
 MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
 MIN_FEE: constant(uint256) = 10**6  # 1e-12, still needs to be above 0
-MAX_FEE: immutable(uint256)  # MIN_TICKS / A: for example, 4% max fee for A=100
+MAX_FEE: public(immutable(uint256))  # MIN_TICKS / A: for example, 4% max fee for A=100
 DEAD_SHARES: constant(uint256) = 1000
 
 loan: HashMap[address, Loan]
