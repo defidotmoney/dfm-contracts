@@ -198,6 +198,7 @@ market_operator_implementation: public(address)
 amm_implementation: public(address)
 peg_keeper_regulator: public(PegKeeperRegulator)
 
+markets: public(DynArray[MarketOperator, 65536])
 collateral_markets: HashMap[address, DynArray[address, 256]]
 market_contracts: public(HashMap[address, MarketContracts])
 monetary_policies: public(MonetaryPolicy[256])
@@ -247,6 +248,18 @@ def __init__(
 @external
 def owner() -> address:
     return CORE_OWNER.owner()
+
+
+@view
+@external
+def get_market_count() -> uint256:
+    return len(self.markets)
+
+
+@view
+@external
+def get_all_markets() -> DynArray[MarketOperator, 65536]:
+    return self.markets
 
 
 @view
@@ -751,6 +764,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
     # `AMM` is deployed in constructor of `MarketOperator`
     amm: address = MarketOperator(market).AMM()
 
+    self.markets.append(MarketOperator(market))
     self.collateral_markets[token].append(market)
     self.market_contracts[market] = MarketContracts({collateral: token, amm: amm, mp_idx: mp_idx})
 
