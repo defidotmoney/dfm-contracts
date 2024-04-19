@@ -164,6 +164,7 @@ struct MarketState:
     pending_rate: uint256
 
 struct AccountState:
+    market: MarketOperator
     account_debt: uint256
     amm_coll_balance: uint256
     amm_stable_balance: uint256
@@ -279,9 +280,9 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
 
 @view
 @external
-def get_market_state(market: MarketOperator) -> MarketState:
+def get_market_states(markets: DynArray[MarketOperator, 255]) -> DynArray[MarketState, 255]:
     """
-    @notice Get information about the state of `market`
+    @notice Get information about the state of one or more markets
     @dev To calculate annualized interest rate: (1 + rate/1e18)**31536000 - 1
     @return Total debt,
             Total deposited collateral,
@@ -291,52 +292,68 @@ def get_market_state(market: MarketOperator) -> MarketState:
             Current interest rate per second,
             Pending interest rate (applied on the next interaction)
     """
-    state: MarketState = empty(MarketState)
-    c: MarketContracts = self.market_contracts[market.address]
+    market_states: DynArray[MarketState, 255] = []
 
-    if c.collateral != empty(address):
-        state.total_debt = market.total_debt()
-        state.total_coll = AMM(c.amm).collateral_balance()
-        state.debt_ceiling = market.debt_ceiling()
+    for market in markets:
+        state: MarketState = empty(MarketState)
+        c: MarketContracts = self.market_contracts[market.address]
 
-        if state.debt_ceiling > state.total_debt:
-            global_ceiling: uint256 = self.global_market_debt_ceiling
-            global_debt: uint256 = self.total_debt
-            if global_ceiling > global_debt:
-                state.remaining_mintable = min(state.debt_ceiling - state.total_debt, global_ceiling - global_debt)
+        if c.collateral != empty(address):
+            state.total_debt = market.total_debt()
+            state.total_coll = AMM(c.amm).collateral_balance()
+            state.debt_ceiling = market.debt_ceiling()
 
-        state.oracle_price = AMM(c.amm).price_oracle()
-        state.current_rate = AMM(c.amm).rate()
-        state.pending_rate = self.monetary_policies[c.mp_idx].rate(market)
+            if state.debt_ceiling > state.total_debt:
+                global_ceiling: uint256 = self.global_market_debt_ceiling
+                global_debt: uint256 = self.total_debt
+                if global_ceiling > global_debt:
+                    state.remaining_mintable = min(state.debt_ceiling - state.total_debt, global_ceiling - global_debt)
 
-    return state
+            state.oracle_price = AMM(c.amm).price_oracle()
+            state.current_rate = AMM(c.amm).rate()
+            state.pending_rate = self.monetary_policies[c.mp_idx].rate(market)
+
+        market_states.append(state)
+
+    return market_states
 
 
 @view
 @external
-def get_market_state_for_account(market: MarketOperator, account: address) -> AccountState:
+def get_market_states_for_account(
+    account: address,
+    markets: DynArray[MarketOperator, 255]
+) -> DynArray[AccountState, 255]:
     """
-    @notice Get information about the open loan for `account` within `market`
-    @return Account debt,
+    @notice Get information about the open loans for `account`
+    @dev Results are filtered by markets where `account` has non-zero debt
+    @return Market address,
+            Account debt,
             AMM balances (collateral, stablecoin),
             Number of bands,
             Account health (liquidation is possible at 0),
             Liquidation price range (high, low)
     """
-    state: AccountState = empty(AccountState)
-    c: MarketContracts = self.market_contracts[market.address]
+    account_states: DynArray[AccountState, 255] = []
 
-    if c.collateral != empty(address):
-        state.account_debt = market.debt(account)
-        if state.account_debt > 0:
-            amm: AMM = AMM(c.amm)
-            state.amm_coll_balance, state.amm_stable_balance = amm.get_sum_xy(account)
-            state.health = market.health(account, True)
-            ns: int256[2] = amm.read_user_tick_numbers(account)
-            state.num_bands = convert(ns[1]-ns[0]+1, uint256)
-            state.liquidation_range = [amm.p_oracle_up(ns[0]), amm.p_oracle_down(ns[1])]
+    for market in markets:
+        c: MarketContracts = self.market_contracts[market.address]
 
-    return state
+        if c.collateral != empty(address):
+            debt: uint256 = market.debt(account)
+            if debt > 0:
+                state: AccountState = empty(AccountState)
+                state.market = market
+                state.account_debt = debt
+                amm: AMM = AMM(c.amm)
+                state.amm_coll_balance, state.amm_stable_balance = amm.get_sum_xy(account)
+                state.health = market.health(account, True)
+                ns: int256[2] = amm.read_user_tick_numbers(account)
+                state.num_bands = convert(ns[1]-ns[0]+1, uint256)
+                state.liquidation_range = [amm.p_oracle_up(ns[0]), amm.p_oracle_down(ns[1])]
+                account_states.append(state)
+
+    return account_states
 
 
 @view
