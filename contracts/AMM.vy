@@ -35,6 +35,7 @@
 # =======================
 
 interface ERC20:
+    def decimals() -> uint256: view
     def balanceOf(user: address) -> uint256: view
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
@@ -99,16 +100,15 @@ struct DetailedTrade:
     admin_fee: uint256
 
 
-coins: public(immutable(ERC20[2]))
 BORROWED_TOKEN: immutable(ERC20)    # x
-COLLATERAL_TOKEN: immutable(ERC20)  # y
+COLLATERAL_TOKEN: ERC20  # y
 CONTROLLER: immutable(address)
-MARKET_OPERATOR: public(immutable(address))
-ORACLE: public(immutable(PriceOracle))
+MARKET_OPERATOR: public(address)
+ORACLE: public(PriceOracle)
 
 BORROWED_PRECISION: immutable(uint256)
-COLLATERAL_PRECISION: immutable(uint256)
-BASE_PRICE: immutable(uint256)
+COLLATERAL_PRECISION: uint256
+BASE_PRICE: uint256
 A: public(immutable(uint256))
 Aminus1: immutable(uint256)
 A2: immutable(uint256)
@@ -147,71 +147,96 @@ exchange_hook: public(AmmHooks)
 
 
 @external
-def __init__(
-        _tokens: ERC20[2],
-        _borrowed_precision: uint256,
-        _collateral_precision: uint256,
-        _A: uint256,
-        _sqrt_band_ratio: uint256,
-        _log_A_ratio: int256,
-        _base_price: uint256,
-        fee: uint256,
-        admin_fee: uint256,
-        _price_oracle_contract: address,
-        controller: address
-    ):
-    """
-    @notice LLAMMA constructor
-    @param _collateral_precision Precision of collateral: we pass it because we want the blueprint to fit into bytecode
-    @param _A "Amplification coefficient" which also defines density of liquidity and band size. Relative band size is 1/_A
-    @param _sqrt_band_ratio Precomputed int(sqrt(A / (A - 1)) * 1e18)
-    @param _log_A_ratio Precomputed int(ln(A / (A - 1)) * 1e18)
-    @param _base_price Typically the initial crypto price at which AMM is deployed. Will correspond to band 0
-    @param fee Relative fee of the AMM: int(fee * 1e18)
-    @param admin_fee Admin fee: how much of fee goes to admin. 50% === int(0.5 * 1e18)
-    @param _price_oracle_contract External price oracle which has price() and price_w() methods
-           which both return current price of collateral multiplied by 1e18
-    """
-    MARKET_OPERATOR = msg.sender
+def __init__(controller: address, stablecoin: ERC20, _A: uint256):
     CONTROLLER = controller
-
-    coins = _tokens
-    BORROWED_TOKEN = _tokens[0]
-    COLLATERAL_TOKEN = _tokens[1]
-    BORROWED_PRECISION = _borrowed_precision
-    COLLATERAL_PRECISION = _collateral_precision
+    BORROWED_TOKEN = stablecoin
+    BORROWED_PRECISION = 10**(18 - stablecoin.decimals())
     A = _A
-    BASE_PRICE = _base_price
 
     Aminus1 = unsafe_sub(A, 1)
     A2 = pow_mod256(A, 2)
     Aminus12 = pow_mod256(unsafe_sub(A, 1), 2)
 
-    self.fee = fee
-    self.admin_fee = admin_fee
-    ORACLE = PriceOracle(_price_oracle_contract)
-    self.prev_p_o_time = block.timestamp
-    self.old_p_o = ORACLE.price()
-
-    self.rate_mul = 10**18
-
     # sqrt(A / (A - 1)) - needs to be pre-calculated externally
-    SQRT_BAND_RATIO = _sqrt_band_ratio
-    # log(A / (A - 1)) - needs to be pre-calculated externally
-    LOG_A_RATIO = _log_A_ratio
+    SQRT_BAND_RATIO = self.sqrt_int(unsafe_div(10**36 * _A, unsafe_sub(_A, 1)))
+
+    # log(A / (A - 1))
+    # adapted from: https://medium.com/coinmonks/9aef8515136e and vyper log implementation
+    x: uint256 = 10**18 * _A / (_A - 1)
+    res: uint256 = 0
+    for i in range(8):
+        t: uint256 = 2**(7 - i)
+        p: uint256 = 2**t
+        if x >= p * 10**18:
+            x /= p
+            res += t * 10**18
+    d: uint256 = 10**18
+    for i in range(59):  # 18 decimals: math.log2(10**10) == 59.7
+        if (x >= 2 * 10**18):
+            res += d
+            x /= 2
+        x = x * x / 10**18
+        d /= 2
+    # Now res = log2(x)
+    # ln(x) = log2(x) / log2(e)
+    LOG_A_RATIO = convert(res * 10**18 / 1442695040888963328, int256)
 
     # (A / (A - 1)) ** 50
-    # This is not gas-optimal but good with bytecode size and does not overflow
     pow: uint256 = 10**18
     for i in range(50):
         pow = unsafe_div(pow * A, Aminus1)
     MAX_ORACLE_DN_POW = pow
 
-    for token in _tokens:
-        self._approve_token(token, controller, max_value(uint256))
+
+@external
+def initialize(
+    market: address,
+    oracle: PriceOracle,
+    collateral: ERC20,
+    base_price: uint256,
+    fee: uint256,
+    admin_fee: uint256
+):
+    """
+    @notice LLAMMA initializer
+    @param market MarketOperator deployment associated with this AMM
+    @param oracle External price oracle which has price() and price_w() methods
+           which both return current price of collateral multiplied by 1e18
+    @param collateral Collateral token address
+    @param base_price Typically the initial crypto price at which AMM is deployed. Will correspond to band 0
+    @param fee Relative fee of the AMM: int(fee * 1e18)
+    @param admin_fee Admin fee: how much of fee goes to admin. 50% === int(0.5 * 1e18)
+    """
+    self._assert_only_controller()
+    self.MARKET_OPERATOR = market
+    self.ORACLE = oracle
+    self.COLLATERAL_TOKEN = collateral
+
+    self.COLLATERAL_PRECISION = 10**(18 - collateral.decimals())
+    self.BASE_PRICE = base_price
+
+    self.fee = fee
+    self.admin_fee = admin_fee
+
+    self.prev_p_o_time = block.timestamp
+    self.old_p_o = oracle.price()
+
+    self.rate_mul = 10**18
+
+    for token in [BORROWED_TOKEN, collateral]:
+        self._approve_token(token, CONTROLLER, max_value(uint256))
 
 
 # --- external view functions ---
+
+@view
+@external
+def coins(i: uint256) -> ERC20:
+    if i == 0:
+        return BORROWED_TOKEN
+    if i == 1:
+        return self.COLLATERAL_TOKEN
+    raise
 
 
 @view
@@ -222,7 +247,7 @@ def collateral_balance() -> uint256:
     """
     hook: AmmHooks = self.exchange_hook
     if hook == empty(AmmHooks):
-        return COLLATERAL_TOKEN.balanceOf(self)
+        return self.COLLATERAL_TOKEN.balanceOf(self)
     return hook.collateral_balance()
 
 
@@ -583,7 +608,7 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
     if pump:
         amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), BORROWED_PRECISION), 1)
     else:
-        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), COLLATERAL_PRECISION), 1)
+        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), self.COLLATERAL_PRECISION), 1)
 
     return amount, pump
 
@@ -643,7 +668,8 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
     n_bands: uint256 = unsafe_add(convert(unsafe_sub(n2, n1), uint256), 1)
     assert n_bands <= MAX_TICKS_UINT
 
-    y_per_band: uint256 = unsafe_div(amount * COLLATERAL_PRECISION, n_bands)
+    coll_precision: uint256 = self.COLLATERAL_PRECISION
+    y_per_band: uint256 = unsafe_div(amount * coll_precision, n_bands)
     if y_per_band <= 100:
         self._raise_amount_too_low()
 
@@ -669,7 +695,7 @@ def deposit_range(user: address, amount: uint256, n1: int256, n2: int256):
         assert self.bands_x[band] == 0, "DFM:A Band not empty"
         y: uint256 = y_per_band
         if i == 0:
-            y = amount * COLLATERAL_PRECISION - y * unsafe_sub(n_bands, 1)
+            y = amount * coll_precision - y * unsafe_sub(n_bands, 1)
 
         total_y: uint256 = self.bands_y[band]
 
@@ -727,6 +753,7 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
     old_min_band: int256 = min_band
     old_max_band: int256 = self.max_band
     max_band: int256 = n - 1
+    coll_precision: uint256 = self.COLLATERAL_PRECISION
 
     for i in range(MAX_TICKS):
         x: uint256 = self.bands_x[n]
@@ -748,7 +775,7 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
             if x > 0:
                 self.admin_fees_x += x
             if y > 0:
-                self.admin_fees_y += unsafe_div(y, COLLATERAL_PRECISION)
+                self.admin_fees_y += unsafe_div(y, coll_precision)
             x = 0
             y = 0
 
@@ -780,7 +807,7 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
         self.max_band = max_band
 
     total_x = unsafe_div(total_x, BORROWED_PRECISION)
-    total_y = unsafe_div(total_y, COLLATERAL_PRECISION)
+    total_y = unsafe_div(total_y, coll_precision)
     log Withdraw(user, total_x, total_y)
 
     if lm.address != empty(address):
@@ -843,7 +870,7 @@ def set_rate(rate: uint256) -> uint256:
     @param rate New rate in units of int(fraction * 1e18) per second
     @return rate_mul multiplier (e.g. 1.0 + integral(rate, dt))
     """
-    assert msg.sender == CONTROLLER
+    self._assert_only_controller()
     rate_mul: uint256 = self._rate_mul()
     self.rate_mul = rate_mul
     self.rate_time = block.timestamp
@@ -854,15 +881,15 @@ def set_rate(rate: uint256) -> uint256:
 
 @external
 def set_exchange_hook(hook: AmmHooks):
-    assert msg.sender == CONTROLLER
+    self._assert_only_controller()
     old_hook: AmmHooks = self.exchange_hook
     if old_hook != empty(AmmHooks):
         old_hook.on_remove_hook()
-        self._approve_token(COLLATERAL_TOKEN, old_hook.address, 0)
+        self._approve_token(self.COLLATERAL_TOKEN, old_hook.address, 0)
 
     if hook != empty(AmmHooks):
-        self._approve_token(COLLATERAL_TOKEN, hook.address, max_value(uint256))
-        hook.on_add_hook(MARKET_OPERATOR, self)
+        self._approve_token(self.COLLATERAL_TOKEN, hook.address, max_value(uint256))
+        hook.on_add_hook(self.MARKET_OPERATOR, self)
 
     self.exchange_hook = hook
 
@@ -872,7 +899,13 @@ def set_exchange_hook(hook: AmmHooks):
 @view
 @internal
 def _assert_market_operator():
-    assert msg.sender == MARKET_OPERATOR, "DFM:A Only operator"
+    assert msg.sender == self.MARKET_OPERATOR, "DFM:A Only operator"
+
+
+@view
+@internal
+def _assert_only_controller():
+    assert msg.sender == CONTROLLER, "DFM:A Only controller"
 
 
 @view
@@ -972,12 +1005,12 @@ def get_dynamic_fee(p_o: uint256, p_o_up: uint256) -> uint256:
 @view
 @internal
 def _price_oracle_ro() -> uint256[2]:
-    return self.limit_p_o(ORACLE.price())
+    return self.limit_p_o(self.ORACLE.price())
 
 
 @internal
 def _price_oracle_w() -> uint256[2]:
-    p: uint256[2] = self.limit_p_o(ORACLE.price_w())
+    p: uint256[2] = self.limit_p_o(self.ORACLE.price_w())
     self.prev_p_o_time = block.timestamp
     self.old_p_o = p[0]
     self.old_dfee = p[1]
@@ -991,7 +1024,7 @@ def _base_price() -> uint256:
     @notice Price which corresponds to band 0.
             Base price grows with time to account for interest rate (which is 0 by default)
     """
-    return unsafe_div(BASE_PRICE * self._rate_mul(), 10**18)
+    return unsafe_div(self.BASE_PRICE * self._rate_mul(), 10**18)
 
 
 @view
@@ -1343,11 +1376,11 @@ def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedT
     self._assert_valid_index(i, j)
     out: DetailedTrade = empty(DetailedTrade)
     if amount != 0:
-        in_precision: uint256 = COLLATERAL_PRECISION
+        in_precision: uint256 = self.COLLATERAL_PRECISION
         out_precision: uint256 = BORROWED_PRECISION
         if i == 0:
+            out_precision = in_precision
             in_precision = BORROWED_PRECISION
-            out_precision = COLLATERAL_PRECISION
         p_o: uint256[2] = self._price_oracle_ro()
         if is_in:
             out = self.calc_swap_out(i == 0, amount * in_precision, p_o, in_precision, out_precision)
@@ -1640,7 +1673,7 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
                 XY += unsafe_div((x_o + unsafe_div(y_o * self.sqrt_int(p_o_down * p_o), 10**18)) * user_share, total_share)
 
     if use_y:
-        return unsafe_div(XY, COLLATERAL_PRECISION)
+        return unsafe_div(XY, self.COLLATERAL_PRECISION)
 
     return unsafe_div(XY, BORROWED_PRECISION)
 
@@ -1662,6 +1695,7 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
         ys.append(0)
     ns: int256[2] = self._read_user_tick_numbers(user)
     ticks: DynArray[uint256, MAX_TICKS_UINT] = self._read_user_ticks(user, ns)
+    coll_precision: uint256 = self.COLLATERAL_PRECISION
     if ticks[0] != 0:
         for i in range(MAX_TICKS):
             total_shares: uint256 = self.total_shares[ns[0]] + DEAD_SHARES
@@ -1673,14 +1707,14 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
                 ys[0] += dy
             else:
                 xs.append(unsafe_div(dx, BORROWED_PRECISION))
-                ys.append(unsafe_div(dy, COLLATERAL_PRECISION))
+                ys.append(unsafe_div(dy, coll_precision))
             if ns[0] == ns[1]:
                 break
             ns[0] = unsafe_add(ns[0], 1)
 
     if is_sum:
         xs[0] = unsafe_div(xs[0], BORROWED_PRECISION)
-        ys[0] = unsafe_div(ys[0], COLLATERAL_PRECISION)
+        ys[0] = unsafe_div(ys[0], coll_precision)
 
     return [xs, ys]
 
@@ -1726,9 +1760,9 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
     collateral_shares: DynArray[uint256, MAX_TICKS_UINT] = []
 
     in_coin: ERC20 = BORROWED_TOKEN
-    out_coin: ERC20 = COLLATERAL_TOKEN
+    out_coin: ERC20 = self.COLLATERAL_TOKEN
     in_precision: uint256 = BORROWED_PRECISION
-    out_precision: uint256 = COLLATERAL_PRECISION
+    out_precision: uint256 = self.COLLATERAL_PRECISION
     if i == 1:
         in_precision = out_precision
         in_coin = out_coin

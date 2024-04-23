@@ -16,6 +16,14 @@ interface PriceOracle:
     def price_w() -> uint256: nonpayable
 
 interface AMM:
+    def initialize(
+        operator: address,
+        oracle: PriceOracle,
+        collateral: address,
+        _base_price: uint256,
+        fee: uint256,
+        admin_fee: uint256
+    ): nonpayable
     def set_exchange_hook(hook: address): nonpayable
     def set_rate(rate: uint256) -> uint256: nonpayable
     def collateral_balance() -> uint256: view
@@ -27,6 +35,13 @@ interface AMM:
     def p_oracle_down(n: int256) -> uint256: view
 
 interface MarketOperator:
+    def initialize(
+        amm: address,
+        collateral_token: address,
+        debt_ceiling: uint256,
+        loan_discount: uint256,
+        liquidation_discount: uint256,
+    ): nonpayable
     def total_debt() -> uint256: view
     def pending_debt() -> uint256: view
     def debt_ceiling() -> uint256: view
@@ -220,17 +235,11 @@ amm_hooks: HashMap[address, address]
 def __init__(
     core: CoreOwner,
     stable: ERC20,
-    market_impl: address,
-    amm_impl: address,
     monetary_policies: DynArray[MonetaryPolicy, 10],
     debt_ceiling: uint256
 ):
     CORE_OWNER = core
     STABLECOIN = stable
-
-    self.market_operator_implementation = market_impl
-    self.amm_implementation = amm_impl
-    log SetImplementations(amm_impl, market_impl)
 
     idx: uint256 = 0
     for mp in monetary_policies:
@@ -746,23 +755,11 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
     assert p > 0, "DFM:C p == 0"
     assert oracle.price_w() == p, "DFM:C p != price_w"
 
-    market: address = create_from_blueprint(
-        self.market_operator_implementation,
-        CORE_OWNER.address,
-        token,
-        self.amm_implementation,
-        debt_ceiling,
-        loan_discount,
-        liquidation_discount,
-        A,
-        p,
-        fee,
-        admin_fee,
-        oracle,
-        code_offset=3
-    )
-    # `AMM` is deployed in constructor of `MarketOperator`
-    amm: address = MarketOperator(market).AMM()
+    market: address = create_minimal_proxy_to(self.market_operator_implementation)
+    amm: address = create_minimal_proxy_to(self.amm_implementation)
+
+    MarketOperator(market).initialize(amm, token, debt_ceiling, loan_discount, liquidation_discount)
+    AMM(amm).initialize(market, oracle, token, p, fee, admin_fee)
 
     self.markets.append(MarketOperator(market))
     self.collateral_markets[token].append(market)

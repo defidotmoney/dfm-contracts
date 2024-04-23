@@ -85,10 +85,10 @@ struct Position:
 CORE_OWNER: public(immutable(CoreOwner))
 CONTROLLER: public(immutable(address))
 STABLECOIN: public(immutable(ERC20))
-COLLATERAL_TOKEN: public(immutable(ERC20))
-AMM: public(immutable(LLAMMA))
+COLLATERAL_TOKEN: public(ERC20)
+AMM: public(LLAMMA)
 
-COLLATERAL_PRECISION: immutable(uint256)
+COLLATERAL_PRECISION: uint256
 A: immutable(uint256)
 Aminus1: immutable(uint256)
 LOG2_A_RATIO: immutable(int256)  # log(A / (A - 1))
@@ -122,65 +122,44 @@ loan_discount: public(uint256)
 
 
 @external
-def __init__(
-        core: CoreOwner,
-        collateral_token: address,
-        amm_implementation: address,
-        debt_ceiling: uint256,
-        loan_discount: uint256,
-        liquidation_discount: uint256,
-        _A: uint256,
-        _base_price: uint256,
-        fee: uint256,
-        admin_fee: uint256,
-        _price_oracle_contract: address
-        ):
-    """
-    @notice Market Operator constructor deployed by the controller from blueprint
-    @param collateral_token Token to use for collateral
-    @param loan_discount Discount of the maximum loan size compare to get_x_down() value
-    @param liquidation_discount Discount of the maximum loan size compare to
-           get_x_down() for "bad liquidation" purposes
-    @param amm_implementation AMM address (Already deployed from blueprint)
-    """
-
-    CONTROLLER = msg.sender
+def __init__(core: CoreOwner, controller: address, stablecoin: ERC20, _A: uint256):
+    CONTROLLER = controller
     CORE_OWNER = core
-    STABLECOIN = Controller(msg.sender).STABLECOIN()
-
-    self.debt_ceiling = debt_ceiling
-    self.liquidation_discount = liquidation_discount
-    self.loan_discount = loan_discount
-    self._total_debt.rate_mul = 10**18
+    STABLECOIN = stablecoin
 
     A = _A
     Aminus1 = unsafe_sub(_A, 1)
     LOG2_A_RATIO = self.log2(unsafe_div(_A * 10**18, unsafe_sub(_A, 1)))
     MAX_FEE = min(unsafe_div(10**18 * MIN_TICKS, A), 10**17)
-
-    COLLATERAL_TOKEN = ERC20(collateral_token)
-    COLLATERAL_PRECISION = pow_mod256(10, 18 - ERC20(collateral_token).decimals())
-
     SQRT_BAND_RATIO = isqrt(unsafe_div(10**36 * _A, unsafe_sub(_A, 1)))
 
-    A_ratio: uint256 = 10**18 * A / (A - 1)
-    amm: address = create_from_blueprint(
-        amm_implementation,
-        STABLECOIN.address,
-        collateral_token,
-        10**(18 - STABLECOIN.decimals()),
-        COLLATERAL_PRECISION,
-        A,
-        SQRT_BAND_RATIO,
-        self.ln_int(A_ratio),
-        _base_price,
-        fee,
-        admin_fee,
-        _price_oracle_contract,
-        msg.sender,
-        code_offset=3
-    )
-    AMM = LLAMMA(amm)
+
+@external
+def initialize(
+    amm: LLAMMA,
+    collateral: ERC20,
+    debt_ceiling: uint256,
+    loan_discount: uint256,
+    liquidation_discount: uint256,
+):
+    """
+    @notice Market Operator initializer
+    @param amm Address of LLAMMA deployment associated with this market
+    @param collateral Token to use for collateral
+    @param debt_ceiling Market-specific debt ceiling
+    @param loan_discount Discount of the maximum loan size compare to get_x_down() value
+    @param liquidation_discount Discount of the maximum loan size compare to
+           get_x_down() for "bad liquidation" purposes
+    """
+    self._assert_only_controller()
+    self.AMM = amm
+    self.COLLATERAL_TOKEN = collateral
+    self.COLLATERAL_PRECISION = pow_mod256(10, 18 - collateral.decimals())
+
+    self.debt_ceiling = debt_ceiling
+    self.liquidation_discount = liquidation_discount
+    self.loan_discount = loan_discount
+    self._total_debt.rate_mul = 10**18
 
 
 # --- external view functions ---
@@ -260,7 +239,7 @@ def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
     total_debt: uint256 = self._get_total_debt()
     debt_ceiling: uint256 = self.debt_ceiling
     if total_debt < debt_ceiling:
-        y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, n_bands, self.loan_discount)
+        y_effective: uint256 = self.get_y_effective(collateral * self.COLLATERAL_PRECISION, n_bands, self.loan_discount)
 
         x: uint256 = unsafe_sub(max(unsafe_div(y_effective * self.max_p_base(), 10**18), 1), 1)
         x = unsafe_div(x * (10**18 - 10**14), 10**18)  # Make it a bit smaller
@@ -283,7 +262,7 @@ def min_collateral(debt: uint256, n_bands: uint256) -> uint256:
     return unsafe_div(
         unsafe_div(
             debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, n_bands, self.loan_discount) + n_bands * (n_bands + 2 * DEAD_SHARES),
-            COLLATERAL_PRECISION
+            self.COLLATERAL_PRECISION
         ) * 10**18,
         10**18 - 10**14
     )
@@ -318,7 +297,7 @@ def tokens_to_liquidate(account: address, frac: uint256 = 10 ** 18) -> uint256:
     health_limit: uint256 = 0
     if account != msg.sender:
         health_limit = self.liquidation_discounts[account]
-    stablecoins: uint256 = unsafe_div(AMM.get_sum_xy(account)[0] * self._get_f_remove(frac, health_limit), 10 ** 18)
+    stablecoins: uint256 = unsafe_div(self.AMM.get_sum_xy(account)[0] * self._get_f_remove(frac, health_limit), 10 ** 18)
     debt: uint256 = unsafe_div(self._debt(account)[0] * frac, 10 ** 18)
 
     return unsafe_sub(max(debt, stablecoins), stablecoins)
@@ -359,7 +338,7 @@ def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position
         debt: uint256 = self._debt(account)[0]
         health: int256 = self._health(account, debt, True, self.liquidation_discounts[account])
         if health < 0:
-            xy: uint256[2] = AMM.get_sum_xy(account)
+            xy: uint256[2] = self.AMM.get_sum_xy(account)
             out.append(Position({
                 account: account,
                 x: xy[0],
@@ -377,7 +356,7 @@ def amm_price() -> uint256:
     """
     @notice Current price from the AMM
     """
-    return AMM.get_p()
+    return self.AMM.get_p()
 
 
 @view
@@ -389,10 +368,11 @@ def user_prices(account: address) -> uint256[2]:  # Upper, lower
     @param account User address
     @return (upper_price, lower_price)
     """
-    if not AMM.has_liquidity(account):
+    amm: LLAMMA = self.AMM
+    if not amm.has_liquidity(account):
         return [0, 0]
-    ns: int256[2] = AMM.read_user_tick_numbers(account) # ns[1] > ns[0]
-    return [AMM.p_oracle_up(ns[0]), AMM.p_oracle_down(ns[1])]
+    ns: int256[2] = amm.read_user_tick_numbers(account) # ns[1] > ns[0]
+    return [amm.p_oracle_up(ns[0]), amm.p_oracle_down(ns[1])]
 
 
 @view
@@ -404,8 +384,9 @@ def user_state(account: address) -> uint256[4]:
     @param account User to return the state for
     @return (collateral, stablecoin, debt, n_bands)
     """
-    xy: uint256[2] = AMM.get_sum_xy(account)
-    ns: int256[2] = AMM.read_user_tick_numbers(account) # ns[1] > ns[0]
+    amm: LLAMMA = self.AMM
+    xy: uint256[2] = amm.get_sum_xy(account)
+    ns: int256[2] = amm.read_user_tick_numbers(account) # ns[1] > ns[0]
     return [xy[1], xy[0], self._debt(account)[0], convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)]
 
 
@@ -422,7 +403,8 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
     @param n_bands Number of bands in case loan doesn't yet exist
     @return Signed health value
     """
-    ns: int256[2] = AMM.read_user_tick_numbers(account)
+    amm: LLAMMA = self.AMM
+    ns: int256[2] = amm.read_user_tick_numbers(account)
     debt: int256 = convert(self._debt(account)[0], int256)
     n: uint256 = n_bands
     ld: int256 = 0
@@ -439,17 +421,17 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
     debt += debt_amount
     assert debt > 0, "DFM:M Non-positive debt"
 
-    active_band: int256 = AMM.active_band_with_skip()
+    active_band: int256 = amm.active_band_with_skip()
 
     if ns[0] > active_band:  # re-deposit
-        collateral = convert(AMM.get_sum_xy(account)[1], int256) + coll_amount
+        collateral = convert(amm.get_sum_xy(account)[1], int256) + coll_amount
         n1 = self._calculate_debt_n1(convert(collateral, uint256), convert(debt, uint256), n)
-        collateral *= convert(COLLATERAL_PRECISION, int256)  # now has 18 decimals
+        collateral *= convert(self.COLLATERAL_PRECISION, int256)  # now has 18 decimals
     else:
         n1 = ns[0]
-        x_eff = convert(AMM.get_x_down(account) * 10**18, int256)
+        x_eff = convert(amm.get_x_down(account) * 10**18, int256)
 
-    p0: int256 = convert(AMM.p_oracle_up(n1), int256)
+    p0: int256 = convert(amm.p_oracle_up(n1), int256)
     if ns[0] > active_band:
         x_eff = convert(self.get_y_effective(convert(collateral, uint256), n, 0), int256) * p0
 
@@ -458,7 +440,7 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
 
     if full:
         if n1 > active_band:  # We are not in liquidation mode
-            p_diff: int256 = max(p0, convert(AMM.price_oracle(), int256)) - p0
+            p_diff: int256 = max(p0, convert(amm.price_oracle(), int256)) - p0
             if p_diff > 0:
                 health += unsafe_div(p_diff * collateral, debt)
 
@@ -475,7 +457,7 @@ def set_amm_fee(fee: uint256):
     """
     self._assert_only_owner()
     assert fee <= MAX_FEE and fee >= MIN_FEE, "DFM:M Invalid AMM fee"
-    AMM.set_fee(fee)
+    self.AMM.set_fee(fee)
 
     log SetAmmFee(fee)
 
@@ -488,7 +470,7 @@ def set_amm_admin_fee(fee: uint256):
     """
     self._assert_only_owner()
     assert fee <= MAX_ADMIN_FEE, "DFM:M Fee too high"
-    AMM.set_admin_fee(fee)
+    self.AMM.set_admin_fee(fee)
 
     log SetAmmAdminFee(fee)
 
@@ -516,7 +498,7 @@ def set_liquidity_mining_hook(hook: address):
     @notice Set liquidity mining callback
     """
     self._assert_only_owner()
-    AMM.set_liquidity_mining_hook(hook)
+    self.AMM.set_liquidity_mining_hook(hook)
     log SetLiquidityMiningHook(hook)
 
 
@@ -551,7 +533,8 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
     n1: int256 = self._calculate_debt_n1(coll_amount, debt_amount, n_bands)
     n2: int256 = n1 + convert(n_bands - 1, int256)
 
-    rate_mul: uint256 = AMM.get_rate_mul()
+    amm: LLAMMA = self.AMM
+    rate_mul: uint256 = amm.get_rate_mul()
     self.loan[account] = Loan({initial_debt: debt_amount, rate_mul: rate_mul})
     liquidation_discount: uint256 = self.liquidation_discount
     self.liquidation_discounts[account] = liquidation_discount
@@ -563,7 +546,7 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
 
     debt_increase: uint256 = self._increase_total_debt(debt_amount, rate_mul)
 
-    AMM.deposit_range(account, coll_amount, n1, n2)
+    amm.deposit_range(account, coll_amount, n1, n2)
 
     log UserState(account, coll_amount, debt_amount, n1, n2, liquidation_discount)
 
@@ -581,21 +564,22 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
     account_debt = self._uint_plus_int(account_debt, debt_change)
     assert account_debt > 0, "DFM:M No remaining debt"
 
-    ns: int256[2] = AMM.read_user_tick_numbers(account)
+    amm: LLAMMA = self.AMM
+    ns: int256[2] = amm.read_user_tick_numbers(account)
     size: uint256 = convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)
 
-    active_band: int256 = AMM.active_band_with_skip()
+    active_band: int256 = amm.active_band_with_skip()
     assert active_band <= max_active_band, "DFM:M band > max_active_band"
 
     if ns[0] > active_band:
         # Not in liquidation - can move bands
-        coll_amount: uint256 = AMM.withdraw(account, 10**18)[1]
+        coll_amount: uint256 = amm.withdraw(account, 10**18)[1]
 
         coll_amount = self._uint_plus_int(coll_amount, coll_change)
 
         n1: int256 = self._calculate_debt_n1(coll_amount, account_debt, size)
         n2: int256 = n1 + unsafe_sub(ns[1], ns[0])
-        AMM.deposit_range(account, coll_amount, n1, n2)
+        amm.deposit_range(account, coll_amount, n1, n2)
         liquidation_discount: uint256 = self.liquidation_discount
         self.liquidation_discounts[account] = liquidation_discount
         log UserState(account, coll_amount, account_debt, n1, n2, liquidation_discount)
@@ -624,7 +608,7 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
     account_debt, rate_mul = self._debt(account)
     assert account_debt > 0, "DFM:M Loan doesn't exist"
 
-    xy: uint256[2] = AMM.withdraw(account, 10**18)
+    xy: uint256[2] = self.AMM.withdraw(account, 10**18)
 
     log UserState(account, 0, 0, 0, 0, 0)
     self._remove_from_list(account)
@@ -666,7 +650,7 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
     # f_remove = ((1 + h/2) / (1 + h) * (1 - frac) + frac) * frac
     # where h is health limit.
     # This is less than full h discount but more than no discount
-    xy: uint256[2] = AMM.withdraw(target, self._get_f_remove(frac, health_limit))  # [stable, collateral]
+    xy: uint256[2] = self.AMM.withdraw(target, self._get_f_remove(frac, health_limit))  # [stable, collateral]
 
     # x increase in same block -> price up -> good
     # x decrease in same block -> price down -> bad
@@ -691,11 +675,12 @@ def collect_fees() -> (uint256, uint256[2]):
     self._assert_only_controller()
 
     # AMM-based fees
-    xy: uint256[2] = AMM.reset_admin_fees()
+    amm: LLAMMA = self.AMM
+    xy: uint256[2] = amm.reset_admin_fees()
 
     # Borrowing-based fees
     # Total debt increases here, but we intentionally do not enforce `debt_ceiling`
-    rate_mul: uint256 = AMM.get_rate_mul()
+    rate_mul: uint256 = amm.get_rate_mul()
     debt_increase: uint256 = self._increase_total_debt(0, rate_mul)
 
     return debt_increase, xy
@@ -749,35 +734,6 @@ def log2(_x: uint256) -> int256:
         return convert(res, int256)
 
 
-@pure
-@internal
-def ln_int(_x: uint256) -> int256:
-    """
-    @notice Logarithm ln() function based on log2. Not very gas-efficient but brief
-    """
-    # adapted from: https://medium.com/coinmonks/9aef8515136e
-    # and vyper log implementation
-    # This can be much more optimal but that's not important here
-    x: uint256 = _x
-    res: uint256 = 0
-    for i in range(8):
-        t: uint256 = 2**(7 - i)
-        p: uint256 = 2**t
-        if x >= p * 10**18:
-            x /= p
-            res += t * 10**18
-    d: uint256 = 10**18
-    for i in range(59):  # 18 decimals: math.log2(10**10) == 59.7
-        if (x >= 2 * 10**18):
-            res += d
-            x /= 2
-        x = x * x / 10**18
-        d /= 2
-    # Now res = log2(x)
-    # ln(x) = log2(x) / log2(e)
-    return convert(res * 10**18 / 1442695040888963328, int256)
-
-
 @view
 @internal
 def _debt(account: address) -> (uint256, uint256):
@@ -786,20 +742,20 @@ def _debt(account: address) -> (uint256, uint256):
     @param account User address
     @return Value of debt
     """
-    rate_mul: uint256 = AMM.get_rate_mul()
+    rate_mul: uint256 = self.AMM.get_rate_mul()
     loan: Loan = self.loan[account]
     if loan.initial_debt == 0:
         return (0, rate_mul)
     else:
         return (loan.initial_debt * rate_mul / loan.rate_mul, rate_mul)
 
+
 @view
 @internal
 def _get_total_debt() -> uint256:
-    rate_mul: uint256 = AMM.get_rate_mul()
+    rate_mul: uint256 = self.AMM.get_rate_mul()
     loan: Loan = self._total_debt
     return loan.initial_debt * rate_mul / loan.rate_mul
-
 
 
 @view
@@ -844,13 +800,14 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> 
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
     assert debt > 0, "DFM:M No loan"
-    n0: int256 = AMM.active_band()
-    p_base: uint256 = AMM.p_oracle_up(n0)
+    amm: LLAMMA = self.AMM
+    n0: int256 = amm.active_band()
+    p_base: uint256 = amm.p_oracle_up(n0)
 
     # x_effective = y / N * p_oracle_up(n1) * sqrt((A - 1) / A) * sum_{0..N-1}(((A-1) / A)**k)
     # === d_y_effective * p_oracle_up(n1) * sum(...) === y_effective * p_oracle_up(n1)
     # d_y_effective = y / N / sqrt(A / (A - 1))
-    y_effective: uint256 = self.get_y_effective(collateral * COLLATERAL_PRECISION, n_bands, self.loan_discount)
+    y_effective: uint256 = self.get_y_effective(collateral * self.COLLATERAL_PRECISION, n_bands, self.loan_discount)
     # p_oracle_up(n1) = base_price * ((A - 1) / A)**n1
 
     # We borrow up until min band touches p_oracle,
@@ -872,11 +829,11 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> 
 
     n1 = min(n1, 1024 - convert(n_bands, int256)) + n0
     if n1 <= n0:
-        assert AMM.can_skip_bands(n1 - 1), "DFM:M Debt too high"
+        assert amm.can_skip_bands(n1 - 1), "DFM:M Debt too high"
 
     # Let's not rely on active_band corresponding to price_oracle:
     # this will be not correct if we are in the area of empty bands
-    assert AMM.p_oracle_up(n1) < AMM.price_oracle(), "DFM:M Debt too high"
+    assert amm.p_oracle_up(n1) < amm.price_oracle(), "DFM:M Debt too high"
 
     return n1
 
@@ -887,15 +844,16 @@ def max_p_base() -> uint256:
     """
     @notice Calculate max base price including skipping bands
     """
-    p_oracle: uint256 = AMM.price_oracle()
+    amm: LLAMMA = self.AMM
+    p_oracle: uint256 = amm.price_oracle()
     # Should be correct unless price changes suddenly by MAX_P_BASE_BANDS+ bands
-    n1: int256 = self.log2(AMM.get_base_price() * 10**18 / p_oracle)
+    n1: int256 = self.log2(amm.get_base_price() * 10**18 / p_oracle)
     if n1 < 0:
         n1 -= LOG2_A_RATIO - 1  # This is to deal with vyper's rounding of negative numbers
     n1 = unsafe_div(n1, LOG2_A_RATIO) + MAX_P_BASE_BANDS
-    n_min: int256 = AMM.active_band_with_skip()
+    n_min: int256 = amm.active_band_with_skip()
     n1 = max(n1, n_min + 1)
-    p_base: uint256 = AMM.p_oracle_up(n1)
+    p_base: uint256 = amm.p_oracle_up(n1)
 
     for i in range(MAX_SKIP_TICKS + 1):
         n1 -= 1
@@ -931,16 +889,17 @@ def _health(account: address, debt: uint256, full: bool, liquidation_discount: u
     @return Health: > 0 = good.
     """
     assert debt > 0, "DFM:M Loan doesn't exist"
+    amm: LLAMMA = self.AMM
     health: int256 = 10**18 - convert(liquidation_discount, int256)
-    health = unsafe_div(convert(AMM.get_x_down(account), int256) * health, convert(debt, int256)) - 10**18
+    health = unsafe_div(convert(amm.get_x_down(account), int256) * health, convert(debt, int256)) - 10**18
 
     if full:
-        ns0: int256 = AMM.read_user_tick_numbers(account)[0] # ns[1] > ns[0]
-        if ns0 > AMM.active_band():  # We are not in liquidation mode
-            p: uint256 = AMM.price_oracle()
-            p_up: uint256 = AMM.p_oracle_up(ns0)
+        ns0: int256 = amm.read_user_tick_numbers(account)[0] # ns[1] > ns[0]
+        if ns0 > amm.active_band():  # We are not in liquidation mode
+            p: uint256 = amm.price_oracle()
+            p_up: uint256 = amm.p_oracle_up(ns0)
             if p > p_up:
-                health += convert(unsafe_div(unsafe_sub(p, p_up) * AMM.get_sum_xy(account)[1] * COLLATERAL_PRECISION, debt), int256)
+                health += convert(unsafe_div(unsafe_sub(p, p_up) * amm.get_sum_xy(account)[1] * self.COLLATERAL_PRECISION, debt), int256)
 
     return health
 
