@@ -98,30 +98,19 @@ def amm_interface():
 
 
 @pytest.fixture(scope="module")
-def operator_impl(operator_interface, admin):
-    with boa.env.prank(admin):
-        return operator_interface.deploy_as_blueprint()
-
-
-@pytest.fixture(scope="module")
-def amm_impl(amm_interface, admin):
-    with boa.env.prank(admin):
-        return amm_interface.deploy_as_blueprint()
-
-
-@pytest.fixture(scope="module")
-def controller(core, amm_impl, operator_impl, stablecoin, admin, monetary_policy):
+def controller(core, stablecoin, admin, monetary_policy):
     with boa.env.prank(admin):
         contract = boa.load(
             "contracts/MainController.vy",
             core.address,
             stablecoin.address,
-            operator_impl,
-            amm_impl,
             [monetary_policy.address],
             2**256 - 1,
         )
         stablecoin.setMinter(contract.address, True)
+        operator_impl = boa.load("contracts/MarketOperator.vy", core, contract, stablecoin, 100)
+        amm_impl = boa.load("contracts/AMM.vy", contract, stablecoin, 100)
+        contract.set_implementations(100, operator_impl, amm_impl)
     return contract
 
 

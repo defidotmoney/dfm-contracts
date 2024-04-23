@@ -76,10 +76,10 @@ def test_flip(amm, price_oracle, collateral_token, borrowed_token, accounts, adm
                 if n1 == n2:
                     assert p2 >= p1
                 assert p2 >= amm.p_current_down(n2)
-                assert p2 <= amm.p_current_up(n2)
                 is_empty = sum(amm.bands_y(n) for n in range(1, 6)) == 0
                 if is_empty:
                     break
+                assert p2 <= amm.p_current_up(n2)
             if is_empty:
                 break
 

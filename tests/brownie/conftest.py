@@ -1,9 +1,5 @@
 import pytest
-from brownie import ZERO_ADDRESS, compile_source
 from brownie_tokens import ERC20
-
-
-from scripts.deploy_blueprint import deploy_blueprint
 
 
 PEGKEEPER_CAP = 10_000_000 * 10**18
@@ -11,7 +7,7 @@ PK_COUNT = 3
 
 MARKET_DEBT_CAP = 10_000_000 * 10**18
 
-market_A = 100
+MARKET_A = 100
 market_fee = 6 * 10**15  # 0.6%
 market_admin_fee = 5 * 10**17  # 50% of the market fee
 market_loan_discount = 9 * 10**16  # 9%; +2% from 4x 1% bands = 100% - 11% = 89% LTV
@@ -70,12 +66,13 @@ def agg_stable(AggregateStablePrice2, core, stable, deployer):
 
 @pytest.fixture(scope="module")
 def controller(MainController, MarketOperator, AMM, core, stable, policy, deployer):
-    market_impl = deploy_blueprint(MarketOperator, deployer)
-    amm_impl = deploy_blueprint(AMM, deployer)
-    contract = MainController.deploy(
-        core, stable, market_impl, amm_impl, [policy], 2**256 - 1, {"from": deployer}
-    )
+    contract = MainController.deploy(core, stable, [policy], 2**256 - 1, {"from": deployer})
     stable.setMinter(contract, True, {"from": deployer})
+
+    market_impl = MarketOperator.deploy(core, contract, stable, MARKET_A, {"from": deployer})
+    amm_impl = AMM.deploy(contract, stable, MARKET_A, {"from": deployer})
+    contract.set_implementations(MARKET_A, market_impl, amm_impl, {"from": deployer})
+
     return contract
 
 
@@ -150,7 +147,7 @@ def _deploy_market(MarketOperator, controller, oracle, deployer):
     def fn(collateral):
         controller.add_market(
             collateral,
-            market_A,
+            MARKET_A,
             market_fee,
             market_admin_fee,
             oracle,

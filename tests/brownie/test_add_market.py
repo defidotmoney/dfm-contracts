@@ -1,5 +1,6 @@
 import pytest
 import brownie
+from brownie import ZERO_ADDRESS
 
 market_A = 100
 market_fee = 6 * 10**15  # 0.6%
@@ -60,12 +61,11 @@ def test_add_market(
     assert stable.allowance(amm, market) == 0
 
 
-@pytest.mark.parametrize("bad_A", [1, 10001])
-def test_wrong_A(controller, collateral, oracle, deployer, bad_A):
-    with brownie.reverts("DFM:C Wrong A"):
+def test_wrong_A(controller, collateral, oracle, deployer):
+    with brownie.reverts("DFM:C No implementation for A"):
         controller.add_market(
             collateral,
-            bad_A,
+            69,
             market_fee,
             market_admin_fee,
             oracle,
@@ -204,3 +204,60 @@ def test_oracle_price_zero(controller, collateral, oracle, deployer):
             market_debt_cap,
             {"from": deployer},
         )
+
+
+@pytest.mark.parametrize("bad_A", [1, 10001])
+def test_set_impl_wrong_A(controller, market, amm, deployer, bad_A):
+    with brownie.reverts("DFM:C A outside bounds"):
+        controller.set_implementations(bad_A, market, amm, {"from": deployer})
+
+
+def test_set_impl_matching_impls(controller, market, deployer):
+    with brownie.reverts("DFM:C matching implementations"):
+        controller.set_implementations(50, market, market, {"from": deployer})
+
+
+def test_set_impl_empty_amm(controller, market, deployer):
+    with brownie.reverts("DFM:C empty implementation"):
+        controller.set_implementations(50, market, ZERO_ADDRESS, {"from": deployer})
+
+
+def test_set_impl_empty_market(controller, amm, deployer):
+    with brownie.reverts("DFM:C empty implementation"):
+        controller.set_implementations(50, ZERO_ADDRESS, amm, {"from": deployer})
+
+
+def test_set_impl_clear(controller, collateral, oracle, deployer):
+    assert controller.get_implementations(100)[0] != ZERO_ADDRESS
+    assert controller.get_implementations(100)[1] != ZERO_ADDRESS
+    controller.set_implementations(100, ZERO_ADDRESS, ZERO_ADDRESS, {"from": deployer})
+    assert controller.get_implementations(100) == [ZERO_ADDRESS, ZERO_ADDRESS]
+    with brownie.reverts("DFM:C No implementation for A"):
+        controller.add_market(
+            collateral,
+            100,
+            market_fee,
+            market_admin_fee,
+            oracle,
+            0,
+            market_loan_discount,
+            market_liquidation_discount,
+            market_debt_cap,
+            {"from": deployer},
+        )
+
+
+def test_set_impl_wrong_A_amm(MarketOperator, AMM, core, stable, controller, deployer):
+    market_impl = MarketOperator.deploy(core, controller, stable, 100, {"from": deployer})
+    amm_impl = AMM.deploy(controller, stable, 69, {"from": deployer})
+
+    with brownie.reverts("DFM:C incorrect amm A"):
+        controller.set_implementations(100, market_impl, amm_impl, {"from": deployer})
+
+
+def test_set_impl_wrong_A_market(MarketOperator, AMM, core, stable, controller, deployer):
+    market_impl = MarketOperator.deploy(core, controller, stable, 420, {"from": deployer})
+    amm_impl = AMM.deploy(controller, stable, 100, {"from": deployer})
+
+    with brownie.reverts("DFM:C incorrect market A"):
+        controller.set_implementations(100, market_impl, amm_impl, {"from": deployer})

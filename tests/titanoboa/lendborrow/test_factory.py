@@ -1,11 +1,6 @@
 import boa
 
 
-def test_impl(controller, operator_impl, amm_impl):
-    assert controller.market_operator_implementation() == operator_impl.address
-    assert controller.amm_implementation() == amm_impl.address
-
-
 def test_add_market(
     controller,
     collateral_token,
