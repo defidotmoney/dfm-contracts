@@ -16,8 +16,6 @@ from brownie import (
 )
 from brownie_tokens import ERC20
 
-from scripts.deploy_blueprint import deploy_blueprint
-
 
 MARKET_DEBT_CAP = 10_000_000 * 10**18
 PEGKEEPER_CAP = 1_000_000 * 10**18
@@ -31,7 +29,7 @@ market_loan_discount = 9 * 10**16  # 9%; +2% from 4x 1% bands = 100% - 11% = 89%
 market_liquidation_discount = 6 * 10**16  # 6%
 
 
-def main(acct=None):
+def deploy_local(acct=None):
     if acct is None:
         acct = accounts[0]
 
@@ -40,12 +38,13 @@ def main(acct=None):
     policy = ConstantMonetaryPolicy.deploy({"from": acct})
     oracle = DummyPriceOracle.deploy(3000 * 10**18, {"from": acct})
     agg_stable = AggregateStablePrice2.deploy(core, stable, 10**15, {"from": acct})
-    market_impl = deploy_blueprint(MarketOperator, acct)
-    amm_impl = deploy_blueprint(AMM, acct)
 
-    controller = MainController.deploy(
-        core, stable, market_impl, amm_impl, [policy], MARKET_DEBT_CAP, {"from": acct}
-    )
+    controller = MainController.deploy(core, stable, [policy], MARKET_DEBT_CAP, {"from": acct})
+
+    market_impl = MarketOperator.deploy(core, controller, stable, market_A, {"from": acct})
+    amm_impl = AMM.deploy(controller, stable, market_A, {"from": acct})
+    controller.set_implementations(market_A, market_impl, amm_impl, {"from": acct})
+
     regulator = PegKeeperRegulator.deploy(core, stable, agg_stable, controller, {"from": acct})
     controller.set_peg_keeper_regulator(regulator, False, {"from": acct})
 

@@ -36,7 +36,7 @@ Core protocol contracts for defi.money. Based on Curve Finance's crvUSD.
 To run [`scripts/deploy.py`](scripts/deploy.py) and deploy all contracts on a local hardhat network:
 
 ```bash
-brownie run deploy -i
+brownie run deploy deploy_local -i
 ```
 
 The brownie console will open once deployment has finished. The hardhat session will persist as long as brownie remains open.
