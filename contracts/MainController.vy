@@ -33,6 +33,7 @@ interface AMM:
     def read_user_tick_numbers(receiver: address) -> int256[2]: view
     def p_oracle_up(n: int256) -> uint256: view
     def p_oracle_down(n: int256) -> uint256: view
+    def A() -> uint256: view
 
 interface MarketOperator:
     def initialize(
@@ -54,6 +55,7 @@ interface MarketOperator:
     def close_loan(account: address) -> (int256, uint256, uint256[2]): nonpayable
     def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -> (int256, uint256, uint256[2]): nonpayable
     def AMM() -> address: view
+    def A() -> uint256: view
 
 interface MonetaryPolicy:
     def rate(market: MarketOperator) -> uint256: view
@@ -169,6 +171,10 @@ struct MarketContracts:
     amm: address
     mp_idx: uint256
 
+struct Implementations:
+    amm: address
+    market_operator: address
+
 struct MarketState:
     total_debt: uint256
     total_coll: uint256
@@ -209,8 +215,6 @@ MAX_ACTIVE_BAND: constant(int256) = max_value(int256)
 
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(CoreOwner))
-market_operator_implementation: public(address)
-amm_implementation: public(address)
 peg_keeper_regulator: public(PegKeeperRegulator)
 
 markets: public(DynArray[MarketOperator, 65536])
@@ -229,6 +233,7 @@ isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 global_hooks: uint256
 market_hooks: HashMap[address, uint256]
 amm_hooks: HashMap[address, address]
+implementations: HashMap[uint256, Implementations]
 
 
 @external
@@ -397,6 +402,12 @@ def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint25
     market_max: uint256 = market.max_borrowable(coll_amount, n_bands)
 
     return min(global_max, market_max)
+
+
+@view
+@external
+def get_implementations(A: uint256) -> Implementations:
+    return self.implementations[A]
 
 
 @view
@@ -742,7 +753,6 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
     @return (MarketOperator, AMM)
     """
     self._assert_only_owner()
-    assert A >= MIN_A and A <= MAX_A, "DFM:C Wrong A"
     assert fee <= MAX_FEE, "DFM:C Fee too high"
     assert fee >= MIN_FEE, "DFM:C Fee too low"
     assert admin_fee < MAX_ADMIN_FEE, "DFM:C Admin fee too high"
@@ -755,8 +765,10 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
     assert p > 0, "DFM:C p == 0"
     assert oracle.price_w() == p, "DFM:C p != price_w"
 
-    market: address = create_minimal_proxy_to(self.market_operator_implementation)
-    amm: address = create_minimal_proxy_to(self.amm_implementation)
+    impl: Implementations = self.implementations[A]
+    assert impl.amm != empty(address), "DFM:C No implementation for A"
+    market: address = create_minimal_proxy_to(impl.market_operator)
+    amm: address = create_minimal_proxy_to(impl.amm)
 
     MarketOperator(market).initialize(amm, token, debt_ceiling, loan_discount, liquidation_discount)
     AMM(amm).initialize(market, oracle, token, p, fee, admin_fee)
@@ -784,17 +796,25 @@ def set_global_market_debt_ceiling(debt_ceiling: uint256):
 
 
 @external
-def set_implementations(market: address, amm: address):
+def set_implementations(A: uint256, market: address, amm: address):
     """
-    @notice Set new implementations (blueprints) for market and amm
+    @notice Set new implementations for market and amm for given A
     @dev Already-deployed markets are unaffected by this change
+    @param A Amplification co-efficient
     @param market Address of the market blueprint
     @param amm Address of the AMM blueprint
     """
     self._assert_only_owner()
-    assert market != empty(address) and amm != empty(address), "DFM:C empty implementation"
-    self.market_operator_implementation = market
-    self.amm_implementation = amm
+    assert A >= MIN_A and A <= MAX_A, "DFM:C A outside bounds"
+
+    if amm == market:
+        assert amm == empty(address), "DFM:C matching implementations"
+    else:
+        assert amm != empty(address) and market != empty(address), "DFM:C empty implementation"
+        assert MarketOperator(market).A() == A, "DFM:C incorrect market A"
+        assert AMM(amm).A() == A, "DFM:C incorrect amm A"
+
+    self.implementations[A] = Implementations({amm: amm, market_operator: market})
     log SetImplementations(amm, market)
 
 

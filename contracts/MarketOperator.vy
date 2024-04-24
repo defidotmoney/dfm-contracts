@@ -89,7 +89,7 @@ COLLATERAL_TOKEN: public(ERC20)
 AMM: public(LLAMMA)
 
 COLLATERAL_PRECISION: uint256
-A: immutable(uint256)
+A: public(immutable(uint256))
 Aminus1: immutable(uint256)
 LOG2_A_RATIO: immutable(int256)  # log(A / (A - 1))
 SQRT_BAND_RATIO: immutable(uint256)
