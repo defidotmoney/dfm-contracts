@@ -179,7 +179,7 @@ def debt(account: address) -> uint256:
     @param account User address
     @return Value of debt
     """
-    return self._debt(account)[0]
+    return self._debt(account, self.AMM)[0]
 
 
 @view
@@ -280,7 +280,7 @@ def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> i
     @param n_bands Number of bands to deposit into
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
-    return self._calculate_debt_n1(collateral, debt, n_bands)
+    return self._calculate_debt_n1(self.AMM, collateral, debt, n_bands)
 
 
 
@@ -297,8 +297,9 @@ def tokens_to_liquidate(account: address, frac: uint256 = 10 ** 18) -> uint256:
     health_limit: uint256 = 0
     if account != msg.sender:
         health_limit = self.liquidation_discounts[account]
-    stablecoins: uint256 = unsafe_div(self.AMM.get_sum_xy(account)[0] * self._get_f_remove(frac, health_limit), 10 ** 18)
-    debt: uint256 = unsafe_div(self._debt(account)[0] * frac, 10 ** 18)
+    amm: LLAMMA = self.AMM
+    stablecoins: uint256 = unsafe_div(amm.get_sum_xy(account)[0] * self._get_f_remove(frac, health_limit), 10 ** 18)
+    debt: uint256 = unsafe_div(self._debt(account, amm)[0] * frac, 10 ** 18)
 
     return unsafe_sub(max(debt, stablecoins), stablecoins)
 
@@ -311,7 +312,8 @@ def health(account: address, full: bool = False) -> int256:
     @notice Returns position health normalized to 1e18 for the account.
             Liquidation starts when < 0, however devaluation of collateral doesn't cause liquidation
     """
-    return self._health(account, self._debt(account)[0], full, self.liquidation_discounts[account])
+    amm: LLAMMA = self.AMM
+    return self._health(amm, account, self._debt(account, amm)[0], full, self.liquidation_discounts[account])
 
 
 @view
@@ -325,6 +327,7 @@ def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position
     @param _limit Number of loans to look over
     @return Dynamic array with detailed info about positions of users
     """
+    amm: LLAMMA = self.AMM
     n_loans: uint256 = self.n_loans
     limit: uint256 = _limit
     if _limit == 0:
@@ -335,10 +338,10 @@ def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position
         if ix >= n_loans or i == limit:
             break
         account: address = self.loans[ix]
-        debt: uint256 = self._debt(account)[0]
-        health: int256 = self._health(account, debt, True, self.liquidation_discounts[account])
+        debt: uint256 = self._debt(account, amm)[0]
+        health: int256 = self._health(amm, account, debt, True, self.liquidation_discounts[account])
         if health < 0:
-            xy: uint256[2] = self.AMM.get_sum_xy(account)
+            xy: uint256[2] = amm.get_sum_xy(account)
             out.append(Position({
                 account: account,
                 x: xy[0],
@@ -387,7 +390,7 @@ def user_state(account: address) -> uint256[4]:
     amm: LLAMMA = self.AMM
     xy: uint256[2] = amm.get_sum_xy(account)
     ns: int256[2] = amm.read_user_tick_numbers(account) # ns[1] > ns[0]
-    return [xy[1], xy[0], self._debt(account)[0], convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)]
+    return [xy[1], xy[0], self._debt(account, amm)[0], convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)]
 
 
 @view
@@ -405,7 +408,7 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
     """
     amm: LLAMMA = self.AMM
     ns: int256[2] = amm.read_user_tick_numbers(account)
-    debt: int256 = convert(self._debt(account)[0], int256)
+    debt: int256 = convert(self._debt(account, amm)[0], int256)
     n: uint256 = n_bands
     ld: int256 = 0
     if debt != 0:
@@ -425,7 +428,7 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
 
     if ns[0] > active_band:  # re-deposit
         collateral = convert(amm.get_sum_xy(account)[1], int256) + coll_amount
-        n1 = self._calculate_debt_n1(convert(collateral, uint256), convert(debt, uint256), n)
+        n1 = self._calculate_debt_n1(amm, convert(collateral, uint256), convert(debt, uint256), n)
         collateral *= convert(self.COLLATERAL_PRECISION, int256)  # now has 18 decimals
     else:
         n1 = ns[0]
@@ -530,10 +533,10 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
     assert n_bands > MIN_TICKS-1, "DFM:M Need more ticks"
     assert n_bands < MAX_TICKS+1, "DFM:M Need less ticks"
 
-    n1: int256 = self._calculate_debt_n1(coll_amount, debt_amount, n_bands)
+    amm: LLAMMA = self.AMM
+    n1: int256 = self._calculate_debt_n1(amm, coll_amount, debt_amount, n_bands)
     n2: int256 = n1 + convert(n_bands - 1, int256)
 
-    amm: LLAMMA = self.AMM
     rate_mul: uint256 = amm.get_rate_mul()
     self.loan[account] = Loan({initial_debt: debt_amount, rate_mul: rate_mul})
     liquidation_discount: uint256 = self.liquidation_discount
@@ -557,14 +560,14 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
 def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_active_band: int256) -> int256:
     self._assert_only_controller()
 
+    amm: LLAMMA = self.AMM
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
-    account_debt, rate_mul = self._debt(account)
+    account_debt, rate_mul = self._debt(account, amm)
     assert account_debt > 0, "DFM:M Loan doesn't exist"
     account_debt = self._uint_plus_int(account_debt, debt_change)
     assert account_debt > 0, "DFM:M No remaining debt"
 
-    amm: LLAMMA = self.AMM
     ns: int256[2] = amm.read_user_tick_numbers(account)
     size: uint256 = convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)
 
@@ -577,7 +580,7 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
 
         coll_amount = self._uint_plus_int(coll_amount, coll_change)
 
-        n1: int256 = self._calculate_debt_n1(coll_amount, account_debt, size)
+        n1: int256 = self._calculate_debt_n1(amm, coll_amount, account_debt, size)
         n2: int256 = n1 + unsafe_sub(ns[1], ns[0])
         amm.deposit_range(account, coll_amount, n1, n2)
         liquidation_discount: uint256 = self.liquidation_discount
@@ -603,12 +606,13 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
     """
     self._assert_only_controller()
 
+    amm: LLAMMA = self.AMM
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
-    account_debt, rate_mul = self._debt(account)
+    account_debt, rate_mul = self._debt(account, amm)
     assert account_debt > 0, "DFM:M Loan doesn't exist"
 
-    xy: uint256[2] = self.AMM.withdraw(account, 10**18)
+    xy: uint256[2] = amm.withdraw(account, 10**18)
 
     log UserState(account, 0, 0, 0, 0, 0)
     self._remove_from_list(account)
@@ -633,12 +637,13 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
     if target != caller:
         health_limit = self.liquidation_discounts[target]
 
+    amm: LLAMMA = self.AMM
     debt: uint256 = 0
     rate_mul: uint256 = 0
-    debt, rate_mul = self._debt(target)
+    debt, rate_mul = self._debt(target, amm)
 
     if health_limit != 0:
-        assert self._health(target, debt, True, health_limit) < 0, "DFM:M Not enough rekt"
+        assert self._health(amm, target, debt, True, health_limit) < 0, "DFM:M Not enough rekt"
 
     final_debt: uint256 = debt
     debt = unsafe_div(debt * frac, 10**18)
@@ -650,7 +655,7 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
     # f_remove = ((1 + h/2) / (1 + h) * (1 - frac) + frac) * frac
     # where h is health limit.
     # This is less than full h discount but more than no discount
-    xy: uint256[2] = self.AMM.withdraw(target, self._get_f_remove(frac, health_limit))  # [stable, collateral]
+    xy: uint256[2] = amm.withdraw(target, self._get_f_remove(frac, health_limit))  # [stable, collateral]
 
     # x increase in same block -> price up -> good
     # x decrease in same block -> price down -> bad
@@ -736,13 +741,13 @@ def log2(_x: uint256) -> int256:
 
 @view
 @internal
-def _debt(account: address) -> (uint256, uint256):
+def _debt(account: address, amm: LLAMMA) -> (uint256, uint256):
     """
     @notice Get the value of debt without changing the state
     @param account User address
     @return Value of debt
     """
-    rate_mul: uint256 = self.AMM.get_rate_mul()
+    rate_mul: uint256 = amm.get_rate_mul()
     loan: Loan = self.loan[account]
     if loan.initial_debt == 0:
         return (0, rate_mul)
@@ -790,7 +795,7 @@ def get_y_effective(collateral: uint256, n_bands: uint256, discount: uint256) ->
 
 @view
 @internal
-def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> int256:
+def _calculate_debt_n1(amm: LLAMMA, collateral: uint256, debt: uint256, n_bands: uint256) -> int256:
     """
     @notice Calculate the upper band number for the deposit to sit in to support
             the given debt. Reverts if requested debt is too high.
@@ -800,7 +805,6 @@ def _calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> 
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
     assert debt > 0, "DFM:M No loan"
-    amm: LLAMMA = self.AMM
     n0: int256 = amm.active_band()
     p_base: uint256 = amm.p_oracle_up(n0)
 
@@ -878,7 +882,7 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
 
 @view
 @internal
-def _health(account: address, debt: uint256, full: bool, liquidation_discount: uint256) -> int256:
+def _health(amm: LLAMMA, account: address, debt: uint256, full: bool, liquidation_discount: uint256) -> int256:
     """
     @notice Returns position health normalized to 1e18 for the account.
             Liquidation starts when < 0, however devaluation of collateral doesn't cause liquidation
@@ -889,7 +893,6 @@ def _health(account: address, debt: uint256, full: bool, liquidation_discount: u
     @return Health: > 0 = good.
     """
     assert debt > 0, "DFM:M Loan doesn't exist"
-    amm: LLAMMA = self.AMM
     health: int256 = 10**18 - convert(liquidation_discount, int256)
     health = unsafe_div(convert(amm.get_x_down(account), int256) * health, convert(debt, int256)) - 10**18
 
