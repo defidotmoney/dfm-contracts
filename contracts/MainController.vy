@@ -62,6 +62,7 @@ interface MarketOperator:
         debt_change: int256,
         num_bands: uint256
     ) -> (uint256, uint256, uint256, int256, int256[2]): view
+    def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position, 1000]: view
 
 interface MonetaryPolicy:
     def rate(market: MarketOperator) -> uint256: view
@@ -181,6 +182,13 @@ struct Implementations:
     amm: address
     market_operator: address
 
+struct Position:
+    account: address
+    x: uint256
+    y: uint256
+    debt: uint256
+    health: int256
+
 struct MarketState:
     total_debt: uint256
     total_coll: uint256
@@ -213,6 +221,14 @@ struct CloseLoanState:
     debt_burned: uint256
     debt_from_amm: uint256
     coll_withdrawn: uint256
+    hook_debt_adjustment: int256
+
+struct LiquidationState:
+    account: address
+    total_debt_repaid: uint256
+    debt_burned: uint256
+    debt_from_amm: uint256
+    coll_received: uint256
     hook_debt_adjustment: int256
 
 
@@ -520,6 +536,55 @@ def get_close_loan_amounts(account: address, market: address) -> CloseLoanState:
             if state.debt_from_amm < state.total_debt_repaid:
                 state.debt_burned = state.total_debt_repaid - state.debt_from_amm
     return state
+
+
+@view
+@external
+def get_liquidation_amounts(
+    caller: address,
+    market: address,
+    start: uint256=0,
+    limit: uint256=0
+) -> DynArray[LiquidationState, 1000]:
+    """
+    @notice Get a list of liquidatable accounts and related data
+    @param caller Caller address that will perform the liquidations
+    @param market Market to check for liquidations
+    @param start Loan index to start iteration from
+    @param limit Number of loans to iterate over (leave as 0 for all)
+    @return Array of detailed information about liquidatable positions:
+                Address of liquidatable account
+                Total debt to be repaid via liquidation
+                Stablecoin amount burned from `caller` (balance required to perform liquidation)
+                Stablecoin amount withdrawn from AMM (used toward liquidation)
+                Collateral amount received by `caller` from liquidation
+                Debt adjustment amount applied by hooks
+    """
+    liquidatable_accounts: DynArray[Position, 1000] = MarketOperator(market).users_to_liquidate(start, limit)
+    liquidation_states: DynArray[LiquidationState, 1000] = []
+
+    for item in liquidatable_accounts:
+        state: LiquidationState = empty(LiquidationState)
+        state.account = item.account
+        state.hook_debt_adjustment = self._call_view_hooks(
+            market,
+            HookId.ON_LIQUIDATION,
+            _abi_encode(
+                caller,
+                market,
+                state.account,
+                item.debt,
+                method_id=method_id("on_liquidation_view(address,address,address,uint256)")
+            )
+        )
+        state.total_debt_repaid = self._uint_plus_int(item.debt, state.hook_debt_adjustment)
+        state.debt_from_amm = item.x
+        state.coll_received = item.y
+        if state.debt_from_amm < state.total_debt_repaid:
+            state.debt_burned = state.total_debt_repaid - state.debt_from_amm
+        liquidation_states.append(state)
+
+    return liquidation_states
 
 
 @view
