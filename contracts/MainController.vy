@@ -208,6 +208,13 @@ struct PendingAccountState:
     liquidation_range: uint256[2]
     hook_debt_adjustment: int256
 
+struct CloseLoanState:
+    total_debt_repaid: uint256
+    debt_burned: uint256
+    debt_from_amm: uint256
+    coll_withdrawn: uint256
+    hook_debt_adjustment: int256
+
 
 enum HookId:
     ON_CREATE_LOAN
@@ -481,6 +488,37 @@ def get_pending_market_state_for_account(
         amm: AMM = AMM(c.amm)
         state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
 
+    return state
+
+
+@view
+@external
+def get_close_loan_amounts(account: address, market: address) -> CloseLoanState:
+    """
+    @notice Get balance information related to closing a loan
+    @param account The account to close the loan for
+    @param market Market of the loan being closed
+    @return Total debt repaid
+            Stablecoin amount burned from `account` (balance required to close the loan)
+            Stablecoin amount withdrawn from AMM (used toward repayment)
+            Collateral amount received by `account` once loan is closed
+            Debt adjustment amount applied by hooks
+    """
+    self._assert_caller_or_approved_delegate(account)
+    state: CloseLoanState = empty(CloseLoanState)
+    c: MarketContracts = self.market_contracts[market]
+    if c.collateral != empty(address):
+        debt: uint256 = MarketOperator(market).debt(account)
+        if debt != 0:
+            state.hook_debt_adjustment = self._call_view_hooks(
+                market,
+                HookId.ON_CLOSE_LOAN,
+                _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)"))
+            )
+            state.total_debt_repaid = self._uint_plus_int(debt, state.hook_debt_adjustment)
+            state.debt_from_amm, state.coll_withdrawn = AMM(c.amm).get_sum_xy(account)
+            if state.debt_from_amm < state.total_debt_repaid:
+                state.debt_burned = state.total_debt_repaid - state.debt_from_amm
     return state
 
 
