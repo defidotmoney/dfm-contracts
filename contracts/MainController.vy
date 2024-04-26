@@ -414,7 +414,7 @@ def get_market_states_for_account(
                 state.market = market
                 state.account_debt = debt
                 amm: AMM = AMM(c.amm)
-                state.amm_coll_balance, state.amm_stable_balance = amm.get_sum_xy(account)
+                state.amm_stable_balance, state.amm_coll_balance = amm.get_sum_xy(account)
                 state.health = market.health(account, True)
                 ns: int256[2] = amm.read_user_tick_numbers(account)
                 state.num_bands = convert(ns[1]-ns[0]+1, uint256)
@@ -480,8 +480,8 @@ def get_pending_market_state_for_account(
         debt_final: int256 = debt_change + state.hook_debt_adjustment
         (
             state.account_debt,
-            state.amm_coll_balance,
             state.amm_stable_balance,
+            state.amm_coll_balance,
             state.health,
             state.bands
         ) = market.pending_account_state_calculator(account, coll_change, debt_final, num_bands)
