@@ -203,8 +203,8 @@ struct AccountState:
     account_debt: uint256
     amm_coll_balance: uint256
     amm_stable_balance: uint256
-    num_bands: uint256
     health: int256
+    bands: int256[2]
     liquidation_range: uint256[2]
 
 struct PendingAccountState:
@@ -432,9 +432,8 @@ def get_market_states_for_account(
                 amm: AMM = AMM(c.amm)
                 state.amm_stable_balance, state.amm_coll_balance = amm.get_sum_xy(account)
                 state.health = market.health(account, True)
-                ns: int256[2] = amm.read_user_tick_numbers(account)
-                state.num_bands = convert(ns[1]-ns[0]+1, uint256)
-                state.liquidation_range = [amm.p_oracle_up(ns[0]), amm.p_oracle_down(ns[1])]
+                state.bands = amm.read_user_tick_numbers(account)
+                state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
                 account_states.append(state)
 
     return account_states
