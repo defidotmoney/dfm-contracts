@@ -96,9 +96,8 @@ SQRT_BAND_RATIO: immutable(uint256)
 
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16 # Start liquidating when threshold reached
-MAX_TICKS: public(constant(int256)) = 50
-MAX_TICKS_UINT: constant(uint256) = 50
-MIN_TICKS: public(constant(int256)) = 4
+MAX_TICKS: public(constant(uint256)) = 50
+MIN_TICKS: public(constant(uint256)) = 4
 MAX_SKIP_TICKS: constant(uint256) = 1024
 MAX_P_BASE_BANDS: constant(int256) = 5
 
@@ -163,6 +162,8 @@ def initialize(
 
 
 # --- external view functions ---
+# Most views in this contract should instead be accessed via related methods in `MainController`
+
 
 @view
 @external
@@ -281,7 +282,6 @@ def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> i
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
     return self._calculate_debt_n1(self.AMM, collateral, debt, n_bands)
-
 
 
 @view
@@ -448,6 +448,67 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
                 health += unsafe_div(p_diff * collateral, debt)
 
     return health
+
+
+@view
+@external
+def pending_account_state_calculator(
+    account: address,
+    coll_change: int256,
+    debt_change: int256,
+    num_bands: uint256
+) -> (uint256, uint256[2], int256, int256[2]):
+    """
+    @notice Get adjusted market data when `account` opens or adjusts a loan
+    @dev Called via `MarketController.get_pending_market_state_for_account`
+    @return New account debt, collateral balances, health, bands
+    """
+    amm: LLAMMA = self.AMM
+    debt: int256 = convert(self._debt(account, amm)[0], int256)
+    n_bands: uint256 = num_bands
+    ld: int256 = 0
+    ns: int256[2] = empty(int256[2])
+    if debt != 0:
+        ns = amm.read_user_tick_numbers(account)
+        ld = convert(self.liquidation_discounts[account], int256)
+        n_bands = convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)
+    else:
+        ld = convert(self.liquidation_discount, int256)
+        ns[0] = max_value(int256)  # This will trigger a "re-deposit"
+        assert n_bands >= MIN_TICKS and n_bands <= MAX_TICKS, "DFM:M Invalid num_bands"
+
+    n1: int256 = 0
+    collateral: int256 = 0
+    x_eff: int256 = 0
+    debt += debt_change
+    assert debt > 0, "DFM:M Non-positive debt"
+
+    active_band: int256 = amm.active_band_with_skip()
+
+    xy: uint256[2] = amm.get_sum_xy(account)
+    if ns[0] > active_band:  # re-deposit
+        collateral = convert(xy[1], int256) + coll_change
+        xy[1] = convert(collateral, uint256)
+        n1 = self._calculate_debt_n1(amm, convert(collateral, uint256), convert(debt, uint256), n_bands)
+        collateral *= convert(self.COLLATERAL_PRECISION, int256)  # now has 18 decimals
+    else:
+        assert debt_change < 0 and coll_change == 0, "DFM:M Unhealthy loan, repay only"
+        n1 = ns[0]
+        x_eff = convert(amm.get_x_down(account) * 10**18, int256)
+
+    p0: int256 = convert(amm.p_oracle_up(n1), int256)
+    if ns[0] > active_band:
+        x_eff = convert(self.get_y_effective(convert(collateral, uint256), n_bands, 0), int256) * p0
+
+    health: int256 = unsafe_div(x_eff, debt)
+    health = health - unsafe_div(health * ld, 10**18) - 10**18
+
+    if n1 > active_band:  # We are not in liquidation mode
+        p_diff: int256 = max(p0, convert(amm.price_oracle(), int256)) - p0
+        if p_diff > 0:
+            health += unsafe_div(p_diff * collateral, debt)
+
+    return convert(debt, uint256), xy, health, [n1, n1 + convert(n_bands, int256) - 1]
 
 
 # --- owner-only nonpayable functions ---
@@ -785,7 +846,7 @@ def get_y_effective(collateral: uint256, n_bands: uint256, discount: uint256) ->
         10**18, min(discount + unsafe_div((DEAD_SHARES * 10**18), max(unsafe_div(collateral, n_bands), DEAD_SHARES)), 10**18)
     ) / unsafe_mul(SQRT_BAND_RATIO, n_bands)
     y_effective: uint256 = d_y_effective
-    for i in range(1, MAX_TICKS_UINT):
+    for i in range(1, MAX_TICKS):
         if i == n_bands:
             break
         d_y_effective = unsafe_div(d_y_effective * Aminus1, A)

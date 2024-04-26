@@ -56,6 +56,12 @@ interface MarketOperator:
     def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -> (int256, uint256, uint256[2]): nonpayable
     def AMM() -> address: view
     def A() -> uint256: view
+    def pending_account_state_calculator(
+        account: address,
+        coll_change: int256,
+        debt_change: int256,
+        num_bands: uint256
+    ) -> (uint256, uint256, uint256, int256, int256[2]): view
 
 interface MonetaryPolicy:
     def rate(market: MarketOperator) -> uint256: view
@@ -192,6 +198,15 @@ struct AccountState:
     num_bands: uint256
     health: int256
     liquidation_range: uint256[2]
+
+struct PendingAccountState:
+    account_debt: uint256
+    amm_coll_balance: uint256
+    amm_stable_balance: uint256
+    health: int256
+    bands: int256[2]
+    liquidation_range: uint256[2]
+    hook_debt_adjustment: int256
 
 
 enum HookId:
@@ -400,6 +415,73 @@ def get_market_states_for_account(
                 account_states.append(state)
 
     return account_states
+
+
+@view
+@external
+def get_pending_market_state_for_account(
+    account: address,
+    market: MarketOperator,
+    coll_change: int256,
+    debt_change: int256,
+    num_bands: uint256 = 0
+) -> PendingAccountState:
+    """
+    @notice Get adjusted market data if `account` opens or adjusts a loan
+    @param account Address opening or adjusting loan
+    @param market Market of the loan being adjusted
+    @param coll_change Collateral adjustment amount. A positive value deposits, negative withdraws.
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @param num_bands Number of bands. Ignored if there is already an existing loan.
+    @return New account debt
+            AMM balances (Collateral, stablecoin)
+            Account health
+            Bands (high, low)
+            Liquidation price range (high, low)
+            Debt adjustment applied by hooks
+    """
+    debt: uint256 = market.debt(account)
+    state: PendingAccountState = empty(PendingAccountState)
+    c: MarketContracts = self.market_contracts[market.address]
+    if c.collateral != empty(address):
+        if debt == 0:
+            assert coll_change > 0 and debt_change > 0, "DFM:C 0 coll or debt"
+            state.hook_debt_adjustment = self._call_view_hooks(
+                market.address,
+                HookId.ON_CREATE_LOAN,
+                _abi_encode(
+                    account,
+                    market,
+                    coll_change,
+                    debt_change,
+                    method_id=method_id("on_create_loan_view(address,address,uint256,uint256)")
+                )
+            )
+        else:
+            state.hook_debt_adjustment = self._call_view_hooks(
+                market.address,
+                HookId.ON_ADJUST_LOAN,
+                _abi_encode(
+                    account,
+                    market,
+                    coll_change,
+                    debt_change,
+                    method_id=method_id("on_adjust_loan_view(address,address,int256,int256)")
+                )
+            )
+
+        debt_final: int256 = debt_change + state.hook_debt_adjustment
+        (
+            state.account_debt,
+            state.amm_coll_balance,
+            state.amm_stable_balance,
+            state.health,
+            state.bands
+        ) = market.pending_account_state_calculator(account, coll_change, debt_final, num_bands)
+        amm: AMM = AMM(c.amm)
+        state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
+
+    return state
 
 
 @view
@@ -985,6 +1067,26 @@ def _get_contracts(market: address) -> MarketContracts:
     assert c.collateral != empty(address), "DFM:C Invalid market"
 
     return c
+
+
+@view
+@internal
+def _call_view_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int256:
+    if hookdata & convert(hook_id, uint256) == 0:
+        return 0
+    hook: address = convert(hookdata >> 96, address)
+    return convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
+
+
+@view
+@internal
+def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int256:
+    debt_adjustment: int256 = 0
+
+    debt_adjustment += self._call_view_hook(self.market_hooks[market], hook_id, calldata)
+    debt_adjustment += self._call_view_hook(self.global_hooks, hook_id, calldata)
+
+    return debt_adjustment
 
 
 @internal
