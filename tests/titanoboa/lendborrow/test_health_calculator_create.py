@@ -8,12 +8,18 @@ from hypothesis import strategies as st
     debt=st.integers(min_value=10**10, max_value=2 * 10**6 * 10**18),
     collateral=st.integers(min_value=10**10, max_value=10**9 * 10**18 // 3000),
 )
-def test_health_calculator_create(amm, market, collateral_token, collateral, debt, n, accounts):
+def test_health_calculator_create(
+    amm, market, controller, collateral_token, collateral, debt, n, accounts
+):
     user = accounts[1]
     calculator_fail = False
     try:
         health = market.health_calculator(user, collateral, debt, False, n)
         health_full = market.health_calculator(user, collateral, debt, True, n)
+        assert (
+            controller.get_pending_market_state_for_account(user, market, collateral, debt)[3]
+            == health_full
+        )
     except Exception:
         calculator_fail = True
 

@@ -40,6 +40,10 @@ class StatefulLendBorrow(RuleBasedStateMachine):
                 future_health_full = self.market.health_calculator(
                     user, d_collateral, d_amount, True
                 )
+                future_health_controller = self.controller.get_pending_market_state_for_account(
+                    user, self.market, d_collateral, d_amount
+                )[3]
+
             except Exception:
                 calculation_success = False
 
@@ -50,6 +54,7 @@ class StatefulLendBorrow(RuleBasedStateMachine):
                 assert calculation_success
                 assert approx(self.market.health(user), future_health, 1e-4)
                 assert approx(self.market.health(user, True), future_health_full, 1e-4)
+                assert future_health_full == future_health_controller
 
             except AllGood:
                 pass

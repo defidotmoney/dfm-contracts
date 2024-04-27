@@ -17,7 +17,7 @@ def test_set_global_market_debt_ceiling(controller, alice):
 
 def test_set_implementations(controller, alice):
     with brownie.reverts("DFM:C Only owner"):
-        controller.set_implementations(ZERO_ADDRESS, ZERO_ADDRESS, {"from": alice})
+        controller.set_implementations(100, ZERO_ADDRESS, ZERO_ADDRESS, {"from": alice})
 
 
 def test_set_market_hooks(controller, market, alice):
