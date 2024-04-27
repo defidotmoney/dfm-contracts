@@ -443,7 +443,7 @@ def get_market_states_for_account(
 @external
 def get_pending_market_state_for_account(
     account: address,
-    market: MarketOperator,
+    market: address,
     coll_change: int256,
     debt_change: int256,
     num_bands: uint256 = 0
@@ -462,46 +462,46 @@ def get_pending_market_state_for_account(
             Liquidation price range (high, low)
             Debt adjustment applied by hooks
     """
-    debt: uint256 = market.debt(account)
+    c: MarketContracts = self._get_contracts(market)
     state: PendingAccountState = empty(PendingAccountState)
-    c: MarketContracts = self.market_contracts[market.address]
-    if c.collateral != empty(address):
-        if debt == 0:
-            assert coll_change > 0 and debt_change > 0, "DFM:C 0 coll or debt"
-            state.hook_debt_adjustment = self._call_view_hooks(
-                market.address,
-                HookId.ON_CREATE_LOAN,
-                _abi_encode(
-                    account,
-                    market,
-                    coll_change,
-                    debt_change,
-                    method_id=method_id("on_create_loan_view(address,address,uint256,uint256)")
-                )
-            )
-        else:
-            state.hook_debt_adjustment = self._call_view_hooks(
-                market.address,
-                HookId.ON_ADJUST_LOAN,
-                _abi_encode(
-                    account,
-                    market,
-                    coll_change,
-                    debt_change,
-                    method_id=method_id("on_adjust_loan_view(address,address,int256,int256)")
-                )
-            )
+    debt: uint256 = MarketOperator(market).debt(account)
 
-        debt_final: int256 = debt_change + state.hook_debt_adjustment
-        (
-            state.account_debt,
-            state.amm_stable_balance,
-            state.amm_coll_balance,
-            state.health,
-            state.bands
-        ) = market.pending_account_state_calculator(account, coll_change, debt_final, num_bands)
-        amm: AMM = AMM(c.amm)
-        state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
+    if debt == 0:
+        assert coll_change > 0 and debt_change > 0, "DFM:C 0 coll or debt"
+        state.hook_debt_adjustment = self._call_view_hooks(
+            market,
+            HookId.ON_CREATE_LOAN,
+            _abi_encode(
+                account,
+                market,
+                coll_change,
+                debt_change,
+                method_id=method_id("on_create_loan_view(address,address,uint256,uint256)")
+            )
+        )
+    else:
+        state.hook_debt_adjustment = self._call_view_hooks(
+            market,
+            HookId.ON_ADJUST_LOAN,
+            _abi_encode(
+                account,
+                market,
+                coll_change,
+                debt_change,
+                method_id=method_id("on_adjust_loan_view(address,address,int256,int256)")
+            )
+        )
+
+    debt_final: int256 = debt_change + state.hook_debt_adjustment
+    (
+        state.account_debt,
+        state.amm_stable_balance,
+        state.amm_coll_balance,
+        state.health,
+        state.bands
+    ) = MarketOperator(market).pending_account_state_calculator(account, coll_change, debt_final, num_bands)
+    amm: AMM = AMM(c.amm)
+    state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
 
     return state
 
@@ -519,21 +519,21 @@ def get_close_loan_amounts(account: address, market: address) -> CloseLoanState:
             Collateral amount received by `account` once loan is closed
             Debt adjustment amount applied by hooks
     """
-    self._assert_caller_or_approved_delegate(account)
+    c: MarketContracts = self._get_contracts(market)
     state: CloseLoanState = empty(CloseLoanState)
-    c: MarketContracts = self.market_contracts[market]
-    if c.collateral != empty(address):
-        debt: uint256 = MarketOperator(market).debt(account)
-        if debt != 0:
-            state.hook_debt_adjustment = self._call_view_hooks(
-                market,
-                HookId.ON_CLOSE_LOAN,
-                _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)"))
-            )
-            state.total_debt_repaid = self._uint_plus_int(debt, state.hook_debt_adjustment)
-            state.debt_from_amm, state.coll_withdrawn = AMM(c.amm).get_sum_xy(account)
-            if state.debt_from_amm < state.total_debt_repaid:
-                state.debt_burned = state.total_debt_repaid - state.debt_from_amm
+    debt: uint256 = MarketOperator(market).debt(account)
+
+    if debt != 0:
+        state.hook_debt_adjustment = self._call_view_hooks(
+            market,
+            HookId.ON_CLOSE_LOAN,
+            _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)"))
+        )
+        state.total_debt_repaid = self._uint_plus_int(debt, state.hook_debt_adjustment)
+        state.debt_from_amm, state.coll_withdrawn = AMM(c.amm).get_sum_xy(account)
+        if state.debt_from_amm < state.total_debt_repaid:
+            state.debt_burned = state.total_debt_repaid - state.debt_from_amm
+
     return state
 
 
@@ -559,6 +559,7 @@ def get_liquidation_amounts(
                 Collateral amount received by `caller` from liquidation
                 Debt adjustment amount applied by hooks
     """
+    self._get_contracts(market)
     liquidatable_accounts: DynArray[Position, 1000] = MarketOperator(market).users_to_liquidate(start, limit)
     liquidation_states: DynArray[LiquidationState, 1000] = []
 
