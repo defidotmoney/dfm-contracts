@@ -66,7 +66,7 @@ def controller_for_liquidation(
             # Calculation is not precise because of dead shares, but the last withdrawal will put dust in admin fees
             assert approx(
                 stablecoin.balanceOf(fee_receiver),
-                market.tokens_to_liquidate(user),
+                market.tokens_to_liquidate(admin, user),
                 1e-10,
             )
 
@@ -131,7 +131,7 @@ def test_tokens_to_liquidate(
     with boa.env.anchor():
         market = controller_for_liquidation(sleep_time=80 * 86400, discount=0)
         initial_balance = stablecoin.balanceOf(fee_receiver)
-        tokens_to_liquidate = market.tokens_to_liquidate(user, frac)
+        tokens_to_liquidate = market.tokens_to_liquidate(fee_receiver, user, frac)
 
         with boa.env.prank(accounts[2]):
             stablecoin.transfer(fee_receiver, 10**10)

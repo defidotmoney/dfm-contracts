@@ -287,19 +287,20 @@ def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> i
 @view
 @external
 @nonreentrant('lock')
-def tokens_to_liquidate(account: address, frac: uint256 = 10 ** 18) -> uint256:
+def tokens_to_liquidate(caller: address, target: address, frac: uint256 = 10 ** 18) -> uint256:
     """
     @notice Calculate the required stablecoin balance to liquidate an account
-    @param account Address of the account to liquidate
+    @param caller Address of the account performing the liquidation
+    @param target Address of the account to liquidate
     @param frac Fraction to liquidate; 100% = 10**18
     @return The amount of stablecoins needed
     """
     health_limit: uint256 = 0
-    if account != msg.sender:
-        health_limit = self.liquidation_discounts[account]
+    if caller != target:
+        health_limit = self.liquidation_discounts[target]
     amm: LLAMMA = self.AMM
-    stablecoins: uint256 = unsafe_div(amm.get_sum_xy(account)[0] * self._get_f_remove(frac, health_limit), 10 ** 18)
-    debt: uint256 = unsafe_div(self._debt(account, amm)[0] * frac, 10 ** 18)
+    stablecoins: uint256 = unsafe_div(amm.get_sum_xy(target)[0] * self._get_f_remove(frac, health_limit), 10 ** 18)
+    debt: uint256 = unsafe_div(self._debt(target, amm)[0] * frac, 10 ** 18)
 
     return unsafe_sub(max(debt, stablecoins), stablecoins)
 
