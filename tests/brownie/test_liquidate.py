@@ -21,7 +21,7 @@ def setup(collateral, alice, controller, market, policy):
     controller.collect_fees([market], {"from": alice})
 
 
-def test_liquidation(market, stable, controller, policy, fee_receiver, alice, bob):
+def test_liquidation(market, stable, controller, collateral, fee_receiver, alice, bob):
     # hacky mint
     debt = controller.get_market_states_for_account(alice, [market])[0][1]
     stable.mint(bob, debt, {"from": controller})
@@ -41,9 +41,13 @@ def test_liquidation(market, stable, controller, policy, fee_receiver, alice, bo
     assert market.total_debt() == 0
     assert controller.total_debt() == 0
 
+    assert collateral.balanceOf(bob) == 50 * 10**18
+
 
 @pytest.mark.parametrize("frac", [10**17, 123456789, 4 * 10**13])
-def test_partial_liquidation(market, stable, controller, policy, fee_receiver, alice, bob, frac):
+def test_partial_liquidation(
+    market, stable, controller, collateral, fee_receiver, alice, bob, frac, amm
+):
     # hacky mint
     debt = controller.get_market_states_for_account(alice, [market])[0][1]
     liquidation_amount = debt * frac // 10**18
@@ -64,6 +68,10 @@ def test_partial_liquidation(market, stable, controller, policy, fee_receiver, a
     assert market.user_state(alice)[2] == debt - liquidation_amount
     assert market.total_debt() == debt - liquidation_amount
     assert controller.total_debt() == debt - liquidation_amount
+
+    assert collateral.balanceOf(bob) > 0
+    assert collateral.balanceOf(bob) + collateral.balanceOf(amm) == 50 * 10**18
+    assert market.user_state(alice)[0] == collateral.balanceOf(amm)
 
 
 @pytest.mark.parametrize("frac", [10**18 + 1, 2**255 - 1, 2**256 - 1])
