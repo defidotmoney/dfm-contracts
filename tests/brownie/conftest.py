@@ -45,8 +45,12 @@ def core(CoreOwner, deployer, fee_receiver):
 
 
 @pytest.fixture(scope="module")
-def stable(StableCoin, deployer):
-    return StableCoin.deploy({"from": deployer})
+def mock_endpoint(MockEndpoint, deployer):
+    return MockEndpoint.deploy({"from": deployer})
+
+@pytest.fixture(scope="module")
+def stable(StableCoin, core, deployer, mock_endpoint):
+    return StableCoin.deploy(core, "Test Stablecoin", "TST", mock_endpoint, {"from": deployer})
 
 
 @pytest.fixture(scope="module")
