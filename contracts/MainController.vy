@@ -730,13 +730,13 @@ def create_loan(
 
     self._deposit_collateral(msg.sender, c.collateral, c.amm, coll_amount)
     debt_increase: uint256 = MarketOperator(market).create_loan(account, coll_amount, debt_amount_final, n_bands)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     total_debt: uint256 = self.total_debt + debt_increase
     self._assert_below_debt_ceiling(total_debt)
 
     self.total_debt = total_debt
     self.minted += debt_amount
+    self._update_rate(market, c.amm, c.mp_idx)
 
     STABLECOIN.mint(msg.sender, debt_amount)
 
@@ -778,10 +778,10 @@ def adjust_loan(
     ) + debt_change
 
     debt_adjustment: int256 = MarketOperator(market).adjust_loan(account, coll_change, debt_change_final, max_active_band)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     total_debt: uint256 = self._uint_plus_int(self.total_debt, debt_adjustment)
     self.total_debt = total_debt
+    self._update_rate(market, c.amm, c.mp_idx)
 
     if debt_change != 0:
         debt_change_abs: uint256 = convert(abs(debt_change), uint256)
@@ -818,7 +818,6 @@ def close_loan(account: address, market: address):
     burn_amount: uint256 = 0
     xy: uint256[2] = empty(uint256[2])
     debt_adjustment, burn_amount, xy = MarketOperator(market).close_loan(account)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     burn_adjust: int256 = self._call_hooks(
         market,
@@ -829,6 +828,7 @@ def close_loan(account: address, market: address):
 
     self.redeemed += burn_amount
     self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
+    self._update_rate(market, c.amm, c.mp_idx)
 
     if xy[0] > 0:
         STABLECOIN.transferFrom(c.amm, msg.sender, xy[0])
@@ -856,7 +856,6 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
     debt_amount: uint256 = 0
     xy: uint256[2] = empty(uint256[2])
     debt_adjustment, debt_amount, xy = MarketOperator(market).liquidate(msg.sender, target, min_x, frac)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     burn_adjust: int256 = self._call_hooks(
         market,
@@ -873,6 +872,7 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
 
     self.redeemed += debt_amount
     self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
+    self._update_rate(market, c.amm, c.mp_idx)
 
     burn_amm: uint256 = min(xy[0], debt_amount)
     if burn_amm != 0:
@@ -901,6 +901,11 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     receiver: address = CORE_OWNER.feeReceiver()
 
     debt_increase_total: uint256 = 0
+    i: uint256 = 0
+    amm_list: address[255] = empty(address[255])
+    mp_idx_list: uint256[255] = empty(uint256[255])
+
+    # collect market fees and calculate aggregate debt increase
     for market in market_list:
         c: MarketContracts = self._get_contracts(market)
 
@@ -908,7 +913,6 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
         xy: uint256[2] = empty(uint256[2])
 
         debt_increase, xy = MarketOperator(market).collect_fees()
-        self._update_rate(market, c.amm, c.mp_idx)
         debt_increase_total += debt_increase
 
         if xy[0] > 0:
@@ -918,8 +922,17 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
 
         log CollectAmmFees(market, xy[1], xy[0])
 
+        amm_list[i] = c.amm
+        mp_idx_list[i] = c.mp_idx
+        i = unsafe_add(i, 1)
+
+    # update total debt and market rates
     total_debt: uint256 = self.total_debt + debt_increase_total
     self.total_debt = total_debt
+    i = 0
+    for market in market_list:
+        self._update_rate(market, amm_list[i], mp_idx_list[i])
+        i = unsafe_add(i, 1)
 
     mint_total: uint256 = 0
     minted: uint256 = self.minted
