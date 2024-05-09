@@ -6,6 +6,7 @@ import "./interfaces/ICoreOwner.sol";
 import "@layerzero-v2-oapp/contracts/oft/OFT.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 contract StableCoin is OFT, ERC20FlashMint {
     using EnumerableSet for EnumerableSet.UintSet;
@@ -67,7 +68,7 @@ contract StableCoin is OFT, ERC20FlashMint {
         }
     }
 
-    function _setPeer(uint32 _eid, bytes32 _peer) internal {
+    function _setPeer(uint32 _eid, bytes32 _peer) override internal {
         bool update = false;
         bytes32 peer = peers[_eid];
 
