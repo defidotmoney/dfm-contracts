@@ -6,3 +6,5 @@ build/
 reports/
 .vscode
 venv/
+node_modules
+package-lock.yaml
