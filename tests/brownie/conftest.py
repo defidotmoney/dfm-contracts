@@ -55,6 +55,11 @@ def policy(ConstantMonetaryPolicy, deployer):
 
 
 @pytest.fixture(scope="module")
+def policy2(ConstantMonetaryPolicy, deployer):
+    return ConstantMonetaryPolicy.deploy({"from": deployer})
+
+
+@pytest.fixture(scope="module")
 def oracle(DummyPriceOracle, deployer):
     return DummyPriceOracle.deploy(3000 * 10**18, {"from": deployer})
 
