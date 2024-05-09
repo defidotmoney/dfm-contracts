@@ -11,10 +11,10 @@ Core protocol contracts for defi.money. Based on Curve Finance's crvUSD.
 
 #### Installation
 
-1. Install [`hardhat`](https://github.com/NomicFoundation/hardhat). This can be done in the `dfm-core` root directory, or in your home directory (so it is available for all brownie projects).
+1. Install [`hardhat`](https://github.com/NomicFoundation/hardhat) and contract dependencies via npm. This should be done in the `dfm-core` root directory.
 
    ```bash
-   npm install --save-dev hardhat
+   npm ci
    ```
 
 2. Within the `dfm-core` root directory, create a [`venv`](https://docs.python.org/3/library/venv.html) and install the python dependencies:

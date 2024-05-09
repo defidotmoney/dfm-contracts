@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "@layerzerolabs/lz-evm-oapp-v2": "^2.3.7"
+  },
+  "devDependencies": {
+    "hardhat": "^2.22.3"
   }
 }
