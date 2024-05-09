@@ -25,11 +25,6 @@ contract StableCoin is OFT, ERC20FlashMint {
         CORE_OWNER = _core;
     }
 
-    modifier onlyMinter() {
-        require(isMinter[msg.sender], "Caller not approved to mint/burn");
-        _;
-    }
-
     function setMinter(
         address minter,
         bool isApproved
@@ -41,14 +36,15 @@ contract StableCoin is OFT, ERC20FlashMint {
     function mint(
         address _to,
         uint256 _value
-    ) external onlyMinter returns (bool) {
+    ) external returns (bool) {
+        require(isMinter[msg.sender], "DFM:Caller not approved to mint");
         _mint(_to, _value);
         return true;
     }
 
     function burn(address _account, uint256 _amount) external returns (bool) {
         if (msg.sender != _account)
-            require(isMinter[msg.sender], "Caller not approved to mint/burn");
+            require(isMinter[msg.sender], "DFM:Caller not approved to burn");
         _burn(_account, _amount);
         return true;
     }
