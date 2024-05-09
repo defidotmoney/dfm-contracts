@@ -1085,6 +1085,8 @@ def add_new_monetary_policy(monetary_policy: MonetaryPolicy):
 def change_existing_monetary_policy(monetary_policy: MonetaryPolicy, mp_idx: uint256):
     """
     @notice Change the monetary policy at an existing `mp_idx`
+    @dev Rates for markets using `mp_idx` are NOT updated,
+         it is recommended to force an update via `collect_fees`
     """
     self._assert_only_owner()
     assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
@@ -1097,10 +1099,12 @@ def change_existing_monetary_policy(monetary_policy: MonetaryPolicy, mp_idx: uin
 def change_market_monetary_policy(market: address, mp_idx: uint256):
     """
     @notice Modify the assigned `mp_idx` for the given market
+    @dev Also updates the current market rate
     """
     self._assert_only_owner()
     assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
     self.market_contracts[market].mp_idx = mp_idx
+    self._update_rate(market, self.market_contracts[market].amm, mp_idx)
 
     log ChangeMonetaryPolicyForMarket(market, mp_idx)
 
