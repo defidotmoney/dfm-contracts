@@ -3,9 +3,10 @@
 pragma solidity 0.8.24;
 
 import "./interfaces/ICoreOwner.sol";
-import "@layerzero-v2-oapp/contracts/oft/OFT.sol";
+import "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 contract StableCoin is OFT, ERC20FlashMint {
     using EnumerableSet for EnumerableSet.UintSet;
@@ -67,21 +68,9 @@ contract StableCoin is OFT, ERC20FlashMint {
         }
     }
 
-    function _setPeer(uint32 _eid, bytes32 _peer) internal {
-        bool update = false;
-        bytes32 peer = peers[_eid];
-
-        assembly {
-            update := xor(iszero(peer), iszero(_peer))
-        }
-
-        if (update) {
-            if (_peer == bytes32(0)) {
-                __eids.remove(_eid);
-            } else {
-                __eids.add(_eid);
-            }
-        }
+    function _setPeer(uint32 _eid, bytes32 _peer) internal override {
+        if (_peer == bytes32(0)) __eids.remove(_eid);
+        else __eids.add(_eid);
 
         peers[_eid] = _peer;
         emit PeerSet(_eid, _peer);
@@ -94,15 +83,15 @@ contract StableCoin is OFT, ERC20FlashMint {
     {
         uint256 size = __eids.length();
 
-        uint32[] memory eids = new uint32[](size);
+        uint32[] memory _eids = new uint32[](size);
         bytes32[] memory _peers = new bytes32[](size);
 
+        uint32 eid = 0;
         for (uint256 i; i < size; i++) {
-            uint32 eid = uint32(__eids.at(i));
-            eids[i] = eid;
+            _eids[i] = (eid = uint32(__eids.at(i)));
             _peers[i] = peers[eid];
         }
-        return (eids, _peers);
+        return (_eids, _peers);
     }
 
     function owner() public view override returns (address) {
