@@ -46,10 +46,10 @@ contract StableCoin is OFT, ERC20FlashMint {
         return true;
     }
 
-    function burn(address _to, uint256 _value) external returns (bool) {
-        if (msg.sender != _to)
+    function burn(address _account, uint256 _amount) external returns (bool) {
+        if (msg.sender != _account)
             require(isMinter[msg.sender], "Caller not approved to mint/burn");
-        _burn(_to, _value);
+        _burn(_account, _amount);
         return true;
     }
 
