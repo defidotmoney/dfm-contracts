@@ -2,11 +2,6 @@
   "name": "dfm-core",
   "version": "1.0.0",
   "description": "Core protocol contracts for defi.money. Based on Curve Finance's crvUSD.",
-  "directories": {
-    "test": "tests"
-  },
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@layerzerolabs/lz-evm-oapp-v2": "^2.3.7",
     "@layerzerolabs/lz-evm-protocol-v2": "^2.3.7",
