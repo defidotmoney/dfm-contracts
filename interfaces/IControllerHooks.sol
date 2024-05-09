@@ -12,6 +12,10 @@ pragma solidity >=0.8.0;
          Each function returns `int256 debtAdjustment`.
          * A positive value creates more debt, charging a fee to the account.
          * A negative value creates less debt, giving a rebate to the account.
+
+         Note that the sum of all hook debt adjustments for a market cannot be
+         less than zero. You can check the current debt adjustment sum using
+         `MainController.get_total_hook_debt_adjustment`
  */
 interface IControllerHooks {
     /**

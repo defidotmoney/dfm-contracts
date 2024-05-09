@@ -272,6 +272,7 @@ isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 global_hooks: uint256
 market_hooks: HashMap[address, uint256]
 amm_hooks: HashMap[address, address]
+hook_debt_adjustment: HashMap[address, uint256]
 implementations: HashMap[uint256, Implementations]
 
 
@@ -642,6 +643,17 @@ def get_hooks(market: address) -> (address, address, bool[NUM_HOOK_IDS]):
 
 @view
 @external
+def get_total_hook_debt_adjustment(market: address) -> uint256:
+    """
+    @notice Get the total aggregate hook debt adjustments for the given market
+    @dev The sum of all hook debt adjustments cannot ever be less than zero
+         or the system will have uncollateralized debt.
+    """
+    return self.hook_debt_adjustment[market]
+
+
+@view
+@external
 def get_monetary_policy_for_market(market: address) -> MonetaryPolicy:
     """
     @notice Get the address of the monetary policy for `market`
@@ -949,6 +961,18 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     return mint_total
 
 
+@external
+def increase_total_hook_debt_adjustment(market: address, amount: uint256):
+    """
+    @notice Burn debt to increase the total aggregate hook debt adjustment
+            value for the given market. Used to pre-fund hook debt rebates.
+    """
+    assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+
+    STABLECOIN.burn(msg.sender, amount)
+    self.hook_debt_adjustment[market] += amount
+
+
 # --- owner-only nonpayable functions ---
 
 @external
@@ -1191,6 +1215,15 @@ def _get_contracts(market: address) -> MarketContracts:
 
 @view
 @internal
+def _limit_debt_adjustment(market: address, debt_adjustment: int256) -> (int256, uint256):
+    total_adjustment: int256 = convert(self.hook_debt_adjustment[market], int256)
+    if debt_adjustment < 0 and abs(debt_adjustment) > total_adjustment:
+        debt_adjustment = -total_adjustment
+    return debt_adjustment, convert(debt_adjustment + total_adjustment, uint256)
+
+
+@view
+@internal
 def _call_view_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int256:
     if hookdata & convert(hook_id, uint256) == 0:
         return 0
@@ -1206,7 +1239,7 @@ def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> 
     debt_adjustment += self._call_view_hook(self.market_hooks[market], hook_id, calldata)
     debt_adjustment += self._call_view_hook(self.global_hooks, hook_id, calldata)
 
-    return debt_adjustment
+    return self._limit_debt_adjustment(market, debt_adjustment)[0]
 
 
 @internal
@@ -1242,6 +1275,9 @@ def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int25
 
     debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata)
     debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata)
+
+    if debt_adjustment != 0:
+        debt_adjustment, self.hook_debt_adjustment[market] = self._limit_debt_adjustment(market, debt_adjustment)
 
     return debt_adjustment
 
