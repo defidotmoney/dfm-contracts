@@ -466,6 +466,7 @@ def get_pending_market_state_for_account(
     c: MarketContracts = self._get_contracts(market)
     state: PendingAccountState = empty(PendingAccountState)
     debt: uint256 = MarketOperator(market).debt(account)
+    assert convert(debt, int256) + debt_change > 0, "DFM:C Negative debt"
 
     if debt == 0:
         assert coll_change > 0 and debt_change > 0, "DFM:C 0 coll or debt"
@@ -478,7 +479,8 @@ def get_pending_market_state_for_account(
                 coll_change,
                 debt_change,
                 method_id=method_id("on_create_loan_view(address,address,uint256,uint256)")
-            )
+            ),
+            self._positive_only_bounds(convert(debt_change, uint256))
         )
     else:
         state.hook_debt_adjustment = self._call_view_hooks(
@@ -490,7 +492,8 @@ def get_pending_market_state_for_account(
                 coll_change,
                 debt_change,
                 method_id=method_id("on_adjust_loan_view(address,address,int256,int256)")
-            )
+            ),
+            self._adjust_loan_bounds(debt_change)
         )
 
     debt_final: int256 = debt_change + state.hook_debt_adjustment
@@ -528,7 +531,8 @@ def get_close_loan_amounts(account: address, market: address) -> CloseLoanState:
         state.hook_debt_adjustment = self._call_view_hooks(
             market,
             HookId.ON_CLOSE_LOAN,
-            _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)"))
+            _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)")),
+            self._positive_only_bounds(debt)
         )
         state.total_debt_repaid = self._uint_plus_int(debt, state.hook_debt_adjustment)
         state.debt_from_amm, state.coll_withdrawn = AMM(c.amm).get_sum_xy(account)
@@ -576,7 +580,8 @@ def get_liquidation_amounts(
                 state.account,
                 item.debt,
                 method_id=method_id("on_liquidation_view(address,address,address,uint256)")
-            )
+            ),
+            self._positive_only_bounds(item.debt)
         )
         state.total_debt_repaid = self._uint_plus_int(item.debt, state.hook_debt_adjustment)
         state.debt_from_amm = item.x
@@ -736,7 +741,8 @@ def create_loan(
             coll_amount,
             debt_amount,
             method_id=method_id("on_create_loan(address,address,uint256,uint256)")
-        )
+        ),
+        self._positive_only_bounds(debt_amount)
     )
     debt_amount_final: uint256 = self._uint_plus_int(debt_amount, hook_adjust)
 
@@ -786,7 +792,8 @@ def adjust_loan(
             coll_change,
             debt_change,
             method_id=method_id("on_adjust_loan(address,address,int256,int256)")
-        )
+        ),
+        self._adjust_loan_bounds(debt_change)
     ) + debt_change
 
     debt_adjustment: int256 = MarketOperator(market).adjust_loan(account, coll_change, debt_change_final, max_active_band)
@@ -834,7 +841,8 @@ def close_loan(account: address, market: address):
     burn_adjust: int256 = self._call_hooks(
         market,
         HookId.ON_CLOSE_LOAN,
-        _abi_encode(account, market, burn_amount, method_id=method_id("on_close_loan(address,address,uint256)"))
+        _abi_encode(account, market, burn_amount, method_id=method_id("on_close_loan(address,address,uint256)")),
+        self._positive_only_bounds(burn_amount)
     )
     burn_amount = self._uint_plus_int(burn_amount, burn_adjust)
 
@@ -878,7 +886,8 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
             target,
             debt_amount,
             method_id=method_id("on_liquidation(address,address,address,uint256)")
-        )
+        ),
+        self._positive_only_bounds(debt_amount)
     )
     debt_amount = self._uint_plus_int(debt_amount, burn_adjust)
 
@@ -1203,6 +1212,26 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
         return initial + convert(adjustment, uint256)
 
 
+@pure
+@internal
+def _adjust_loan_bounds(debt_change: int256) -> int256[2]:
+    if debt_change < 0:
+        # when reducing debt, hook cannot cause a debt increase
+        return [-2**255, -debt_change]
+    if debt_change > 0:
+        # when increasing debt, hook cannot cause a debt reduction
+        return [-debt_change, max_value(int256)]
+    # when debt is unchanged, hook cannot apply any adjustment
+    return empty(int256[2])
+
+
+@pure
+@internal
+def _positive_only_bounds(debt_amount: uint256) -> int256[2]:
+    # hook adjustment cannot cause debt_amount to go below 0
+    return [-convert(debt_amount, int256), max_value(int256)]
+
+
 @view
 @internal
 def _get_contracts(market: address) -> MarketContracts:
@@ -1224,20 +1253,22 @@ def _limit_debt_adjustment(market: address, debt_adjustment: int256) -> (int256,
 
 @view
 @internal
-def _call_view_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int256:
+def _call_view_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
     if hookdata & convert(hook_id, uint256) == 0:
         return 0
     hook: address = convert(hookdata >> 96, address)
-    return convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
+    response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
+    assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
+    return response
 
 
 @view
 @internal
-def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int256:
+def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
     debt_adjustment: int256 = 0
 
-    debt_adjustment += self._call_view_hook(self.market_hooks[market], hook_id, calldata)
-    debt_adjustment += self._call_view_hook(self.global_hooks, hook_id, calldata)
+    debt_adjustment += self._call_view_hook(self.market_hooks[market], hook_id, calldata, bounds)
+    debt_adjustment += self._call_view_hook(self.global_hooks, hook_id, calldata, bounds)
 
     return self._limit_debt_adjustment(market, debt_adjustment)[0]
 
@@ -1262,19 +1293,21 @@ def _withdraw_collateral(account: address, collateral: address, amm: address, am
 
 
 @internal
-def _call_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255]) -> int256:
+def _call_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
     if hookdata & convert(hook_id, uint256) == 0:
         return 0
     hook: address = convert(hookdata >> 96, address)
-    return convert(raw_call(hook, calldata, max_outsize=32), int256)
+    response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
+    assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
+    return response
 
 
 @internal
-def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255]) -> int256:
+def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
     debt_adjustment: int256 = 0
 
-    debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata)
-    debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata)
+    debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata, bounds)
+    debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata, bounds)
 
     if debt_adjustment != 0:
         debt_adjustment, self.hook_debt_adjustment[market] = self._limit_debt_adjustment(market, debt_adjustment)
