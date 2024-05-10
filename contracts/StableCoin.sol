@@ -25,11 +25,6 @@ contract StableCoin is OFT, ERC20FlashMint {
         CORE_OWNER = _core;
     }
 
-    modifier onlyMinter() {
-        require(isMinter[msg.sender], "Caller not approved to mint/burn");
-        _;
-    }
-
     function setMinter(
         address minter,
         bool isApproved
@@ -41,15 +36,16 @@ contract StableCoin is OFT, ERC20FlashMint {
     function mint(
         address _to,
         uint256 _value
-    ) external onlyMinter returns (bool) {
+    ) external returns (bool) {
+        require(isMinter[msg.sender], "DFM:Caller not approved to mint");
         _mint(_to, _value);
         return true;
     }
 
-    function burn(address _to, uint256 _value) external returns (bool) {
-        if (msg.sender != _to)
-            require(isMinter[msg.sender], "Caller not approved to mint/burn");
-        _burn(_to, _value);
+    function burn(address _account, uint256 _amount) external returns (bool) {
+        if (msg.sender != _account)
+            require(isMinter[msg.sender], "DFM:Caller not approved to burn");
+        _burn(_account, _amount);
         return true;
     }
 
@@ -68,21 +64,9 @@ contract StableCoin is OFT, ERC20FlashMint {
         }
     }
 
-    function _setPeer(uint32 _eid, bytes32 _peer) override internal {
-        bool update = false;
-        bytes32 peer = peers[_eid];
-
-        assembly {
-            update := xor(iszero(peer), iszero(_peer))
-        }
-
-        if (update) {
-            if (_peer == bytes32(0)) {
-                __eids.remove(_eid);
-            } else {
-                __eids.add(_eid);
-            }
-        }
+    function _setPeer(uint32 _eid, bytes32 _peer) internal override {
+        if (_peer == bytes32(0)) __eids.remove(_eid);
+        else __eids.add(_eid);
 
         peers[_eid] = _peer;
         emit PeerSet(_eid, _peer);
@@ -95,15 +79,15 @@ contract StableCoin is OFT, ERC20FlashMint {
     {
         uint256 size = __eids.length();
 
-        uint32[] memory eids = new uint32[](size);
+        uint32[] memory _eids = new uint32[](size);
         bytes32[] memory _peers = new bytes32[](size);
 
+        uint32 eid = 0;
         for (uint256 i; i < size; i++) {
-            uint32 eid = uint32(__eids.at(i));
-            eids[i] = eid;
+            _eids[i] = (eid = uint32(__eids.at(i)));
             _peers[i] = peers[eid];
         }
-        return (eids, _peers);
+        return (_eids, _peers);
     }
 
     function owner() public view override returns (address) {
