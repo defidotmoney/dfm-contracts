@@ -2,8 +2,6 @@ import pytest
 
 from brownie import ZERO_ADDRESS, chain
 
-INITIAL_FEES = 10_000 * 10**18
-
 
 @pytest.fixture(scope="module", autouse=True)
 def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob, deployer):
@@ -17,11 +15,9 @@ def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob
 
     controller.set_market_hooks(ZERO_ADDRESS, hooks, [True, True, True, True], {"from": deployer})
 
-    # magic to ensure we have non-zero fees, so negative debt adjustments don't underflow
-    hooks.set_response(INITIAL_FEES, {"from": deployer})
-    controller.create_loan(deployer, market, 100 * 10**18, INITIAL_FEES, 5, {"from": deployer})
-    hooks.set_response(0, {"from": deployer})
-    controller.adjust_loan(deployer, market, 0, -INITIAL_FEES, {"from": deployer})
+    # ensure initial hook debt is sufficient for negative adjustments
+    stable.mint(deployer, 200 * 10**18, {"from": controller})
+    controller.increase_total_hook_debt_adjustment(market, 200 * 10**18, {"from": deployer})
 
     # set rate to 100% APR
     policy.set_rate(int(1e18 * 1.0 / 365 / 86400), {"from": alice})

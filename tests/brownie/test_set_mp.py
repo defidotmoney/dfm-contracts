@@ -37,11 +37,11 @@ def test_change_existing_monetary_policy_invalid_mp_idx(controller, alice, deplo
         controller.change_existing_monetary_policy(alice, 1, {"from": deployer})
 
 
-def test_change_market_monetary_policy(controller, market, policy, alice, deployer):
-    controller.add_new_monetary_policy(alice, {"from": deployer})
+def test_change_market_monetary_policy(controller, market, policy, policy2, deployer):
+    controller.add_new_monetary_policy(policy2, {"from": deployer})
 
     controller.change_market_monetary_policy(market, 1, {"from": deployer})
-    assert controller.get_monetary_policy_for_market(market) == alice
+    assert controller.get_monetary_policy_for_market(market) == policy2
 
     controller.change_market_monetary_policy(market, 0, {"from": deployer})
     assert controller.get_monetary_policy_for_market(market) == policy

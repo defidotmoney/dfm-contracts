@@ -12,6 +12,10 @@ pragma solidity >=0.8.0;
          Each function returns `int256 debtAdjustment`.
          * A positive value creates more debt, charging a fee to the account.
          * A negative value creates less debt, giving a rebate to the account.
+
+         Note that the sum of all hook debt adjustments for a market cannot be
+         less than zero. You can check the current debt adjustment sum using
+         `MainController.get_total_hook_debt_adjustment`
  */
 interface IControllerHooks {
     /**
@@ -19,6 +23,7 @@ interface IControllerHooks {
         @return debtAdjustment Adjustment amount to the new debt created
                 * The minted amount is exactly `debtAmount`
                 * The adjustment is applied to the amount of debt owed to the market
+                * Reverts if `debtAmount - debtAdjustment < 0`
      */
     function on_create_loan(
         address account,
@@ -37,8 +42,10 @@ interface IControllerHooks {
     /**
         @dev Called when adjusting an existing loan
         @return debtAdjustment Debt adjustment amount
-                * the change to debt is exactly `debtChange`. A positive value means minting, negative burning.
+                * The change to debt is exactly `debtChange`. A positive value means minting, negative burning.
                 * The adjustment is applied to the amount of debt owed to the market.
+                * Reverts if `debtChange == 0 && debtAdjustment != 0`
+                * Reverts if the sign of `debtChange` and `debtChange + debtAdjustment` are different
      */
     function on_adjust_loan(
         address account,
@@ -57,8 +64,9 @@ interface IControllerHooks {
     /**
         @dev Called when closing an existing loan
         @return debtAdjustment Adjustment amount on debt owed
-                * the amount of debt reduced is exactly `accountDebt`
-                * the adjustment is applied to the amount of tokens burned from the caller's address
+                * The amount of debt reduced is exactly `accountDebt`
+                * The adjustment is applied to the amount of tokens burned from the caller's address
+                * Reverts if `accountDebt - debtAdjustment < 0`
      */
     function on_close_loan(
         address account,
@@ -75,8 +83,9 @@ interface IControllerHooks {
     /**
         @dev Called when an existing loan is liquidated
         @return debtAdjustment Adjustment amount on liquidated owed.
-                * the amount of debt reduced is exactly `debtLiquidated`
-                * the adjustment is applied to the amount of tokens burned from the caller's address
+                * The amount of debt reduced is exactly `debtLiquidated`
+                * The adjustment is applied to the amount of tokens burned from the caller's address
+                * reverts if `debtLiquidated - debtAdjustment < 0`
      */
     function on_liquidation(
         address caller,
