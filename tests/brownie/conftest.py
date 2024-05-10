@@ -48,6 +48,7 @@ def core(CoreOwner, deployer, fee_receiver):
 def mock_endpoint(MockEndpoint, deployer):
     return MockEndpoint.deploy({"from": deployer})
 
+
 @pytest.fixture(scope="module")
 def stable(StableCoin, core, deployer, mock_endpoint):
     return StableCoin.deploy(core, "Test Stablecoin", "TST", mock_endpoint, {"from": deployer})
@@ -214,4 +215,3 @@ def hooks(ControllerHookTester, deployer):
 @pytest.fixture(scope="module")
 def amm_hook(AmmHookTester, controller, collateral, amm, deployer):
     return AmmHookTester.deploy(controller, collateral, amm, {"from": deployer})
-
