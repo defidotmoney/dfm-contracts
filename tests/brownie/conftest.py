@@ -70,8 +70,8 @@ def oracle(DummyPriceOracle, deployer):
 
 
 @pytest.fixture(scope="module")
-def agg_stable(AggregateStablePrice2, core, stable, deployer):
-    return AggregateStablePrice2.deploy(core, stable, 10**15, {"from": deployer})
+def agg_stable(AggregateStablePrice, core, stable, deployer):
+    return AggregateStablePrice.deploy(core, stable, 10**15, {"from": deployer})
 
 
 @pytest.fixture(scope="module")

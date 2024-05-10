@@ -83,7 +83,7 @@ def redeemable_tokens(stablecoin_a, stablecoin_b):
 def price_aggregator(stablecoin, stableswap_a, stableswap_b, core, admin):
     with boa.env.prank(admin):
         agg = boa.load(
-            "contracts/oracles/AggregateStablePrice2.vy",
+            "contracts/oracles/AggregateStablePrice.vy",
             core.address,
             stablecoin.address,
             10**15,
@@ -133,7 +133,7 @@ def agg(
 def crypto_agg(dummy_tricrypto, agg, stableswap_a, admin):
     with boa.env.prank(admin):
         crypto_agg = boa.load(
-            "contracts/oracles/CryptoWithStablePrice.vy",
+            "contracts/testing/CryptoWithStablePrice.vy",
             dummy_tricrypto.address,
             0,
             stableswap_a,
@@ -150,7 +150,7 @@ def crypto_agg_with_external_oracle(
 ):
     with boa.env.prank(admin):
         crypto_agg = boa.load(
-            "contracts/oracles/CryptoWithStablePriceAndChainlink.vy",
+            "contracts/testing/CryptoWithStablePriceAndChainlink.vy",
             dummy_tricrypto.address,
             0,
             stableswap_a,
