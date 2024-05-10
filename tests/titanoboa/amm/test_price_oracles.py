@@ -9,7 +9,7 @@ def ema_price_oracle(price_oracle, admin):
         signature = price_oracle.price.args_abi_type(0)[0]
         signature = b"\x00" * (32 - len(signature)) + signature
         return boa.load(
-            "contracts/oracles/EmaPriceOracle.vy", 10000, price_oracle.address, signature
+            "contracts/testing/EmaPriceOracle.vy", 10000, price_oracle.address, signature
         )
 
 
