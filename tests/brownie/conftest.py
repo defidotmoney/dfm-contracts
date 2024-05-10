@@ -214,3 +214,4 @@ def hooks(ControllerHookTester, deployer):
 @pytest.fixture(scope="module")
 def amm_hook(AmmHookTester, controller, collateral, amm, deployer):
     return AmmHookTester.deploy(controller, collateral, amm, {"from": deployer})
+
