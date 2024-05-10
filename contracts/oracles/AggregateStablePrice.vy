@@ -1,14 +1,15 @@
 # @version 0.3.10
 """
-@title AggregatorStablePrice - aggregator of stablecoin prices for crvUSD
+@title AggregatorStablePrice
+@dev Returns price of stablecoin in "dollars" based on multiple AMM prices
+     Version 3 - for use with StableSwap-ng pools
 @author Curve.Fi
-@license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
+@license Copyright (c) Curve.Fi, 2020-2024 - all rights reserved
 """
-# Returns price of stablecoin in "dollars" based on multiple redeemable stablecoins
-# Recommended to use 3+ price sources
+
 
 interface Stableswap:
-    def price_oracle() -> uint256: view
+    def price_oracle(i: uint256=0) -> uint256: view
     def coins(i: uint256) -> address: view
     def get_virtual_price() -> uint256: view
     def totalSupply() -> uint256: view
@@ -22,6 +23,7 @@ interface CoreOwner:
 struct PricePair:
     pool: Stableswap
     is_inverse: bool
+    include_index: bool
 
 
 event AddPricePair:
@@ -67,6 +69,12 @@ def add_price_pair(_pool: Stableswap):
     assert msg.sender == CORE_OWNER.owner()
     price_pair: PricePair = empty(PricePair)
     price_pair.pool = _pool
+    success: bool = raw_call(
+        _pool.address, _abi_encode(convert(0, uint256), method_id=method_id("price_oracle(uint256)")),
+        revert_on_failure=False
+    )
+    if success:
+        price_pair.include_index = True
     coins: address[2] = [_pool.coins(0), _pool.coins(1)]
     if coins[0] == STABLECOIN:
         price_pair.is_inverse = True
@@ -172,7 +180,11 @@ def _price(tvls: DynArray[uint256, MAX_PAIRS]) -> uint256:
         price_pair: PricePair = self.price_pairs[i]
         pool_supply: uint256 = tvls[i]
         if pool_supply >= MIN_LIQUIDITY:
-            p: uint256 = price_pair.pool.price_oracle()
+            p: uint256 = 0
+            if price_pair.include_index:
+                p = price_pair.pool.price_oracle(0)
+            else:
+                p = price_pair.pool.price_oracle()
             if price_pair.is_inverse:
                 p = 10**36 / p
             prices[i] = p
