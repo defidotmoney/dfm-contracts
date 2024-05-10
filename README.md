@@ -11,8 +11,7 @@ Core protocol contracts for defi.money. Based on Curve Finance's crvUSD.
 
 #### Installation
 
-1. Install the node.js dependencies ( hardhat + lz contracts ) this can be done 
-in the `dfm-core` root directory
+1. Install the node.js dependencies ( hardhat + lz contracts ) this can be done in the `dfm-core` root directory
 
    ```bash
    npm install
