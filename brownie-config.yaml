@@ -3,7 +3,7 @@ compiler:
     evm_version: paris
     remappings:
       - "@openzeppelin=OpenZeppelin/openzeppelin-contracts@5.0.2"
-      - "@layerzero-v2-oapp=node_modules/@layerzerolabs/lz-evm-oapp-v2/"
+      - "@layerzerolabs/lz-evm-oapp-v2=node_modules/@layerzerolabs/lz-evm-oapp-v2/"
       - "@layerzerolabs/lz-evm-protocol-v2=node_modules/@layerzerolabs/lz-evm-protocol-v2/"
   vyper:
     evm_version: paris
