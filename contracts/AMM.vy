@@ -1199,7 +1199,7 @@ def _read_user_ticks(user: address, ns: int256[2]) -> DynArray[uint256, MAX_TICK
     @return Array of shares the user has
     """
     ticks: DynArray[uint256, MAX_TICKS_UINT] = []
-    size: uint256 = convert(ns[1] - ns[0] + 1, uint256)
+    size: uint256 = convert(unsafe_add(unsafe_sub(ns[1], ns[0]), 1), uint256)
     for i in range(MAX_TICKS / 2):
         if len(ticks) == size:
             break
@@ -1572,7 +1572,7 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
     XY: uint256 = 0
 
     for i in range(MAX_TICKS):
-        n += 1
+        n = unsafe_add(n, 1)
         if n > ns[1]:
             break
         x: uint256 = 0
