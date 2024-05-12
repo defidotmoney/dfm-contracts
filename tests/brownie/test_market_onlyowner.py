@@ -22,6 +22,14 @@ def test_set_liquidity_mining_hook(market, amm, deployer):
     assert amm.lm_hook() == deployer
 
 
+def test_set_oracle(DummyPriceOracle, market, amm, deployer):
+    oracle2 = DummyPriceOracle.deploy(2750 * 10**18, {"from": deployer})
+    market.set_oracle(oracle2, {"from": deployer})
+
+    assert amm.ORACLE() == oracle2
+    assert amm.price_oracle() == 2750 * 10**18
+
+
 def test_set_amm_fee_too_high(market, deployer):
     with brownie.reverts("DFM:M Invalid AMM fee"):
         market.set_amm_fee(market.MAX_FEE() + 1, {"from": deployer})
@@ -50,3 +58,9 @@ def test_set_borrowing_discounts_liq_too_low(market, deployer):
 def test_set_borrowing_discounts_loan_too_high(market, deployer):
     with brownie.reverts("DFM:M Loan discount too high"):
         market.set_borrowing_discounts(5 * 10**17 + 1, 10**16, {"from": deployer})
+
+
+def test_set_oracle_reverts_on_zero_price(DummyPriceOracle, market, amm, deployer):
+    oracle2 = DummyPriceOracle.deploy(0, {"from": deployer})
+    with brownie.reverts("DFM:M p == 0"):
+        market.set_oracle(oracle2, {"from": deployer})
