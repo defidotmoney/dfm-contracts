@@ -108,7 +108,7 @@ event SetImplementations:
 
 event SetMarketHooks:
     market: indexed(address)
-    hookdata: DynArray[MarketHookData, 5]
+    hookdata: DynArray[MarketHookData, MAX_HOOKS]
 
 event SetAmmHooks:
     market: indexed(address)
@@ -243,6 +243,7 @@ enum HookId:
 
 
 NUM_HOOK_IDS: constant(uint256) = 4
+MAX_HOOKS: constant(uint256) = 4
 
 # Limits
 MIN_A: constant(uint256) = 2
@@ -272,8 +273,8 @@ redeemed: public(uint256)
 
 isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 
-global_hooks: DynArray[uint256, 5]
-market_hooks: HashMap[address, DynArray[uint256, 5]]
+global_hooks: DynArray[uint256, MAX_HOOKS]
+market_hooks: HashMap[address, DynArray[uint256, MAX_HOOKS]]
 amm_hooks: HashMap[address, address]
 hook_debt_adjustment: HashMap[address, uint256]
 implementations: HashMap[uint256, Implementations]
@@ -625,14 +626,14 @@ def get_implementations(A: uint256) -> Implementations:
 
 @view
 @external
-def get_hooks(market: address) -> (address, DynArray[MarketHookData, 5]):
+def get_hooks(market: address) -> (address, DynArray[MarketHookData, MAX_HOOKS]):
     """
     @notice Get the hook contracts and active hooks for the given market
     @param market Market address. Set as empty(address) for global hooks.
     @return (amm hooks, market hooks)
     """
-    hookdata_packed_array: DynArray[uint256, 5] = []
-    hookdata_array: DynArray[MarketHookData, 5] = []
+    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = []
+    hookdata_array: DynArray[MarketHookData, MAX_HOOKS] = []
 
     if market == empty(address):
         hookdata_packed_array = self.global_hooks
@@ -1077,7 +1078,7 @@ def set_implementations(A: uint256, market: address, amm: address):
 
 
 @external
-def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, 5]):
+def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, MAX_HOOKS]):
     """
     @notice Set callback hooks for `market`
     @dev Existing hooks are replaced with this call, be sure to include
@@ -1087,7 +1088,7 @@ def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, 5
     """
     self._assert_only_owner()
 
-    hookdata_packed_array: DynArray[uint256, 5] = []
+    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = []
     for hookdata in hookdata_array:
         assert hookdata.hooks != empty(address), "DFM:C Empty hooks address"
         hookdata_packed: uint256 = (convert(hookdata.hooks, uint256) << 96)
@@ -1266,7 +1267,12 @@ def _limit_debt_adjustment(market: address, debt_adjustment: int256) -> (int256,
 
 @view
 @internal
-def _call_view_hook(hookdata_array: DynArray[uint256, 5], hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
+def _call_view_hook(
+    hookdata_array: DynArray[uint256, MAX_HOOKS],
+    hook_id: HookId,
+    calldata: Bytes[255],
+    bounds: int256[2]
+) -> int256:
     if len(hookdata_array) == 0:
         return 0
 
@@ -1314,7 +1320,12 @@ def _withdraw_collateral(account: address, collateral: address, amm: address, am
 
 
 @internal
-def _call_hook(hookdata_array: DynArray[uint256, 5], hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
+def _call_hook(
+    hookdata_array: DynArray[uint256, MAX_HOOKS],
+    hook_id: HookId,
+    calldata: Bytes[255],
+    bounds: int256[2]
+) -> int256:
     if len(hookdata_array) == 0:
         return 0
 
