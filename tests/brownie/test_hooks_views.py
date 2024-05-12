@@ -9,7 +9,9 @@ def setup(hooks, collateral, controller, market, stable, alice, deployer):
         collateral._mint_for_testing(acct, 100 * 10**18)
         collateral.approve(controller, 2**256 - 1, {"from": acct})
 
-    controller.set_market_hooks(ZERO_ADDRESS, hooks, [True, True, True, True], {"from": deployer})
+    controller.set_market_hooks(
+        ZERO_ADDRESS, [[hooks, [True, True, True, True]]], {"from": deployer}
+    )
 
     # ensure initial hook debt is sufficient for negative adjustments
     stable.mint(deployer, 200 * 10**18, {"from": controller})

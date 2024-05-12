@@ -19,7 +19,7 @@ def _hook_assertions(tx, is_enabled):
 
 @pytest.mark.parametrize("is_enabled", [True, False])
 def test_set_hook_active_create_loan(market, controller, alice, deployer, hooks, is_enabled):
-    controller.set_market_hooks(ZERO_ADDRESS, hooks, [is_enabled, 0, 0, 0], {"from": deployer})
+    controller.set_market_hooks(ZERO_ADDRESS, [[hooks, [is_enabled, 1, 1, 1]]], {"from": deployer})
 
     tx = controller.create_loan(alice, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
     _hook_assertions(tx, is_enabled)
@@ -27,7 +27,7 @@ def test_set_hook_active_create_loan(market, controller, alice, deployer, hooks,
 
 @pytest.mark.parametrize("is_enabled", [True, False])
 def test_set_hook_active_adjust_loan(market, hooks, controller, alice, deployer, is_enabled):
-    controller.set_market_hooks(ZERO_ADDRESS, hooks, [0, is_enabled, 0, 0], {"from": deployer})
+    controller.set_market_hooks(ZERO_ADDRESS, [[hooks, [0, is_enabled, 1, 1]]], {"from": deployer})
 
     tx = controller.create_loan(alice, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
     _hook_assertions(tx, False)
@@ -38,7 +38,7 @@ def test_set_hook_active_adjust_loan(market, hooks, controller, alice, deployer,
 
 @pytest.mark.parametrize("is_enabled", [True, False])
 def test_set_hook_active_close_loan(market, hooks, controller, alice, deployer, is_enabled):
-    controller.set_market_hooks(ZERO_ADDRESS, hooks, [0, 0, is_enabled, 0], {"from": deployer})
+    controller.set_market_hooks(ZERO_ADDRESS, [[hooks, [0, 1, is_enabled, 1]]], {"from": deployer})
 
     tx = controller.create_loan(alice, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
     _hook_assertions(tx, False)
@@ -49,7 +49,7 @@ def test_set_hook_active_close_loan(market, hooks, controller, alice, deployer, 
 
 @pytest.mark.parametrize("is_enabled", [True, False])
 def test_set_hook_active_liquidate(market, hooks, controller, oracle, alice, deployer, is_enabled):
-    controller.set_market_hooks(ZERO_ADDRESS, hooks, [0, 0, 0, is_enabled], {"from": deployer})
+    controller.set_market_hooks(ZERO_ADDRESS, [[hooks, [0, 1, 1, is_enabled]]], {"from": deployer})
 
     tx = controller.create_loan(alice, market, 50 * 10**18, 100_000 * 10**18, 5, {"from": alice})
     _hook_assertions(tx, False)
@@ -57,3 +57,13 @@ def test_set_hook_active_liquidate(market, hooks, controller, oracle, alice, dep
     oracle.set_price(2000 * 10**18, {"from": alice})
     tx = controller.liquidate(market, alice, 0, {"from": alice})
     _hook_assertions(tx, is_enabled)
+
+
+def test_set_hooks_reverts_with_no_active(market, hooks, controller, deployer):
+    with brownie.reverts("DFM:C No active hooks"):
+        controller.set_market_hooks(market, [[hooks, [0, 0, 0, 0]]], {"from": deployer})
+
+
+def test_set_hooks_reverts_with_zero_address(market, controller, deployer):
+    with brownie.reverts("DFM:C Empty hooks address"):
+        controller.set_market_hooks(market, [[ZERO_ADDRESS, [1, 1, 1, 1]]], {"from": deployer})

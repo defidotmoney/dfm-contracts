@@ -13,7 +13,9 @@ def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob
     stable.approve(controller, 2**256 - 1, {"from": bob})
     stable.approve(amm, 2**256 - 1, {"from": deployer})
 
-    controller.set_market_hooks(ZERO_ADDRESS, hooks, [True, True, True, True], {"from": deployer})
+    controller.set_market_hooks(
+        ZERO_ADDRESS, [[hooks, [True, True, True, True]]], {"from": deployer}
+    )
 
     # ensure initial hook debt is sufficient for negative adjustments
     stable.mint(deployer, 200 * 10**18, {"from": controller})
