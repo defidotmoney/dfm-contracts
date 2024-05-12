@@ -108,8 +108,7 @@ event SetImplementations:
 
 event SetMarketHooks:
     market: indexed(address)
-    hooks: indexed(address)
-    active_hooks: bool[NUM_HOOK_IDS]
+    hookdata: DynArray[MarketHookData, 5]
 
 event SetAmmHooks:
     market: indexed(address)
@@ -231,6 +230,10 @@ struct LiquidationState:
     coll_received: uint256
     hook_debt_adjustment: int256
 
+struct MarketHookData:
+    hooks: address
+    active_hooks: bool[NUM_HOOK_IDS]
+
 
 enum HookId:
     ON_CREATE_LOAN
@@ -269,8 +272,8 @@ redeemed: public(uint256)
 
 isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 
-global_hooks: uint256
-market_hooks: HashMap[address, uint256]
+global_hooks: DynArray[uint256, 5]
+market_hooks: HashMap[address, DynArray[uint256, 5]]
 amm_hooks: HashMap[address, address]
 hook_debt_adjustment: HashMap[address, uint256]
 implementations: HashMap[uint256, Implementations]
@@ -622,28 +625,31 @@ def get_implementations(A: uint256) -> Implementations:
 
 @view
 @external
-def get_hooks(market: address) -> (address, address, bool[NUM_HOOK_IDS]):
+def get_hooks(market: address) -> (address, DynArray[MarketHookData, 5]):
     """
     @notice Get the hook contracts and active hooks for the given market
     @param market Market address. Set as empty(address) for global hooks.
-    @return (amm hooks, market hooks, active market hooks boolean array)
+    @return (amm hooks, market hooks)
     """
-    hookdata: uint256 = 0
+    hookdata_packed_array: DynArray[uint256, 5] = []
+    hookdata_array: DynArray[MarketHookData, 5] = []
+
     if market == empty(address):
-        hookdata = self.global_hooks
+        hookdata_packed_array = self.global_hooks
     else:
-        hookdata = self.market_hooks[market]
+        hookdata_packed_array = self.market_hooks[market]
 
-    hook: address = convert(hookdata >> 96, address)
+    for hookdata_packed in hookdata_packed_array:
+        hookdata: MarketHookData = empty(MarketHookData)
+        hookdata.hooks = convert(hookdata_packed >> 96, address)
 
-    active_hooks: bool[NUM_HOOK_IDS] = empty(bool[NUM_HOOK_IDS])
-    if hook != empty(address):
         for i in range(NUM_HOOK_IDS):
-            if hookdata >> i & 1 == 0:
-                continue
-            active_hooks[i] = True
+            if hookdata_packed >> i & 1 != 0:
+                hookdata.active_hooks[i] = True
 
-    return self.amm_hooks[market], hook, active_hooks
+        hookdata_array.append(hookdata)
+
+    return self.amm_hooks[market], hookdata_array
 
 
 @view
@@ -1071,27 +1077,34 @@ def set_implementations(A: uint256, market: address, amm: address):
 
 
 @external
-def set_market_hooks(market: address, hooks: address, active_hooks: bool[NUM_HOOK_IDS]):
+def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, 5]):
     """
     @notice Set callback hooks for `market`
+    @dev Existing hooks are replaced with this call, be sure to include
+         previously set hooks if the goal is to add a new one
     @param market Market to set hooks for. Set as empty(address) for global hooks.
-    @param hooks Address of hooks contract to set as active. Set to empty(address) to disable all hooks.
-    @param active_hooks Array of booleans where items map to the values in the `HookId` enum.
+    @param hookdata_array Dynamic array with hook configuration data
     """
     self._assert_only_owner()
 
-    hookdata: uint256 = (convert(hooks, uint256) << 96)
-    if hooks != empty(address):
+    hookdata_packed_array: DynArray[uint256, 5] = []
+    for hookdata in hookdata_array:
+        assert hookdata.hooks != empty(address), "DFM:C Empty hooks address"
+        hookdata_packed: uint256 = (convert(hookdata.hooks, uint256) << 96)
+
         for i in range(NUM_HOOK_IDS):
-            if active_hooks[i]:
-                hookdata += 1 << i
+            if hookdata.active_hooks[i]:
+                hookdata_packed += 1 << i
+
+        assert hookdata_packed % (1 << NUM_HOOK_IDS) != 0, "DFM:C No active hooks"
+        hookdata_packed_array.append(hookdata_packed)
 
     if market == empty(address):
-        self.global_hooks = hookdata
+        self.global_hooks = hookdata_packed_array
     else:
-        self.market_hooks[market] = hookdata
+        self.market_hooks[market] = hookdata_packed_array
 
-    log SetMarketHooks(market, hooks, active_hooks)
+    log SetMarketHooks(market, hookdata_array)
 
 
 @external
@@ -1253,13 +1266,21 @@ def _limit_debt_adjustment(market: address, debt_adjustment: int256) -> (int256,
 
 @view
 @internal
-def _call_view_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
-    if hookdata & convert(hook_id, uint256) == 0:
+def _call_view_hook(hookdata_array: DynArray[uint256, 5], hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
+    if len(hookdata_array) == 0:
         return 0
-    hook: address = convert(hookdata >> 96, address)
-    response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
-    assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
-    return response
+
+    total: int256 = 0
+    for hookdata in hookdata_array:
+        if hookdata & convert(hook_id, uint256) == 0:
+            continue
+
+        hook: address = convert(hookdata >> 96, address)
+        response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
+        assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
+        total += response
+
+    return total
 
 
 @view
@@ -1293,13 +1314,21 @@ def _withdraw_collateral(account: address, collateral: address, amm: address, am
 
 
 @internal
-def _call_hook(hookdata: uint256, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
-    if hookdata & convert(hook_id, uint256) == 0:
+def _call_hook(hookdata_array: DynArray[uint256, 5], hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
+    if len(hookdata_array) == 0:
         return 0
-    hook: address = convert(hookdata >> 96, address)
-    response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
-    assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
-    return response
+
+    total: int256 = 0
+    for hookdata in hookdata_array:
+        if hookdata & convert(hook_id, uint256) == 0:
+            continue
+
+        hook: address = convert(hookdata >> 96, address)
+        response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
+        assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
+        total += response
+
+    return total
 
 
 @internal
