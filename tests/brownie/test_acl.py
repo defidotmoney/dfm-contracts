@@ -22,7 +22,7 @@ def test_set_implementations(controller, alice):
 
 def test_set_market_hooks(controller, market, alice):
     with brownie.reverts("DFM:C Only owner"):
-        controller.set_market_hooks(market, ZERO_ADDRESS, [False] * 4, {"from": alice})
+        controller.set_market_hooks(market, [[ZERO_ADDRESS, [False] * 4]], {"from": alice})
 
 
 def test_set_amm_hook(controller, market, alice):
