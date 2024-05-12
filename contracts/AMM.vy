@@ -861,6 +861,12 @@ def set_liquidity_mining_hook(lm_hook: LMGauge):
     self.lm_hook = lm_hook
 
 
+@external
+def set_oracle(oracle: PriceOracle):
+    self._assert_market_operator()
+    self.ORACLE = oracle
+
+
 # --- controller-only nonpayable functions ---
 
 @external

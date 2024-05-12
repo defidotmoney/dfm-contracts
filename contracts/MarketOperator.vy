@@ -30,6 +30,11 @@ interface LLAMMA:
     def bands_x(n: int256) -> uint256: view
     def bands_y(n: int256) -> uint256: view
     def set_liquidity_mining_hook(account: address): nonpayable
+    def set_oracle(oracle: PriceOracle): nonpayable
+
+interface PriceOracle:
+    def price() -> uint256: view
+    def price_w() -> uint256: nonpayable
 
 interface ERC20:
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
@@ -68,6 +73,9 @@ event SetLiquidityMiningHook:
 
 event SetDebtCeiling:
     debt_ceiling: uint256
+
+event SetPriceOracle:
+    oracle: PriceOracle
 
 
 struct Loan:
@@ -576,6 +584,16 @@ def set_debt_ceiling(debt_ceiling: uint256):
     self._assert_only_owner()
     self.debt_ceiling = debt_ceiling
     log SetDebtCeiling(debt_ceiling)
+
+
+@external
+def set_oracle(oracle: PriceOracle):
+    self._assert_only_owner()
+    p: uint256 = oracle.price()
+    assert p > 0, "DFM:M p == 0"
+    assert oracle.price_w() == p, "DFM:M p != price_w"
+    self.AMM.set_oracle(oracle)
+    log SetPriceOracle(oracle)
 
 
 # --- controller-only nonpayable functions ---
