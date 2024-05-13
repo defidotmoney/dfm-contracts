@@ -1219,6 +1219,16 @@ def _assert_below_debt_ceiling(total_debt: uint256):
 
 @pure
 @internal
+def _assert_in_bounds(amount: int256, bounds: int256[2], is_sum: bool):
+    if amount < bounds[0] or amount > bounds[1]:
+        if is_sum:
+            raise "DFM:C hook sum out of bounds"
+        else:
+            raise "DFM:C Hook caused invalid debt"
+
+
+@pure
+@internal
 def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
     if adjustment < 0:
         return initial - convert(-adjustment, uint256)
@@ -1283,7 +1293,7 @@ def _call_view_hook(
 
         hook: address = convert(hookdata >> 96, address)
         response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
-        assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
+        self._assert_in_bounds(response, bounds, False)
         total += response
 
     return total
@@ -1297,6 +1307,7 @@ def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bou
     debt_adjustment += self._call_view_hook(self.market_hooks[market], hook_id, calldata, bounds)
     debt_adjustment += self._call_view_hook(self.global_hooks, hook_id, calldata, bounds)
 
+    self._assert_in_bounds(debt_adjustment, bounds, True)
     return self._limit_debt_adjustment(market, debt_adjustment)[0]
 
 
@@ -1336,7 +1347,7 @@ def _call_hook(
 
         hook: address = convert(hookdata >> 96, address)
         response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
-        assert response >= bounds[0] and response <= bounds[1], "DFM:C Hook caused invalid debt"
+        self._assert_in_bounds(response, bounds, False)
         total += response
 
     return total
@@ -1350,6 +1361,7 @@ def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bounds: 
     debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata, bounds)
 
     if debt_adjustment != 0:
+        self._assert_in_bounds(debt_adjustment, bounds, True)
         debt_adjustment, self.hook_debt_adjustment[market] = self._limit_debt_adjustment(market, debt_adjustment)
 
     return debt_adjustment
