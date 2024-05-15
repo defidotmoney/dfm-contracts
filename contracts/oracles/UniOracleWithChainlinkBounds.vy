@@ -1,7 +1,8 @@
 # @version 0.3.10
 """
 @title UniOracleWithChainlinkBounds
-@dev Returns UniswapV3 TWAP, bounded by Chainlink
+@dev Returns UniswapV3 TWAP, bounded by Chainlink with L2 sequencer downtime
+     grace period: https://docs.chain.link/data-feeds/l2-sequencer-feeds
 @license MIT
 """
 
@@ -23,13 +24,14 @@ interface UniOracleReader:
     ): nonpayable
 
 interface ChainlinkAggregator:
-    def latestRoundData() -> (uint256, int256): view  # (roundId, answer)
+    def latestRoundData() -> (uint256, int256, uint256): view  # (roundId, answer, startedAt)
     def decimals() -> uint256: view
 
 interface CoreOwner:
     def owner() -> address: view
 
 
+SEQUENCER_GRACE_PERIOD: public(constant(uint256)) = 1800
 MAX_DEVIATION_PREC: public(constant(uint256)) = 10000
 BASE_PRECISION: immutable(uint128)
 QUOTE_PRECISION_MUL: immutable(uint256)
@@ -40,9 +42,11 @@ BASE_TOKEN: public(immutable(ERC20))
 QUOTE_TOKEN: public(immutable(ERC20))
 UNI_ORACLE_READER: public(immutable(UniOracleReader))
 CHAINLINK_AGG: public(immutable(ChainlinkAggregator))
+CHAINLINK_L2_UPTIME: public(immutable(ChainlinkAggregator))
 
 twap_period: public(uint32)
 max_deviation: public(uint256)
+stored_price: public(uint256)
 
 
 @external
@@ -51,6 +55,7 @@ def __init__(
     base_token: ERC20,
     quote_token: ERC20,
     chainlink: ChainlinkAggregator,
+    cl_uptime: ChainlinkAggregator,
     twap_period: uint32,
     max_deviation: uint256
 ):
@@ -61,6 +66,7 @@ def __init__(
     BASE_TOKEN = base_token
     QUOTE_TOKEN = quote_token
     CHAINLINK_AGG = chainlink
+    CHAINLINK_L2_UPTIME = cl_uptime
 
     BASE_PRECISION = convert(10 ** base_token.decimals(), uint128)
     QUOTE_PRECISION_MUL = 10 ** (18 - quote_token.decimals())
@@ -68,6 +74,9 @@ def __init__(
 
     self.max_deviation = max_deviation
     self._set_period(twap_period)
+
+    assert self._get_sequencer_status() == 0, "DFM:O bad L2 uptime answer"
+    self.stored_price = self._price()
 
 
 @view
@@ -91,15 +100,41 @@ def get_chainlink_answer() -> uint256:
     return self._get_chainlink_answer()
 
 
+@view
+@external
+def get_sequencer_status() -> uint256:
+    """
+    @notice Get information about oracle liveness from L2 sequencer downtime
+    @dev * If the return value is 0, the sequencer is functioning corectly and
+           the oracle is live.
+         * If the return value is 2**256-1, the sequencer is currently down.
+           The oracle remains frozen at the last known price until `grace_period`
+           seconds after the sequencer has restarted.
+         * If the return value is a timestamp, the sequencer has recently restarted
+           and we are in a grace period for users to adjust their loans. Oracle
+           liveness will resume at the given timestamp.
+    """
+    return self._get_sequencer_status()
+
+
 @external
 @view
 def price() -> uint256:
-    return self._price()
+    if self._get_sequencer_status() == 0:
+        return self._price()
+    else:
+        return self.stored_price
 
 
 @external
 def price_w() -> uint256:
-    return self._price()
+    if self._get_sequencer_status() == 0:
+        price: uint256 = self._price()
+        self.stored_price = price
+        return price
+    else:
+
+        return self.stored_price
 
 
 @external
@@ -146,6 +181,19 @@ def _get_uniswap_twap(period: uint32) -> uint256:
 def _get_chainlink_answer() -> uint256:
     answer: int256 = CHAINLINK_AGG.latestRoundData()[1]
     return convert(answer, uint256) * CHAINLINK_PRECISION_MUL
+
+
+@view
+@internal
+def _get_sequencer_status() -> uint256:
+    round_data: (uint256, int256, uint256) = CHAINLINK_L2_UPTIME.latestRoundData()
+    if round_data[1] == 0:
+        grace_period_ends: uint256 = round_data[2] + SEQUENCER_GRACE_PERIOD
+        if grace_period_ends > block.timestamp:
+            return grace_period_ends
+        return 0
+    else:
+        return max_value(uint256)
 
 
 @view
