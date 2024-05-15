@@ -614,6 +614,14 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
 # --- unguarded nonpayable functions ---
 
 @external
+def price_oracle_w() -> uint256:
+    """
+    @notice Value returned by the external price oracle contract
+    """
+    return self._price_oracle_w()[0]
+
+
+@external
 def exchange(i: uint256, j: uint256, in_amount: uint256, min_amount: uint256, _for: address = msg.sender) -> uint256[2]:
     """
     @notice Exchanges two coins, callable by anyone

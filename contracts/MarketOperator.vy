@@ -22,6 +22,7 @@ interface LLAMMA:
     def set_fee(fee: uint256): nonpayable
     def set_admin_fee(fee: uint256): nonpayable
     def price_oracle() -> uint256: view
+    def price_oracle_w() -> uint256: nonpayable
     def can_skip_bands(n_end: int256) -> bool: view
     def admin_fees_x() -> uint256: view
     def admin_fees_y() -> uint256: view
@@ -289,7 +290,7 @@ def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> i
     @param n_bands Number of bands to deposit into
     @return Upper band n1 (n1 <= n2) to deposit into. Signed integer
     """
-    return self._calculate_debt_n1(self.AMM, collateral, debt, n_bands)
+    return self._calculate_debt_n1(self.AMM, collateral, debt, n_bands, self.AMM.price_oracle())
 
 
 @view
@@ -322,7 +323,7 @@ def health(account: address, full: bool = False) -> int256:
             Liquidation starts when < 0, however devaluation of collateral doesn't cause liquidation
     """
     amm: LLAMMA = self.AMM
-    return self._health(amm, account, self._debt(account, amm)[0], full, self.liquidation_discounts[account])
+    return self._health(amm, account, self._debt(account, amm)[0], full, self.liquidation_discounts[account], amm.price_oracle())
 
 
 @view
@@ -337,6 +338,7 @@ def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position
     @return Dynamic array with detailed info about positions of users
     """
     amm: LLAMMA = self.AMM
+    price: uint256 = amm.price_oracle()
     n_loans: uint256 = self.n_loans
     limit: uint256 = _limit
     if _limit == 0:
@@ -348,7 +350,7 @@ def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position
             break
         account: address = self.loans[ix]
         debt: uint256 = self._debt(account, amm)[0]
-        health: int256 = self._health(amm, account, debt, True, self.liquidation_discounts[account])
+        health: int256 = self._health(amm, account, debt, True, self.liquidation_discounts[account], price)
         if health < 0:
             xy: uint256[2] = amm.get_sum_xy(account)
             out.append(Position({
@@ -416,6 +418,7 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
     @return Signed health value
     """
     amm: LLAMMA = self.AMM
+    price: uint256 = amm.price_oracle()
     ns: int256[2] = amm.read_user_tick_numbers(account)
     debt: int256 = convert(self._debt(account, amm)[0], int256)
     n: uint256 = n_bands
@@ -437,7 +440,7 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
 
     if ns[0] > active_band:  # re-deposit
         collateral = convert(amm.get_sum_xy(account)[1], int256) + coll_amount
-        n1 = self._calculate_debt_n1(amm, convert(collateral, uint256), convert(debt, uint256), n)
+        n1 = self._calculate_debt_n1(amm, convert(collateral, uint256), convert(debt, uint256), n, price)
         collateral *= convert(self.COLLATERAL_PRECISION, int256)  # now has 18 decimals
     else:
         n1 = ns[0]
@@ -452,7 +455,7 @@ def health_calculator(account: address, coll_amount: int256, debt_amount: int256
 
     if full:
         if n1 > active_band:  # We are not in liquidation mode
-            p_diff: int256 = max(p0, convert(amm.price_oracle(), int256)) - p0
+            p_diff: int256 = max(p0, convert(price, int256)) - p0
             if p_diff > 0:
                 health += unsafe_div(p_diff * collateral, debt)
 
@@ -473,6 +476,7 @@ def pending_account_state_calculator(
     @return New account debt, collateral balances, health, bands
     """
     amm: LLAMMA = self.AMM
+    price: uint256 = amm.price_oracle()
     debt: int256 = convert(self._debt(account, amm)[0], int256)
     n_bands: uint256 = num_bands
     ld: int256 = 0
@@ -498,7 +502,7 @@ def pending_account_state_calculator(
     if ns[0] > active_band:  # re-deposit
         collateral = convert(xy[1], int256) + coll_change
         xy[1] = convert(collateral, uint256)
-        n1 = self._calculate_debt_n1(amm, convert(collateral, uint256), convert(debt, uint256), n_bands)
+        n1 = self._calculate_debt_n1(amm, convert(collateral, uint256), convert(debt, uint256), n_bands, price)
         collateral *= convert(self.COLLATERAL_PRECISION, int256)  # now has 18 decimals
     else:
         assert debt_change < 0 and coll_change == 0, "DFM:M Unhealthy loan, repay only"
@@ -513,7 +517,7 @@ def pending_account_state_calculator(
     health = health - unsafe_div(health * ld, 10**18) - 10**18
 
     if n1 > active_band:  # We are not in liquidation mode
-        p_diff: int256 = max(p0, convert(amm.price_oracle(), int256)) - p0
+        p_diff: int256 = max(p0, convert(price, int256)) - p0
         if p_diff > 0:
             health += unsafe_div(p_diff * collateral, debt)
 
@@ -614,7 +618,7 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
     assert n_bands < MAX_TICKS+1, "DFM:M Need less ticks"
 
     amm: LLAMMA = self.AMM
-    n1: int256 = self._calculate_debt_n1(amm, coll_amount, debt_amount, n_bands)
+    n1: int256 = self._calculate_debt_n1(amm, coll_amount, debt_amount, n_bands, amm.price_oracle_w())
     n2: int256 = n1 + convert(n_bands - 1, int256)
 
     rate_mul: uint256 = amm.get_rate_mul()
@@ -641,6 +645,7 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
     self._assert_only_controller()
 
     amm: LLAMMA = self.AMM
+    price: uint256 = amm.price_oracle_w()
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
     account_debt, rate_mul = self._debt(account, amm)
@@ -660,7 +665,7 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
 
         coll_amount = self._uint_plus_int(coll_amount, coll_change)
 
-        n1: int256 = self._calculate_debt_n1(amm, coll_amount, account_debt, size)
+        n1: int256 = self._calculate_debt_n1(amm, coll_amount, account_debt, size, price)
         n2: int256 = n1 + unsafe_sub(ns[1], ns[0])
         amm.deposit_range(account, coll_amount, n1, n2)
         liquidation_discount: uint256 = self.liquidation_discount
@@ -687,6 +692,7 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
     self._assert_only_controller()
 
     amm: LLAMMA = self.AMM
+    amm.price_oracle_w()
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
     account_debt, rate_mul = self._debt(account, amm)
@@ -718,12 +724,13 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
         health_limit = self.liquidation_discounts[target]
 
     amm: LLAMMA = self.AMM
+    price: uint256 = amm.price_oracle_w()
     debt: uint256 = 0
     rate_mul: uint256 = 0
     debt, rate_mul = self._debt(target, amm)
 
     if health_limit != 0:
-        assert self._health(amm, target, debt, True, health_limit) < 0, "DFM:M Not enough rekt"
+        assert self._health(amm, target, debt, True, health_limit, price) < 0, "DFM:M Not enough rekt"
 
     final_debt: uint256 = debt
     debt = unsafe_div(debt * frac, 10**18)
@@ -875,7 +882,7 @@ def get_y_effective(collateral: uint256, n_bands: uint256, discount: uint256) ->
 
 @view
 @internal
-def _calculate_debt_n1(amm: LLAMMA, collateral: uint256, debt: uint256, n_bands: uint256) -> int256:
+def _calculate_debt_n1(amm: LLAMMA, collateral: uint256, debt: uint256, n_bands: uint256, price: uint256) -> int256:
     """
     @notice Calculate the upper band number for the deposit to sit in to support
             the given debt. Reverts if requested debt is too high.
@@ -917,7 +924,7 @@ def _calculate_debt_n1(amm: LLAMMA, collateral: uint256, debt: uint256, n_bands:
 
     # Let's not rely on active_band corresponding to price_oracle:
     # this will be not correct if we are in the area of empty bands
-    assert amm.p_oracle_up(n1) < amm.price_oracle(), "DFM:M Debt too high"
+    assert amm.p_oracle_up(n1) < price, "DFM:M Debt too high"
 
     return n1
 
@@ -962,7 +969,7 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
 
 @view
 @internal
-def _health(amm: LLAMMA, account: address, debt: uint256, full: bool, liquidation_discount: uint256) -> int256:
+def _health(amm: LLAMMA, account: address, debt: uint256, full: bool, liquidation_discount: uint256, price: uint256) -> int256:
     """
     @notice Returns position health normalized to 1e18 for the account.
             Liquidation starts when < 0, however devaluation of collateral doesn't cause liquidation
@@ -979,10 +986,9 @@ def _health(amm: LLAMMA, account: address, debt: uint256, full: bool, liquidatio
     if full:
         ns0: int256 = amm.read_user_tick_numbers(account)[0] # ns[1] > ns[0]
         if ns0 > amm.active_band():  # We are not in liquidation mode
-            p: uint256 = amm.price_oracle()
             p_up: uint256 = amm.p_oracle_up(ns0)
-            if p > p_up:
-                health += convert(unsafe_div(unsafe_sub(p, p_up) * amm.get_sum_xy(account)[1] * self.COLLATERAL_PRECISION, debt), int256)
+            if price > p_up:
+                health += convert(unsafe_div(unsafe_sub(price, p_up) * amm.get_sum_xy(account)[1] * self.COLLATERAL_PRECISION, debt), int256)
 
     return health
 
