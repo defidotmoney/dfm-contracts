@@ -617,6 +617,8 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
 def price_oracle_w() -> uint256:
     """
     @notice Value returned by the external price oracle contract
+    @dev Called with a nonpayable context, should be preferred over
+         `price_oracle` where possible
     """
     return self._price_oracle_w()[0]
 

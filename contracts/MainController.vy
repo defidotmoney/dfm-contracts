@@ -837,6 +837,8 @@ def adjust_loan(
 def close_loan(account: address, market: address):
     """
     @notice Close an existing loan
+    @dev This function does not interact with the market's price oracle, so that
+         users can still close their loans in case of a reverting oracle.
     @param account The account to close the loan for
     @param market Market of the loan being closed
     """
