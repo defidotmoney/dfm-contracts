@@ -473,6 +473,9 @@ def get_pending_market_state_for_account(
     assert convert(debt, int256) + debt_change > 0, "DFM:C Negative debt"
 
     if debt == 0:
+        if coll_change == 0 and debt_change == 0:
+            return state
+
         assert coll_change > 0 and debt_change > 0, "DFM:C 0 coll or debt"
         state.hook_debt_adjustment = self._call_view_hooks(
             market,
@@ -486,7 +489,7 @@ def get_pending_market_state_for_account(
             ),
             self._positive_only_bounds(convert(debt_change, uint256))
         )
-    else:
+    elif coll_change != 0 or debt_change != 0:
         state.hook_debt_adjustment = self._call_view_hooks(
             market,
             HookId.ON_ADJUST_LOAN,
