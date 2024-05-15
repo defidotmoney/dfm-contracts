@@ -692,7 +692,6 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
     self._assert_only_controller()
 
     amm: LLAMMA = self.AMM
-    amm.price_oracle_w()
     account_debt: uint256 = 0
     rate_mul: uint256 = 0
     account_debt, rate_mul = self._debt(account, amm)
