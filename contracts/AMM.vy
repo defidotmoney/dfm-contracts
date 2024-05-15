@@ -335,7 +335,6 @@ def p_oracle_down(n: int256) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def get_p() -> uint256:
     """
     @notice Get current AMM price in active_band
@@ -347,7 +346,6 @@ def get_p() -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def read_user_tick_numbers(user: address) -> int256[2]:
     """
     @notice Unpacks and reads user tick numbers
@@ -395,7 +393,7 @@ def active_band_with_skip() -> int256:
             break
         if self.bands_x[n] != 0:
             break
-        n -= 1
+        n = unsafe_sub(n, 1)
     return n
 
 
@@ -1309,7 +1307,7 @@ def calc_swap_out(pump: bool, in_amount: uint256, p_o: uint256[2], in_precision:
                 if p_ratio < unsafe_div(10**36, MAX_ORACLE_DN_POW):
                     # Don't allow to be away by more than ~50 ticks
                     break
-                out.n2 += 1
+                out.n2 = unsafe_add(out.n2, 1)
                 p_o_up = unsafe_div(p_o_up * Aminus1, A)
                 x = 0
                 y = self.bands_y[out.n2]
@@ -1349,7 +1347,7 @@ def calc_swap_out(pump: bool, in_amount: uint256, p_o: uint256[2], in_precision:
                 if p_ratio > MAX_ORACLE_DN_POW:
                     # Don't allow to be away by more than ~50 ticks
                     break
-                out.n2 -= 1
+                out.n2 = unsafe_sub(out.n2, 1)
                 p_o_up = unsafe_div(p_o_up * A, Aminus1)
                 x = self.bands_x[out.n2]
                 y = 0
