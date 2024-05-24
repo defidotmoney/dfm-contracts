@@ -2,18 +2,25 @@
 
 pragma solidity 0.8.25;
 
-import "../interfaces/IProtocolCore.sol";
 import "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "../interfaces/IProtocolCore.sol";
 
-contract StableCoin is OFT, ERC20FlashMint {
+/**
+    @title Bridge Token
+    @author defidotmoney
+    @notice OFT-enabled ERC20 for use in defi.money
+ */
+contract BridgeToken is OFT, ERC20FlashMint {
     using EnumerableSet for EnumerableSet.UintSet;
 
     IProtocolCore public immutable CORE_OWNER;
 
     EnumerableSet.UintSet private __eids;
     mapping(address => bool) public isMinter;
+
+    event MinterSet(address minter, bool isApproved);
 
     constructor(
         IProtocolCore _core,
@@ -26,22 +33,27 @@ contract StableCoin is OFT, ERC20FlashMint {
 
     function setMinter(address minter, bool isApproved) external onlyOwner returns (bool) {
         isMinter[minter] = isApproved;
+        emit MinterSet(minter, isApproved);
         return true;
     }
 
-    function mint(address _to, uint256 _value) external returns (bool) {
-        require(isMinter[msg.sender], "DFM:Caller not approved to mint");
-        _mint(_to, _value);
+    function mint(address _account, uint256 _amount) external returns (bool) {
+        require(isMinter[msg.sender], "DFM:T Not approved to mint");
+        _mint(_account, _amount);
         return true;
     }
 
     function burn(address _account, uint256 _amount) external returns (bool) {
-        if (msg.sender != _account) require(isMinter[msg.sender], "DFM:Caller not approved to burn");
+        if (msg.sender != _account) require(isMinter[msg.sender], "DFM:T Not approved to burn");
         _burn(_account, _amount);
         return true;
     }
 
-    function setPeer(uint32 _eid, bytes32 _peer) public override onlyOwner {
+    function setPeer(uint32 _eid, bytes32 _peer) public override {
+        require(
+            msg.sender == CORE_OWNER.owner() || msg.sender == CORE_OWNER.bridgeRelay(),
+            "DFM:T Only owner or relay"
+        );
         _setPeer(_eid, _peer);
     }
 
@@ -73,6 +85,10 @@ contract StableCoin is OFT, ERC20FlashMint {
             _peers[i] = peers[eid];
         }
         return (_eids, _peers);
+    }
+
+    function maxFlashLoan(address token) public view override returns (uint256) {
+        return token == address(this) ? 2 ** 127 - totalSupply() : 0;
     }
 
     function owner() public view override returns (address) {
