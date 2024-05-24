@@ -33,10 +33,7 @@ contract StableCoin is OFT, ERC20FlashMint {
         return true;
     }
 
-    function mint(
-        address _to,
-        uint256 _value
-    ) external returns (bool) {
+    function mint(address _to, uint256 _value) external returns (bool) {
         require(isMinter[msg.sender], "DFM:Caller not approved to mint");
         _mint(_to, _value);
         return true;
