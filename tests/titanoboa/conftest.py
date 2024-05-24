@@ -78,7 +78,7 @@ def price_oracle(admin):
 @pytest.fixture(scope="module")
 def core(admin, fee_receiver):
     with boa.env.prank(admin):
-        return boa.load("contracts/testing/CoreOwner.vy", fee_receiver)
+        return boa.load("contracts/base/DFMProtocolCore.vy", admin, fee_receiver, 0)
 
 
 @pytest.fixture(scope="module")
