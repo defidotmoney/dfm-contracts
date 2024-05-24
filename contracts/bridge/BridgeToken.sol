@@ -94,4 +94,20 @@ contract BridgeToken is OFT, ERC20FlashMint {
     function owner() public view override returns (address) {
         return CORE_OWNER.owner();
     }
+
+    /**
+        @dev OFT inherits from `Ownable`, so we override this function
+             to explicitly show that it has no effect.
+     */
+    function transferOwnership(address) public override {
+        revert("DFM:T Owned by CORE_OWNER");
+    }
+
+    /**
+        @dev OFT inherits from `Ownable`, so we override this function
+             to explicitly show that it has no effect.
+     */
+    function renounceOwnership() public override {
+        revert("DFM:T Owned by CORE_OWNER");
+    }
 }
