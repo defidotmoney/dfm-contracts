@@ -2,9 +2,8 @@
 
 pragma solidity 0.8.25;
 
-import "./interfaces/ICoreOwner.sol";
+import "../interfaces/ICoreOwner.sol";
 import "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
@@ -21,14 +20,11 @@ contract StableCoin is OFT, ERC20FlashMint {
         string memory _name,
         string memory _symbol,
         address _lzEndpoint
-    ) OFT(_name, _symbol, _lzEndpoint, msg.sender) Ownable(msg.sender) {
+    ) OFT(_name, _symbol, _lzEndpoint, msg.sender) {
         CORE_OWNER = _core;
     }
 
-    function setMinter(
-        address minter,
-        bool isApproved
-    ) external onlyOwner returns (bool) {
+    function setMinter(address minter, bool isApproved) external onlyOwner returns (bool) {
         isMinter[minter] = isApproved;
         return true;
     }
@@ -40,8 +36,7 @@ contract StableCoin is OFT, ERC20FlashMint {
     }
 
     function burn(address _account, uint256 _amount) external returns (bool) {
-        if (msg.sender != _account)
-            require(isMinter[msg.sender], "DFM:Caller not approved to burn");
+        if (msg.sender != _account) require(isMinter[msg.sender], "DFM:Caller not approved to burn");
         _burn(_account, _amount);
         return true;
     }
@@ -50,10 +45,7 @@ contract StableCoin is OFT, ERC20FlashMint {
         _setPeer(_eid, _peer);
     }
 
-    function setPeers(
-        uint32[] calldata _eids,
-        bytes32[] calldata _peers
-    ) external onlyOwner {
+    function setPeers(uint32[] calldata _eids, bytes32[] calldata _peers) external onlyOwner {
         require(_eids.length == _peers.length && _eids.length != 0);
 
         for (uint256 i; i < _eids.length; i++) {
@@ -69,11 +61,7 @@ contract StableCoin is OFT, ERC20FlashMint {
         emit PeerSet(_eid, _peer);
     }
 
-    function getPeers()
-        external
-        view
-        returns (uint32[] memory, bytes32[] memory)
-    {
+    function getPeers() external view returns (uint32[] memory, bytes32[] memory) {
         uint256 size = __eids.length();
 
         uint32[] memory _eids = new uint32[](size);
