@@ -44,6 +44,8 @@ contract DFMProtocolCore is IProtocolCore {
         START_TIME = start;
 
         addressRegistry[Addresses.FEE_RECEIVER] = _feeReceiver;
+
+        ownershipTransferDeadline = type(uint256).max;
     }
 
     modifier onlyOwner() {
@@ -87,9 +89,18 @@ contract DFMProtocolCore is IProtocolCore {
 
     function commitTransferOwnership(address newOwner) external onlyOwner {
         pendingOwner = newOwner;
-        ownershipTransferDeadline = block.timestamp + OWNERSHIP_TRANSFER_DELAY;
 
-        emit NewOwnerCommitted(msg.sender, newOwner, block.timestamp + OWNERSHIP_TRANSFER_DELAY);
+        uint256 deadline;
+        if (ownershipTransferDeadline == type(uint256).max) {
+            // We do not enforce a transfer delay on the first ownership transfer,
+            // because it is from the deployer EOA to the intended protocol owner.
+            deadline = block.timestamp;
+        } else {
+            deadline = block.timestamp + OWNERSHIP_TRANSFER_DELAY;
+        }
+        ownershipTransferDeadline = deadline;
+
+        emit NewOwnerCommitted(msg.sender, newOwner, deadline);
     }
 
     function acceptTransferOwnership() external {
