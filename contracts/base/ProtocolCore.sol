@@ -49,7 +49,7 @@ contract DFMProtocolCore is IProtocolCore {
     }
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner");
+        require(msg.sender == owner, "DFM: Only owner");
         _;
     }
 
@@ -77,7 +77,7 @@ contract DFMProtocolCore is IProtocolCore {
 
     function getAddress(bytes32 identifier) external view returns (address) {
         address account = addressRegistry[identifier];
-        require(account != address(0), "No address for identifier");
+        require(account != address(0), "DFM: No address for identifier");
         return account;
     }
 
@@ -104,8 +104,8 @@ contract DFMProtocolCore is IProtocolCore {
     }
 
     function acceptTransferOwnership() external {
-        require(msg.sender == pendingOwner, "Only new owner");
-        require(block.timestamp >= ownershipTransferDeadline, "Deadline not passed");
+        require(msg.sender == pendingOwner, "DFM: Only new owner");
+        require(block.timestamp >= ownershipTransferDeadline, "DFM: Deadline not passed");
 
         emit NewOwnerAccepted(owner, msg.sender);
 
