@@ -89,27 +89,27 @@ def stablecoin(admin):
 
 @pytest.fixture(scope="module")
 def operator_interface():
-    return boa.load_partial("contracts/MarketOperator.vy")
+    return boa.load_partial("contracts/cdp/MarketOperator.vy")
 
 
 @pytest.fixture(scope="module")
 def amm_interface():
-    return boa.load_partial("contracts/AMM.vy")
+    return boa.load_partial("contracts/cdp/AMM.vy")
 
 
 @pytest.fixture(scope="module")
 def controller(core, stablecoin, admin, monetary_policy):
     with boa.env.prank(admin):
         contract = boa.load(
-            "contracts/MainController.vy",
+            "contracts/cdp/MainController.vy",
             core.address,
             stablecoin.address,
             [monetary_policy.address],
             2**256 - 1,
         )
         stablecoin.setMinter(contract.address, True)
-        operator_impl = boa.load("contracts/MarketOperator.vy", core, contract, stablecoin, 100)
-        amm_impl = boa.load("contracts/AMM.vy", contract, stablecoin, 100)
+        operator_impl = boa.load("contracts/cdp/MarketOperator.vy", core, contract, stablecoin, 100)
+        amm_impl = boa.load("contracts/cdp/AMM.vy", contract, stablecoin, 100)
         contract.set_implementations(100, operator_impl, amm_impl)
     return contract
 

@@ -83,7 +83,7 @@ def redeemable_tokens(stablecoin_a, stablecoin_b):
 def price_aggregator(stablecoin, stableswap_a, stableswap_b, core, admin):
     with boa.env.prank(admin):
         agg = boa.load(
-            "contracts/oracles/AggregateStablePrice.vy",
+            "contracts/cdp/oracles/AggregateStablePrice.vy",
             core.address,
             stablecoin.address,
             10**15,
@@ -166,7 +166,9 @@ def crypto_agg_with_external_oracle(
 @pytest.fixture(scope="module")
 def pk_regulator(admin, core, stablecoin, mock_peg_keepers, agg, controller):
     with boa.env.prank(admin):
-        regulator = boa.load("contracts/PegKeeperRegulator.vy", core, stablecoin, agg, controller)
+        regulator = boa.load(
+            "contracts/cdp/PegKeeperRegulator.vy", core, stablecoin, agg, controller
+        )
         stablecoin.setMinter(regulator, True)
         controller.set_peg_keeper_regulator(regulator, False)
         regulator.set_price_deviation(10**20)
@@ -200,7 +202,7 @@ def peg_keepers(
         for pool in [stableswap_a, stableswap_b]:
             pks.append(
                 boa.load(
-                    "contracts/PegKeeper.vy",
+                    "contracts/cdp/PegKeeper.vy",
                     core,
                     pk_regulator,
                     controller,
