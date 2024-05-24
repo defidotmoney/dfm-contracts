@@ -6,6 +6,7 @@ import "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "../interfaces/IProtocolCore.sol";
+import { Peer } from "./dependencies/DataStructures.sol";
 
 /**
     @title Bridge Token
@@ -57,11 +58,10 @@ contract BridgeToken is OFT, ERC20FlashMint {
         _setPeer(_eid, _peer);
     }
 
-    function setPeers(uint32[] calldata _eids, bytes32[] calldata _peers) external onlyOwner {
-        require(_eids.length == _peers.length && _eids.length != 0);
-
-        for (uint256 i; i < _eids.length; i++) {
-            _setPeer(_eids[i], _peers[i]);
+    function setPeers(Peer[] calldata _peers) external onlyOwner {
+        uint256 length = _peers.length;
+        for (uint256 i; i < length; i++) {
+            _setPeer(_peers[i].eid, _peers[i].peer);
         }
     }
 
