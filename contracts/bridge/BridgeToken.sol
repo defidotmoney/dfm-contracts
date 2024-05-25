@@ -19,6 +19,7 @@ contract BridgeToken is OFT, ERC20FlashMint {
     using EnumerableSet for EnumerableSet.UintSet;
 
     IProtocolCore public immutable CORE_OWNER;
+    uint32 public immutable thisId;
 
     EnumerableSet.UintSet private __eids;
 
@@ -33,10 +34,17 @@ contract BridgeToken is OFT, ERC20FlashMint {
         string memory _name,
         string memory _symbol,
         address _lzEndpoint,
-        bytes memory _defaultOptions // 0x0003010011010000000000000000000000000000ea60
+        bytes memory _defaultOptions, // 0x0003010011010000000000000000000000000000ea60
+        Peer[] memory _tokenPeers
     ) OFT(_name, _symbol, _lzEndpoint, msg.sender) {
         CORE_OWNER = _core;
+        thisId = endpoint.eid();
         _setDefaultOptions(_defaultOptions);
+
+        uint256 length = _tokenPeers.length;
+        for (uint256 i; i < length; i++) {
+            _setPeer(_tokenPeers[i].eid, _tokenPeers[i].peer);
+        }
     }
 
     /**
@@ -125,6 +133,14 @@ contract BridgeToken is OFT, ERC20FlashMint {
     }
 
     function _setPeer(uint32 _eid, bytes32 _peer) internal override {
+        if (_eid == thisId) {
+            // In case of a reconfiguration of many peers, validate that the local
+            // peer is correct but do not store it as a remote peer. This way we
+            // can safely use the output of `getGlobalPeers` across all chains.
+            require(_addressToBytes32(address(this)) == _peer, "DFM: Incorrect local peer");
+            return;
+        }
+
         if (_peer == bytes32(0)) __eids.remove(_eid);
         else {
             __eids.add(_eid);
