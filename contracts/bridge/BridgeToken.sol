@@ -155,18 +155,32 @@ contract BridgeToken is OFT, ERC20FlashMint {
         defaultOptions = options;
     }
 
-    function getPeers() external view returns (uint32[] memory, bytes32[] memory) {
+    /**
+        @notice Returns an array of all known global peers, including this one.
+        @dev * Calling this method on an already deployed contract gives the peers
+               that must be set when deploying to a new chain.
+             * To check for configuration issues, compare outputs for this method
+               across each chain. With a proper configuration, the output of this
+               method converted to a set should be identical across all chains.
+     */
+    function getGlobalPeers() external view returns (Peer[] memory _peers) {
         uint256 size = __eids.length();
 
-        uint32[] memory _eids = new uint32[](size);
-        bytes32[] memory _peers = new bytes32[](size);
+        _peers = new Peer[](size + 1);
 
-        uint32 eid = 0;
         for (uint256 i; i < size; i++) {
-            _eids[i] = (eid = uint32(__eids.at(i)));
-            _peers[i] = peers[eid];
+            uint32 eid = uint32(__eids.at(i));
+            _peers[i] = Peer({ eid: eid, peer: peers[eid] });
         }
-        return (_eids, _peers);
+        _peers[size] = Peer({ eid: thisId, peer: _addressToBytes32(address(this)) });
+        return _peers;
+    }
+
+    /**
+        @notice The number of configured peers globally, including this one.
+     */
+    function globalPeerCount() external view returns (uint256) {
+        return __eids.length() + 1;
     }
 
     function maxFlashLoan(address token) public view override returns (uint256) {
