@@ -429,6 +429,109 @@ def stored_admin_fees() -> uint256:
     return self.total_debt + self.redeemed - self.minted
 
 
+@view
+@external
+def on_create_loan_hook_adjustment(
+    account: address,
+    market: address,
+    coll_amount: uint256,
+    debt_amount: uint256,
+) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when creating a new loan
+    @param account Account to open the loan for
+    @param market Market where the loan will be opened
+    @param coll_amount Collateral amount to deposit
+    @param debt_amount Stablecoin amount to mint
+    @return adjustment amount applied to the new debt created
+    """
+    return self._call_view_hooks(
+        market,
+        HookId.ON_CREATE_LOAN,
+        _abi_encode(
+            account,
+            market,
+            coll_amount,
+            debt_amount,
+            method_id=method_id("on_create_loan_view(address,address,uint256,uint256)")
+        ),
+        self._positive_only_bounds(debt_amount)
+    )
+
+
+@view
+@external
+def on_adjust_loan_hook_adjustment(
+    account: address,
+    market: address,
+    coll_change: int256,
+    debt_change: int256
+) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when adjusting an existing loan
+    @param account Account to adjust the loan for
+    @param market Market of the loan being adjusted
+    @param coll_change Collateral adjustment amount. A positive value deposits, negative withdraws.
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @return adjustment amount applied to `debt_change`
+    """
+    return self._call_view_hooks(
+        market,
+        HookId.ON_ADJUST_LOAN,
+        _abi_encode(
+            account,
+            market,
+            coll_change,
+            debt_change,
+            method_id=method_id("on_adjust_loan_view(address,address,int256,int256)")
+        ),
+        self._adjust_loan_bounds(debt_change)
+    )
+
+
+@view
+@external
+def on_close_loan_hook_adjustment(account: address, market: address) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when closing a loan
+    @param account The account to close the loan for
+    @param market Market of the loan being closed
+    @return adjustment amount applied to the debt burned when closing the loan
+    """
+    debt: uint256 = MarketOperator(market).debt(account)
+    return self._call_view_hooks(
+        market,
+        HookId.ON_CLOSE_LOAN,
+        _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)")),
+        self._positive_only_bounds(debt)
+    )
+
+
+@view
+@external
+def on_liquidate_hook_adjustment(caller: address, market: address, target: address) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when liquidating a loan
+    @param caller Caller address that will perform the liquidations
+    @param market Market to check for liquidations
+    @param target Address of the account to be liquidated
+    @return adjustment amount applied to the debt burned during liquidation
+    """
+    debt: uint256 = MarketOperator(market).debt(target)
+    return self._call_view_hooks(
+        market,
+        HookId.ON_LIQUIDATION,
+        _abi_encode(
+            caller,
+            market,
+            target,
+            debt,
+            method_id=method_id("on_liquidation_view(address,address,address,uint256)")
+        ),
+        self._positive_only_bounds(debt)
+    )
+
+
 # --- unguarded nonpayable functions ---
 
 @external
