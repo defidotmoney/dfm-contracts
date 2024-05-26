@@ -38,16 +38,27 @@ def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
 @pytest.mark.parametrize("swap_coll", [True, False])
 def test_liquidation(
-    market, stable, collateral, amm, controller, alice, bob, deployer, hooks, adjustment, swap_coll
+    views,
+    market,
+    stable,
+    collateral,
+    amm,
+    controller,
+    alice,
+    bob,
+    deployer,
+    hooks,
+    adjustment,
+    swap_coll,
 ):
     hooks.set_response(adjustment, {"from": alice})
 
     if swap_coll:
         amm.exchange(0, 1, 10_000 * 10**18, 0, {"from": deployer})
 
-    actual = controller.get_market_states_for_account(alice, [market])[0]
+    actual = views.get_market_states_for_account(alice, [market])[0]
     # (account, debt repaid, debt burned from caller, debt burned from amm, coll received, hook adjustment)
-    expected = controller.get_liquidation_amounts(alice, market)
+    expected = views.get_liquidation_amounts(alice, market)
     assert len(expected) == 1
     expected = expected[0]
 
@@ -83,16 +94,26 @@ def test_liquidation(
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
 @pytest.mark.parametrize("swap_coll", [True, False])
 def test_close_loan_underwater(
-    market, stable, collateral, amm, controller, alice, deployer, hooks, adjustment, swap_coll
+    views,
+    market,
+    stable,
+    collateral,
+    amm,
+    controller,
+    alice,
+    deployer,
+    hooks,
+    adjustment,
+    swap_coll,
 ):
     hooks.set_response(adjustment, {"from": alice})
 
     if swap_coll:
         amm.exchange(0, 1, 10_000 * 10**18, 0, {"from": deployer})
 
-    actual = controller.get_market_states_for_account(alice, [market])[0]
+    actual = views.get_market_states_for_account(alice, [market])[0]
     # (debt repaid, debt burned from owner, debt burned from amm, coll withdrawn, hook adjustment)
-    expected = controller.get_close_loan_amounts(alice, market)
+    expected = views.get_close_loan_amounts(alice, market)
 
     debt = market.debt(alice)
     assert actual[1] == debt

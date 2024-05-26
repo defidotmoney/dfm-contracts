@@ -223,3 +223,8 @@ def many_hooks(ControllerHookTester, deployer):
     for c in contracts:
         c.set_configuration(0, [True, True, True, True], {"from": deployer})
     return contracts
+
+
+@pytest.fixture(scope="module")
+def views(MarketViews, controller, deployer):
+    return MarketViews.deploy(controller, {"from": deployer})
