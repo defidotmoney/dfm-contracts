@@ -4,10 +4,12 @@ pragma solidity 0.8.25;
 
 import { MessagingFee } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
+import "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppCore.sol";
 import { OFTMsgCodec } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTMsgCodec.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "../interfaces/IProtocolCore.sol";
+import "../interfaces/IBridgeToken.sol";
 import { Peer } from "./dependencies/DataStructures.sol";
 
 /**
@@ -15,7 +17,7 @@ import { Peer } from "./dependencies/DataStructures.sol";
     @author defidotmoney
     @notice OFT-enabled ERC20 for use in defi.money
  */
-contract BridgeToken is OFT, ERC20FlashMint {
+contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
     using EnumerableSet for EnumerableSet.UintSet;
 
     IProtocolCore public immutable CORE_OWNER;
@@ -102,7 +104,7 @@ contract BridgeToken is OFT, ERC20FlashMint {
         return true;
     }
 
-    function setPeer(uint32 _eid, bytes32 _peer) public override {
+    function setPeer(uint32 _eid, bytes32 _peer) public override(OAppCore, IBridgeToken) {
         require(
             msg.sender == CORE_OWNER.owner() || msg.sender == CORE_OWNER.bridgeRelay(),
             "DFM:T Only owner or relay"
