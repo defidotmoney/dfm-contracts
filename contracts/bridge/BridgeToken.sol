@@ -59,7 +59,8 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         @return nativeFee Required fee amount in chain's native gas token.
      */
     function quoteSimple(uint32 _eid, address _target, uint256 _amount) external view returns (uint256) {
-        (, uint256 amountReceivedLD) = _debitView(_amount, _amount, _eid);
+        (, uint256 amountReceivedLD) = _debitView(_amount, 0, _eid);
+        require(amountReceivedLD > 0, "DFM:T 0 after precision loss");
 
         (bytes memory message, ) = OFTMsgCodec.encode(_addressToBytes32(_target), _toSD(amountReceivedLD), bytes(""));
         return _quote(_eid, message, enforcedOptions[_eid][1], false).nativeFee;
@@ -75,7 +76,8 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         @return amountSentLD Actual amount of tokens that were bridged.
      */
     function sendSimple(uint32 _eid, address _target, uint256 _amount) external payable returns (uint256) {
-        (uint256 amountSentLD, uint256 amountReceivedLD) = _debit(msg.sender, _amount, _amount, _eid);
+        (uint256 amountSentLD, uint256 amountReceivedLD) = _debit(msg.sender, _amount, 0, _eid);
+        require(amountReceivedLD > 0, "DFM:T 0 after precision loss");
 
         (bytes memory message, ) = OFTMsgCodec.encode(_addressToBytes32(_target), _toSD(amountReceivedLD), bytes(""));
         bytes memory options = enforcedOptions[_eid][1];
