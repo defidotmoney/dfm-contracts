@@ -1108,6 +1108,7 @@ def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, M
     if market == empty(address):
         self.global_hooks = hookdata_packed_array
     else:
+        assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
         self.market_hooks[market] = hookdata_packed_array
 
     log SetMarketHooks(market, hookdata_array)
@@ -1167,6 +1168,7 @@ def change_market_monetary_policy(market: address, mp_idx: uint256):
     @dev Also updates the current market rate
     """
     self._assert_only_owner()
+    assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
     assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
     self.market_contracts[market].mp_idx = mp_idx
     self._update_rate(market, self.market_contracts[market].amm, mp_idx)
