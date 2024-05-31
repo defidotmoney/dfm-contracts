@@ -12,12 +12,12 @@ interface ERC20:
     def mint(target: address, amount: uint256) -> bool: nonpayable
     def burn(target: address, amount: uint256) -> bool: nonpayable
 
-interface StableSwap:
-    def get_p() -> uint256: view
-    def price_oracle() -> uint256: view
+interface StableSwapNG:
+    def get_p(i: uint256) -> uint256: view
+    def price_oracle(i: uint256) -> uint256: view
 
 interface PegKeeper:
-    def POOL() -> StableSwap: view
+    def POOL() -> StableSwapNG: view
     def regulator() -> address: view
     def debt() -> uint256: view
     def owed_debt() -> uint256: view
@@ -35,7 +35,7 @@ interface CoreOwner:
 
 event AddPegKeeper:
     peg_keeper: PegKeeper
-    pool: StableSwap
+    pool: StableSwapNG
     is_inverse: bool
 
 event RemovePegKeeper:
@@ -58,7 +58,7 @@ event SetKilled:
 
 struct PegKeeperInfo:
     peg_keeper: PegKeeper
-    pool: StableSwap
+    pool: StableSwapNG
     is_inverse: bool
     debt_ceiling: uint256
 
@@ -252,6 +252,9 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     self.peg_keepers.append(info)  # dev: too many pairs
     self.peg_keeper_i[pk] = len(self.peg_keepers)
 
+    # confirm StableSwapNG interface
+    self._get_price_oracle(info)
+
     if debt_ceiling > 0:
         self._mint(pk, debt_ceiling)
 
@@ -417,7 +420,7 @@ def _get_price(_info: PegKeeperInfo) -> uint256:
     """
     @return Price of the coin in STABLECOIN
     """
-    price: uint256 = _info.pool.get_p()
+    price: uint256 = _info.pool.get_p(0)
     if _info.is_inverse:
         price = 10 ** 36 / price
     return price
@@ -429,7 +432,7 @@ def _get_price_oracle(_info: PegKeeperInfo) -> uint256:
     """
     @return Price of the coin in STABLECOIN
     """
-    price: uint256 = _info.pool.price_oracle()
+    price: uint256 = _info.pool.price_oracle(0)
     if _info.is_inverse:
         price = 10 ** 36 / price
     return price

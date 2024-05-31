@@ -1,10 +1,9 @@
 # @version 0.3.10
 """
-@title PegKeeper V2
+@title PegKeeper
 @license MIT
-@author Curve.Fi  (with edits by defidotmoney)
-@notice Peg Keeper
-@dev Version 2
+@author Curve.Fi (with edits by defidotmoney)
+@dev For use with StableSwap-ng pools
 """
 
 interface Regulator:
@@ -14,9 +13,9 @@ interface Regulator:
 interface CurvePool:
     def balances(i_coin: uint256) -> uint256: view
     def coins(i: uint256) -> address: view
-    def calc_token_amount(_amounts: uint256[2], _is_deposit: bool) -> uint256: view
-    def add_liquidity(_amounts: uint256[2], _min_mint_amount: uint256) -> uint256: nonpayable
-    def remove_liquidity_imbalance(_amounts: uint256[2], _max_burn_amount: uint256) -> uint256: nonpayable
+    def calc_token_amount(_amounts: DynArray[uint256, 8], _is_deposit: bool) -> uint256: view
+    def add_liquidity(_amounts: DynArray[uint256, 8], _min_mint_amount: uint256) -> uint256: nonpayable
+    def remove_liquidity_imbalance(_amounts: DynArray[uint256, 8], _max_burn_amount: uint256) -> uint256: nonpayable
     def get_virtual_price() -> uint256: view
     def balanceOf(arg0: address) -> uint256: view
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
@@ -311,7 +310,7 @@ def _calc_call_profit(_amount: uint256, _is_deposit: bool) -> uint256:
     else:
         amount = min(_amount, debt)
 
-    amounts: uint256[2] = empty(uint256[2])
+    amounts: DynArray[uint256, 8] = [0, 0]
     amounts[I] = amount
     lp_balance_diff: uint256 = POOL.calc_token_amount(amounts, _is_deposit)
 
@@ -353,7 +352,7 @@ def _provide(_amount: uint256) -> int256:
 
     amount: uint256 = min(_amount, PEGGED.balanceOf(self))
 
-    amounts: uint256[2] = empty(uint256[2])
+    amounts: DynArray[uint256, 8] = [0, 0]
     amounts[I] = amount
     POOL.add_liquidity(amounts, 0)
 
@@ -375,7 +374,7 @@ def _withdraw(_amount: uint256) -> int256:
     debt: uint256 = self.debt
     amount: uint256 = min(_amount, debt)
 
-    amounts: uint256[2] = empty(uint256[2])
+    amounts: DynArray[uint256, 8] = [0, 0]
     amounts[I] = amount
     POOL.remove_liquidity_imbalance(amounts, max_value(uint256))
 
