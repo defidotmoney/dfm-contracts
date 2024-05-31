@@ -697,11 +697,10 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
 
     xy: uint256[2] = amm.withdraw(account, 10**18)
 
-    log UserState(account, 0, 0, 0, 0, 0)
-    self._remove_from_list(account)
-
     self.loan[account] = Loan({initial_debt: 0, rate_mul: 0})
     debt_adjustment: int256 = self._decrease_total_debt(account_debt, rate_mul)
+    debt_adjustment -= self._remove_from_list(account)
+    log UserState(account, 0, 0, 0, 0, 0)
 
     return debt_adjustment, account_debt, xy
 
@@ -746,12 +745,11 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
     assert xy[0] >= min_x, "DFM:M Slippage"
 
     self.loan[target] = Loan({initial_debt: final_debt, rate_mul: rate_mul})
+    debt_adjustment: int256 = self._decrease_total_debt(debt, rate_mul)
+
     if final_debt == 0:
         log UserState(target, 0, 0, 0, 0, 0)  # Not logging partial removeal b/c we have not enough info
-        self._remove_from_list(target)
-
-
-    debt_adjustment: int256 = self._decrease_total_debt(debt, rate_mul)
+        debt_adjustment -= self._remove_from_list(target)
 
     return debt_adjustment, debt, xy
 
@@ -1029,7 +1027,7 @@ def _decrease_total_debt(amount: uint256, rate_mul: uint256) -> int256:
 
 
 @internal
-def _remove_from_list(receiver: address):
+def _remove_from_list(receiver: address) -> int256:
     last_loan_ix: uint256 = self.n_loans - 1
     loan_ix: uint256 = self.loan_ix[receiver]
     assert self.loans[loan_ix] == receiver  # dev: should never fail but safety first
@@ -1039,3 +1037,11 @@ def _remove_from_list(receiver: address):
         self.loans[loan_ix] = last_loan
         self.loan_ix[last_loan] = loan_ix
     self.n_loans = last_loan_ix
+
+    if last_loan_ix == 0:
+        # if this was the last loan, zero the total debt to avoid rounding dust
+        remaining: int256 = convert(self._total_debt.initial_debt, int256)
+        self._total_debt.initial_debt = 0
+        return remaining
+
+    return 0
