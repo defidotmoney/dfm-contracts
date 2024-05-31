@@ -394,7 +394,7 @@ def get_market_states(markets: DynArray[MarketOperator, 255]) -> DynArray[Market
 
             if state.debt_ceiling > state.total_debt:
                 global_ceiling: uint256 = self.global_market_debt_ceiling
-                global_debt: uint256 = self.total_debt
+                global_debt: uint256 = self.total_debt + market.pending_debt()
                 if global_ceiling > global_debt:
                     state.remaining_mintable = min(state.debt_ceiling - state.total_debt, global_ceiling - global_debt)
 
