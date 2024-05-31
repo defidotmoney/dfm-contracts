@@ -10,6 +10,7 @@ interface ERC20:
     def burn(_to: address, _value: uint256) -> bool: nonpayable
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
+    def balanceOf(account: address) -> uint256: view
 
 interface PriceOracle:
     def price() -> uint256: view
@@ -24,9 +25,7 @@ interface AMM:
         fee: uint256,
         admin_fee: uint256
     ): nonpayable
-    def set_exchange_hook(hook: address): nonpayable
     def set_rate(rate: uint256) -> uint256: nonpayable
-    def collateral_balance() -> uint256: view
     def price_oracle() -> uint256: view
     def rate() -> uint256: view
     def get_sum_xy(account: address) -> (uint256, uint256): view
@@ -86,10 +85,6 @@ interface ControllerHooks:
     def on_close_loan(account: address, market: address, account_debt: uint256) -> int256: nonpayable
     def on_liquidation(caller: address, market: address, target: address, debt_liquidated: uint256) -> int256: nonpayable
 
-interface AmmHooks:
-    def before_collateral_out(amount: uint256): nonpayable
-    def after_collateral_in(amount: uint256): nonpayable
-
 
 event AddMarket:
     collateral: indexed(address)
@@ -110,10 +105,6 @@ event SetImplementations:
 event SetMarketHooks:
     market: indexed(address)
     hookdata: DynArray[MarketHookData, MAX_HOOKS]
-
-event SetAmmHooks:
-    market: indexed(address)
-    hooks: indexed(address)
 
 event AddMonetaryPolicy:
     mp_idx: indexed(uint256)
@@ -279,7 +270,6 @@ isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 
 global_hooks: DynArray[uint256, MAX_HOOKS]
 market_hooks: HashMap[address, DynArray[uint256, MAX_HOOKS]]
-amm_hooks: HashMap[address, address]
 hook_debt_adjustment: HashMap[address, uint256]
 implementations: HashMap[uint256, Implementations]
 
@@ -394,7 +384,7 @@ def get_market_states(markets: DynArray[MarketOperator, 255]) -> DynArray[Market
 
         if c.collateral != empty(address):
             state.total_debt = market.total_debt()
-            state.total_coll = AMM(c.amm).collateral_balance()
+            state.total_coll = ERC20(c.collateral).balanceOf(c.amm)
             state.debt_ceiling = market.debt_ceiling()
 
             if state.debt_ceiling > state.total_debt:
@@ -636,11 +626,11 @@ def get_implementations(A: uint256) -> Implementations:
 
 @view
 @external
-def get_hooks(market: address) -> (address, DynArray[MarketHookData, MAX_HOOKS]):
+def get_hooks(market: address) -> DynArray[MarketHookData, MAX_HOOKS]:
     """
     @notice Get the hook contracts and active hooks for the given market
     @param market Market address. Set as empty(address) for global hooks.
-    @return (amm hooks, market hooks)
+    @return market hooks
     """
     hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = []
     hookdata_array: DynArray[MarketHookData, MAX_HOOKS] = []
@@ -660,7 +650,7 @@ def get_hooks(market: address) -> (address, DynArray[MarketHookData, MAX_HOOKS])
 
         hookdata_array.append(hookdata)
 
-    return self.amm_hooks[market], hookdata_array
+    return hookdata_array
 
 
 @view
@@ -1122,24 +1112,6 @@ def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, M
 
 
 @external
-def set_amm_hook(market: address, hook: address):
-    """
-    @notice Set callback hooks for `market`'s AMM
-    @dev When an AMM hook is set, the AMM also approves the hook to transfer the collateral token.
-    @param market Market to set the hooks for
-    @param hook Address of the AMM hooks contract. Set to empty(address) to disable.
-    """
-    self._assert_only_owner()
-    amm: address = self._get_contracts(market).amm
-    amount: uint256 = AMM(amm).collateral_balance()
-    AMM(amm).set_exchange_hook(hook)
-    assert AMM(amm).collateral_balance() == amount, "DFM:C balance changed"
-    self.amm_hooks[amm] = hook
-
-    log SetAmmHooks(market, hook)
-
-
-@external
 def add_new_monetary_policy(monetary_policy: MonetaryPolicy):
     """
     @notice Add a new monetary policy
@@ -1329,18 +1301,9 @@ def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bou
 def _deposit_collateral(account: address, collateral: address, amm: address, amount: uint256):
     assert ERC20(collateral).transferFrom(account, amm, amount, default_return_value=True)
 
-    hooks: address = self.amm_hooks[amm]
-    if hooks != empty(address):
-        AmmHooks(hooks).after_collateral_in(amount)
-
-
 
 @internal
 def _withdraw_collateral(account: address, collateral: address, amm: address, amount: uint256):
-    hooks: address = self.amm_hooks[amm]
-    if hooks != empty(address):
-        AmmHooks(hooks).before_collateral_out(amount)
-
     assert ERC20(collateral).transferFrom(amm, account, amount, default_return_value=True)
 
 

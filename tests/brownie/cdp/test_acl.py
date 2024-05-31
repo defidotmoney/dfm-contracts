@@ -25,11 +25,6 @@ def test_set_market_hooks(controller, market, alice):
         controller.set_market_hooks(market, [[ZERO_ADDRESS, [False] * 4]], {"from": alice})
 
 
-def test_set_amm_hook(controller, market, alice):
-    with brownie.reverts("DFM:C Only owner"):
-        controller.set_amm_hook(market, ZERO_ADDRESS, {"from": alice})
-
-
 def test_add_new_monetary_policy(controller, policy, alice):
     with brownie.reverts("DFM:C Only owner"):
         controller.add_new_monetary_policy(policy, {"from": alice})
@@ -205,8 +200,3 @@ def test_set_liquidity_mining_hook(amm, alice):
 def test_set_rate(amm, alice):
     with brownie.reverts("DFM:A Only controller"):
         amm.set_rate(0, {"from": alice})
-
-
-def test_set_exchange_hook(amm, alice):
-    with brownie.reverts("DFM:A Only controller"):
-        amm.set_exchange_hook(ZERO_ADDRESS, {"from": alice})

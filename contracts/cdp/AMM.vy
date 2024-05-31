@@ -49,13 +49,6 @@ interface LMGauge:
     def callback_collateral_shares(n: int256, collateral_per_share: DynArray[uint256, MAX_TICKS_UINT]): nonpayable
     def callback_user_shares(user: address, n: int256, user_shares: DynArray[uint256, MAX_TICKS_UINT]): nonpayable
 
-interface AmmHooks:
-    def collateral_balance() -> uint256: view
-    def on_add_hook(market: address, amm: address): nonpayable
-    def on_remove_hook(): nonpayable
-    def before_collateral_out(amount: uint256): nonpayable
-    def after_collateral_in(amount: uint256): nonpayable
-
 
 event TokenExchange:
     buyer: indexed(address)
@@ -143,7 +136,6 @@ user_shares: HashMap[address, UserTicks]
 DEAD_SHARES: constant(uint256) = 1000
 
 lm_hook: public(LMGauge)
-exchange_hook: public(AmmHooks)
 
 
 @external
@@ -237,18 +229,6 @@ def coins(i: uint256) -> ERC20:
     if i == 1:
         return self.COLLATERAL_TOKEN
     raise
-
-
-@view
-@external
-def collateral_balance() -> uint256:
-    """
-    @notice The total collateral balance held within the AMM
-    """
-    hook: AmmHooks = self.exchange_hook
-    if hook == empty(AmmHooks):
-        return self.COLLATERAL_TOKEN.balanceOf(self)
-    return hook.collateral_balance()
 
 
 @view
@@ -891,21 +871,6 @@ def set_rate(rate: uint256) -> uint256:
     self.rate = rate
     log SetRate(rate, rate_mul, block.timestamp)
     return rate_mul
-
-
-@external
-def set_exchange_hook(hook: AmmHooks):
-    self._assert_only_controller()
-    old_hook: AmmHooks = self.exchange_hook
-    if old_hook != empty(AmmHooks):
-        old_hook.on_remove_hook()
-        self._approve_token(self.COLLATERAL_TOKEN, old_hook.address, 0)
-
-    if hook != empty(AmmHooks):
-        self._approve_token(self.COLLATERAL_TOKEN, hook.address, max_value(uint256))
-        hook.on_add_hook(self.MARKET_OPERATOR, self)
-
-    self.exchange_hook = hook
 
 
 # --- internal functions ---
@@ -1842,14 +1807,6 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
         lm.callback_collateral_shares(n_start, collateral_shares)
 
     assert in_coin.transferFrom(msg.sender, self, in_amount_done, default_return_value=True)
-
-    hook: AmmHooks = self.exchange_hook
-    if hook != empty(AmmHooks):
-        if j == 0:
-            hook.after_collateral_in(in_amount_done)
-        else:
-            hook.before_collateral_out(out_amount_done)
-
     assert out_coin.transfer(_for, out_amount_done, default_return_value=True)
 
     return [in_amount_done, out_amount_done]
