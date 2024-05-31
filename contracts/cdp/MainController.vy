@@ -347,7 +347,7 @@ def get_market(collateral: address, i: uint256 = 0) -> address:
     @param collateral Address of collateral token
     @param i Iterate over several markets for collateral if needed
     """
-    if i > len(self.collateral_markets[collateral]):
+    if i >= len(self.collateral_markets[collateral]):
         return empty(address)
     return self.collateral_markets[collateral][i]
 
@@ -361,7 +361,7 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
     @param collateral Address of collateral token
     @param i Iterate over several amms for collateral if needed
     """
-    if i > len(self.collateral_markets[collateral]):
+    if i >= len(self.collateral_markets[collateral]):
         return empty(address)
     market: address = self.collateral_markets[collateral][i]
     return self.market_contracts[market].amm
