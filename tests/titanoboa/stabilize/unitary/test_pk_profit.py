@@ -22,9 +22,7 @@ def make_profit(swaps, redeemable_tokens, stablecoin, alice, admin):
                 continue
 
             with boa.env.prank(admin):
-                swap.commit_new_fee(10**9)
-                boa.env.time_travel(4 * 86400)
-                swap.apply_new_fee()
+                swap.set_new_fee(10**9)
 
             with boa.env.prank(alice):
                 rtoken._mint_for_testing(alice, exchange_amount)
@@ -35,9 +33,7 @@ def make_profit(swaps, redeemable_tokens, stablecoin, alice, admin):
                 swap.exchange(1, 0, out, 0)
 
             with boa.env.prank(admin):
-                swap.commit_new_fee(0)
-                boa.env.time_travel(4 * 86400)
-                swap.apply_new_fee()
+                swap.set_new_fee(0)
 
     return _inner
 
@@ -162,9 +158,7 @@ def test_unprofitable_peg(
             imbalance_pool(swap, 0, 5 * able_to_add, add_diff=True)
 
             with boa.env.prank(admin):
-                swap.commit_new_fee(5 * 10**9)
-                boa.env.time_travel(4 * 86400)
-                swap.apply_new_fee()
+                swap.set_new_fee(5 * 10**9)
 
             boa.env.time_travel(15 * 60)
             with boa.reverts("DFM:PK Peg unprofitable"):  # dev: peg was unprofitable

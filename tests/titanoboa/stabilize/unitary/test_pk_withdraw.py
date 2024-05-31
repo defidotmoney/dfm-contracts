@@ -101,9 +101,7 @@ def test_almost_balanced(swaps, alice, admin, peg_keepers, pk_regulator, peg_kee
         with boa.env.prank(alice):
             swap.add_liquidity([0, 10**18], 0)
         with boa.env.prank(admin):
-            swap.commit_new_fee(10**6)
-            boa.env.time_travel(4 * 86400)
-            swap.apply_new_fee()
+            swap.set_new_fee(10**6)
         with boa.reverts():  # dev: peg was unprofitable
             with boa.env.prank(peg_keeper_updater):
                 pk_regulator.update(peg_keeper)

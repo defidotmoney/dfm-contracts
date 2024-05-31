@@ -69,6 +69,6 @@ def test_crypto_agg(
             stableswap_a.exchange(0, 1, amount, 0)
 
             boa.env.time_travel(200_000)
-            p = stableswap_a.price_oracle()
+            p = stableswap_a.price_oracle(0)
             assert p > 10**18 * 1.01
             assert crypto_agg_with_external_oracle.price() > p * 1.01
