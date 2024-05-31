@@ -15,6 +15,8 @@ contract StableCoin is OFT, ERC20FlashMint {
     EnumerableSet.UintSet private __eids;
     mapping(address => bool) public isMinter;
 
+    event MinterSet(address minter, bool isApproved);
+
     constructor(
         IProtocolCore _core,
         string memory _name,
@@ -26,6 +28,7 @@ contract StableCoin is OFT, ERC20FlashMint {
 
     function setMinter(address minter, bool isApproved) external onlyOwner returns (bool) {
         isMinter[minter] = isApproved;
+        emit MinterSet(minter, isApproved);
         return true;
     }
 

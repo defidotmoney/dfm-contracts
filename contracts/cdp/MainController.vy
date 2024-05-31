@@ -103,6 +103,7 @@ event SetDelegateApproval:
     is_approved: bool
 
 event SetImplementations:
+    A: indexed(uint256)
     amm: address
     market: address
 
@@ -136,18 +137,21 @@ event SetPegKeeperRegulator:
 event CreateLoan:
     market: indexed(address)
     account: indexed(address)
+    caller: indexed(address)
     coll_amount: uint256
     debt_amount: uint256
 
 event AdjustLoan:
     market: indexed(address)
     account: indexed(address)
+    caller: indexed(address)
     coll_adjustment: int256
     debt_adjustment: int256
 
 event CloseLoan:
     market: indexed(address)
     account: indexed(address)
+    caller: indexed(address)
     coll_withdrawn: uint256
     debt_withdrawn: uint256
     debt_repaid: uint256
@@ -292,6 +296,7 @@ def __init__(
 
     idx: uint256 = 0
     for mp in monetary_policies:
+        log AddMonetaryPolicy(idx, mp)
         self.monetary_policies[idx] = mp
         idx += 1
     self.n_monetary_policies = idx
@@ -470,7 +475,7 @@ def get_pending_market_state_for_account(
     c: MarketContracts = self._get_contracts(market)
     state: PendingAccountState = empty(PendingAccountState)
     debt: uint256 = MarketOperator(market).debt(account)
-    assert convert(debt, int256) + debt_change > 0, "DFM:C Negative debt"
+    assert convert(debt, int256) + debt_change > 0, "DFM:C Non-positive debt"
 
     if debt == 0:
         if coll_change == 0 and debt_change == 0:
@@ -770,7 +775,7 @@ def create_loan(
 
     STABLECOIN.mint(msg.sender, debt_amount)
 
-    log CreateLoan(market, account, coll_amount, debt_amount_final)
+    log CreateLoan(market, account, msg.sender, coll_amount, debt_amount_final)
 
 
 @external
@@ -831,7 +836,7 @@ def adjust_loan(
         else:
             self._withdraw_collateral(msg.sender, c.collateral, c.amm, coll_change_abs)
 
-    log AdjustLoan(market, account, coll_change, debt_change_final)
+    log AdjustLoan(market, account, msg.sender, coll_change, debt_change_final)
 
 
 @external
@@ -870,7 +875,7 @@ def close_loan(account: address, market: address):
     if xy[1] > 0:
         self._withdraw_collateral(msg.sender, c.collateral, c.amm, xy[1])
 
-    log CloseLoan(market, account, xy[1], xy[0], burn_amount)
+    log CloseLoan(market, account, msg.sender, xy[1], xy[0], burn_amount)
 
 
 @external
@@ -1081,7 +1086,7 @@ def set_implementations(A: uint256, market: address, amm: address):
         assert AMM(amm).A() == A, "DFM:C incorrect amm A"
 
     self.implementations[A] = Implementations({amm: amm, market_operator: market})
-    log SetImplementations(amm, market)
+    log SetImplementations(A, amm, market)
 
 
 @external
@@ -1250,7 +1255,7 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
 def _adjust_loan_bounds(debt_change: int256) -> int256[2]:
     if debt_change < 0:
         # when reducing debt, hook cannot cause a debt increase
-        return [-2**255, -debt_change]
+        return [min_value(int256), -debt_change]
     if debt_change > 0:
         # when increasing debt, hook cannot cause a debt reduction
         return [-debt_change, max_value(int256)]

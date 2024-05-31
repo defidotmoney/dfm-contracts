@@ -169,6 +169,9 @@ def initialize(
     self.loan_discount = loan_discount
     self._total_debt.rate_mul = 10**18
 
+    log SetDebtCeiling(debt_ceiling)
+    log SetBorrowingDiscounts(loan_discount, liquidation_discount)
+
 
 # --- external view functions ---
 # Most views in this contract should instead be accessed via related methods in `MainController`
