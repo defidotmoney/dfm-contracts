@@ -75,6 +75,10 @@ contract StableCoin is OFT, ERC20FlashMint {
         return (_eids, _peers);
     }
 
+    function maxFlashLoan(address token) public view override returns (uint256) {
+        return token == address(this) ? 2 ** 127 - totalSupply() : 0;
+    }
+
     function owner() public view override returns (address) {
         return CORE_OWNER.owner();
     }
