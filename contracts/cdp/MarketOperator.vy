@@ -269,13 +269,11 @@ def min_collateral(debt: uint256, n_bands: uint256) -> uint256:
     @return Minimal collateral required
     """
     # Add N**2 to account for precision loss in multiple bands, e.g. N / (y/N) = N**2 / y
-    return unsafe_div(
-        unsafe_div(
-            debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, n_bands, self.loan_discount) + n_bands * (n_bands + 2 * DEAD_SHARES),
-            self.COLLATERAL_PRECISION
-        ) * 10**18,
-        10**18 - 10**14
-    )
+    y_effective: uint256 = self.get_y_effective(10**18, n_bands, self.loan_discount)
+    x: uint256 = debt * 10**18 / self.max_p_base() * 10**18 / y_effective
+    x += n_bands * (n_bands + 2 * DEAD_SHARES) + self.COLLATERAL_PRECISION - 1
+    return ((x / self.COLLATERAL_PRECISION) * 10**18) / (10**18 - 10**14)
+
 
 
 @view
