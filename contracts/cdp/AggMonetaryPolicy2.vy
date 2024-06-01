@@ -45,7 +45,7 @@ MAX_SIGMA: constant(uint256) = 10**18
 MIN_SIGMA: constant(uint256) = 10**14
 MAX_EXP: constant(uint256) = 1000 * 10**18
 MAX_RATE: constant(uint256) = 43959106799  # 300% APY
-TARGET_REMAINDER: constant(uint256) = 10**17  # rate is x2 when 10% left before ceiling
+TARGET_REMAINDER: constant(uint256) = 10**17  # rate is scaled by factor of 1.9 at 90% utilization
 
 
 @external
@@ -61,6 +61,7 @@ def __init__(core: CoreOwner,
 
     assert sigma >= MIN_SIGMA
     assert sigma <= MAX_SIGMA
+    assert target_debt_fraction > 0
     assert target_debt_fraction <= MAX_TARGET_DEBT_FRACTION
     assert rate <= MAX_RATE
     self.rate0 = rate

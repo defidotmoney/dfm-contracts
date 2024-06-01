@@ -39,7 +39,6 @@ def test_add_market(
     assert market.CORE_OWNER() == core
     assert market.owner() == core.owner()
     assert market.CONTROLLER() == controller
-    assert market.STABLECOIN() == stable
     assert market.AMM() == amm
     assert market.debt_ceiling() == market_debt_cap
     assert market.liquidation_discount() == market_liquidation_discount
@@ -248,7 +247,7 @@ def test_set_impl_clear(controller, collateral, oracle, deployer):
 
 
 def test_set_impl_wrong_A_amm(MarketOperator, AMM, core, stable, controller, deployer):
-    market_impl = MarketOperator.deploy(core, controller, stable, 100, {"from": deployer})
+    market_impl = MarketOperator.deploy(core, controller, 100, {"from": deployer})
     amm_impl = AMM.deploy(controller, stable, 69, {"from": deployer})
 
     with brownie.reverts("DFM:C incorrect amm A"):
@@ -256,7 +255,7 @@ def test_set_impl_wrong_A_amm(MarketOperator, AMM, core, stable, controller, dep
 
 
 def test_set_impl_wrong_A_market(MarketOperator, AMM, core, stable, controller, deployer):
-    market_impl = MarketOperator.deploy(core, controller, stable, 420, {"from": deployer})
+    market_impl = MarketOperator.deploy(core, controller, 420, {"from": deployer})
     amm_impl = AMM.deploy(controller, stable, 100, {"from": deployer})
 
     with brownie.reverts("DFM:C incorrect market A"):

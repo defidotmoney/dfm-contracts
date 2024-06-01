@@ -267,7 +267,6 @@ MAX_FEE: constant(uint256) = 10**17  # 10%
 MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16
-MAX_ACTIVE_BAND: constant(int256) = max_value(int256)
 
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(CoreOwner))
@@ -359,7 +358,7 @@ def get_market(collateral: address, i: uint256 = 0) -> address:
     @notice Get market address for collateral
     @dev Returns empty(address) if market does not exist
     @param collateral Address of collateral token
-    @param i Iterate over several markets for collateral if needed
+    @param i Access the i-th market within the list
     """
     if i >= len(self.collateral_markets[collateral]):
         return empty(address)
@@ -373,7 +372,7 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
     @notice Get AMM address for collateral
     @dev Returns empty(address) if market does not exist
     @param collateral Address of collateral token
-    @param i Iterate over several amms for collateral if needed
+    @param i Access the i-th collateral within the list
     """
     if i >= len(self.collateral_markets[collateral]):
         return empty(address)
@@ -434,7 +433,7 @@ def get_market_states_for_account(
             Account debt,
             AMM balances (collateral, stablecoin),
             Number of bands,
-            Account health (liquidation is possible at 0),
+            Account health (liquidation is possible if health < 0),
             Liquidation price range (high, low)
     """
     account_states: DynArray[AccountState, 255] = []
@@ -986,7 +985,6 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     redeemed: uint256 = self.redeemed
     to_be_redeemed: uint256 = total_debt + redeemed - self.total_hook_debt
 
-    # Difference between to_be_redeemed and minted amount is exactly due to interest charged
     if to_be_redeemed > minted:
         self.minted = to_be_redeemed
         mint_total = unsafe_sub(to_be_redeemed, minted)  # Now this is the fees to charge
@@ -1046,7 +1044,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
     self._assert_only_owner()
     assert fee <= MAX_FEE, "DFM:C Fee too high"
     assert fee >= MIN_FEE, "DFM:C Fee too low"
-    assert admin_fee < MAX_ADMIN_FEE, "DFM:C Admin fee too high"
+    assert admin_fee <= MAX_ADMIN_FEE, "DFM:C Admin fee too high"
     assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT, "DFM:C liq discount too low"
     assert loan_discount <= MAX_LOAN_DISCOUNT, "DFM:C Loan discount too high"
     assert loan_discount > liquidation_discount, "DFM:C loan discount<liq discount"

@@ -55,7 +55,6 @@ event RecallDebt:
 
 # Time between providing/withdrawing coins
 ACTION_DELAY: constant(uint256) = 15 * 60
-ADMIN_ACTIONS_DELAY: constant(uint256) = 3 * 86400
 
 PRECISION: constant(uint256) = 10 ** 18
 

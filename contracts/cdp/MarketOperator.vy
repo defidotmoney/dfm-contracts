@@ -93,7 +93,6 @@ struct Position:
 
 CORE_OWNER: public(immutable(CoreOwner))
 CONTROLLER: public(immutable(address))
-STABLECOIN: public(immutable(ERC20))
 COLLATERAL_TOKEN: public(ERC20)
 AMM: public(LLAMMA)
 
@@ -129,10 +128,9 @@ loan_discount: public(uint256)
 
 
 @external
-def __init__(core: CoreOwner, controller: address, stablecoin: ERC20, _A: uint256):
+def __init__(core: CoreOwner, controller: address, _A: uint256):
     CONTROLLER = controller
     CORE_OWNER = core
-    STABLECOIN = stablecoin
 
     A = _A
     Aminus1 = unsafe_sub(_A, 1)
@@ -244,6 +242,9 @@ def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
     #
     # When n1 -= 1:
     # p_oracle_up *= A / (A - 1)
+
+    assert n_bands > MIN_TICKS-1, "DFM:M Need more ticks"
+    assert n_bands < MAX_TICKS+1, "DFM:M Need less ticks"
 
     total_debt: uint256 = self._get_total_debt()
     debt_ceiling: uint256 = self.debt_ceiling

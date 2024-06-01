@@ -99,7 +99,6 @@ CONTROLLER: immutable(address)
 MARKET_OPERATOR: public(address)
 ORACLE: public(PriceOracle)
 
-BORROWED_PRECISION: immutable(uint256)
 COLLATERAL_PRECISION: uint256
 BASE_PRICE: uint256
 A: public(immutable(uint256))
@@ -142,14 +141,12 @@ lm_hook: public(LMGauge)
 def __init__(controller: address, stablecoin: ERC20, _A: uint256):
     CONTROLLER = controller
     BORROWED_TOKEN = stablecoin
-    BORROWED_PRECISION = 10**(18 - stablecoin.decimals())
     A = _A
 
     Aminus1 = unsafe_sub(A, 1)
     A2 = pow_mod256(A, 2)
     Aminus12 = pow_mod256(unsafe_sub(A, 1), 2)
 
-    # sqrt(A / (A - 1)) - needs to be pre-calculated externally
     SQRT_BAND_RATIO = self.sqrt_int(unsafe_div(10**36 * _A, unsafe_sub(_A, 1)))
 
     # log(A / (A - 1))
@@ -163,7 +160,7 @@ def __init__(controller: address, stablecoin: ERC20, _A: uint256):
             x /= p
             res += t * 10**18
     d: uint256 = 10**18
-    for i in range(59):  # 18 decimals: math.log2(10**10) == 59.7
+    for i in range(59):
         if (x >= 2 * 10**18):
             res += d
             x /= 2
@@ -592,9 +589,7 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
         return 0, pump
 
     # Precision and round up
-    if pump:
-        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), BORROWED_PRECISION), 1)
-    else:
+    if not pump:
         amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), self.COLLATERAL_PRECISION), 1)
 
     return amount, pump
@@ -803,7 +798,6 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
     if old_max_band <= ns[1]:
         self.max_band = max_band
 
-    total_x = unsafe_div(total_x, BORROWED_PRECISION)
     total_y = unsafe_div(total_y, coll_precision)
     log Withdraw(user, total_x, total_y)
 
@@ -1365,10 +1359,10 @@ def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedT
     out: DetailedTrade = empty(DetailedTrade)
     if amount != 0:
         in_precision: uint256 = self.COLLATERAL_PRECISION
-        out_precision: uint256 = BORROWED_PRECISION
+        out_precision: uint256 = 1
         if i == 0:
             out_precision = in_precision
-            in_precision = BORROWED_PRECISION
+            in_precision = 1
         p_o: uint256[2] = self._price_oracle_ro()
         if is_in:
             out = self.calc_swap_out(i == 0, amount * in_precision, p_o, in_precision, out_precision)
@@ -1663,7 +1657,7 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
     if use_y:
         return unsafe_div(XY, self.COLLATERAL_PRECISION)
 
-    return unsafe_div(XY, BORROWED_PRECISION)
+    return XY
 
 
 @view
@@ -1694,14 +1688,14 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
                 xs[0] += dx
                 ys[0] += dy
             else:
-                xs.append(unsafe_div(dx, BORROWED_PRECISION))
+                xs.append(dx)
                 ys.append(unsafe_div(dy, coll_precision))
             if ns[0] == ns[1]:
                 break
             ns[0] = unsafe_add(ns[0], 1)
 
     if is_sum:
-        xs[0] = unsafe_div(xs[0], BORROWED_PRECISION)
+        xs[0] = xs[0]
         ys[0] = unsafe_div(ys[0], coll_precision)
 
     return [xs, ys]
@@ -1749,12 +1743,12 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
 
     in_coin: ERC20 = BORROWED_TOKEN
     out_coin: ERC20 = self.COLLATERAL_TOKEN
-    in_precision: uint256 = BORROWED_PRECISION
+    in_precision: uint256 = 1
     out_precision: uint256 = self.COLLATERAL_PRECISION
     if i == 1:
         in_precision = out_precision
         in_coin = out_coin
-        out_precision = BORROWED_PRECISION
+        out_precision = 1
         out_coin = BORROWED_TOKEN
 
     out: DetailedTrade = empty(DetailedTrade)

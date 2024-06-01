@@ -74,8 +74,8 @@ ONE: constant(uint256) = 10 ** 18
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(CoreOwner))
 CONTROLLER: public(immutable(address))
+AGGREGATOR: public(immutable(Aggregator))
 
-aggregator: public(Aggregator)
 peg_keepers: public(DynArray[PegKeeperInfo, MAX_LEN])
 peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
 
@@ -95,7 +95,7 @@ def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, controller: 
     CORE_OWNER = core
     STABLECOIN = _stablecoin
     CONTROLLER = controller
-    self.aggregator = _agg
+    AGGREGATOR = _agg
 
     self.worst_price_threshold = 3 * 10 ** (18 - 4)  # 0.0003
     self.price_deviation = 5 * 10 ** (18 - 4) # 0.0005 = 0.05%
@@ -161,7 +161,7 @@ def get_max_provide(pk: PegKeeper) -> uint256:
     if self.is_killed in Killed.Provide:
         return 0
 
-    if self.aggregator.price() < ONE:
+    if AGGREGATOR.price() < ONE:
         return 0
 
     price: uint256 = max_value(uint256)
@@ -200,7 +200,7 @@ def get_max_withdraw(pk: PegKeeper) -> uint256:
     if self.is_killed in Killed.Withdraw:
         return 0
 
-    if self.aggregator.price() > ONE:
+    if AGGREGATOR.price() > ONE:
         return 0
 
     i: uint256 = self.peg_keeper_i[pk]

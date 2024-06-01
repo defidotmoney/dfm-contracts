@@ -79,7 +79,7 @@ def controller(MainController, MarketOperator, AMM, core, stable, policy, deploy
     contract = MainController.deploy(core, stable, [policy], 2**256 - 1, {"from": deployer})
     stable.setMinter(contract, True, {"from": deployer})
 
-    market_impl = MarketOperator.deploy(core, contract, stable, MARKET_A, {"from": deployer})
+    market_impl = MarketOperator.deploy(core, contract, MARKET_A, {"from": deployer})
     amm_impl = AMM.deploy(contract, stable, MARKET_A, {"from": deployer})
     contract.set_implementations(MARKET_A, market_impl, amm_impl, {"from": deployer})
 
