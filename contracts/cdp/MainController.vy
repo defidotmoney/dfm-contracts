@@ -778,9 +778,10 @@ def create_loan(
 
     self.total_debt = total_debt
     self.minted += debt_amount
-    self._update_rate(market, c.amm, c.mp_idx)
 
     STABLECOIN.mint(msg.sender, debt_amount)
+
+    self._update_rate(market, c.amm, c.mp_idx)
 
     log CreateLoan(market, account, msg.sender, coll_amount, debt_amount_final)
 
@@ -824,7 +825,6 @@ def adjust_loan(
 
     total_debt: uint256 = self._uint_plus_int(self.total_debt, debt_adjustment)
     self.total_debt = total_debt
-    self._update_rate(market, c.amm, c.mp_idx)
 
     if debt_change != 0:
         debt_change_abs: uint256 = convert(abs(debt_change), uint256)
@@ -842,6 +842,8 @@ def adjust_loan(
             self._deposit_collateral(msg.sender, c.collateral, c.amm, coll_change_abs)
         else:
             self._withdraw_collateral(msg.sender, c.collateral, c.amm, coll_change_abs)
+
+    self._update_rate(market, c.amm, c.mp_idx)
 
     log AdjustLoan(market, account, msg.sender, coll_change, debt_change_final)
 
@@ -874,13 +876,14 @@ def close_loan(account: address, market: address):
 
     self.redeemed += burn_amount
     self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     if xy[0] > 0:
         STABLECOIN.transferFrom(c.amm, msg.sender, xy[0])
     STABLECOIN.burn(msg.sender, burn_amount)
     if xy[1] > 0:
         self._withdraw_collateral(msg.sender, c.collateral, c.amm, xy[1])
+
+    self._update_rate(market, c.amm, c.mp_idx)
 
     log CloseLoan(market, account, msg.sender, xy[1], xy[0], burn_amount)
 
@@ -919,7 +922,6 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
 
     self.redeemed += debt_amount
     self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     burn_amm: uint256 = min(xy[0], debt_amount)
     if burn_amm != 0:
@@ -933,6 +935,8 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
 
     if xy[1] > 0:
         self._withdraw_collateral(msg.sender, c.collateral, c.amm, xy[1])
+
+    self._update_rate(market, c.amm, c.mp_idx)
 
     log LiquidateLoan(market, msg.sender, target, xy[1], xy[0], debt_amount)
 
@@ -976,10 +980,6 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     # update total debt and market rates
     total_debt: uint256 = self.total_debt + debt_increase_total
     self.total_debt = total_debt
-    i = 0
-    for market in market_list:
-        self._update_rate(market, amm_list[i], mp_idx_list[i])
-        i = unsafe_add(i, 1)
 
     mint_total: uint256 = 0
     minted: uint256 = self.minted
@@ -991,6 +991,11 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
         self.minted = to_be_redeemed
         mint_total = unsafe_sub(to_be_redeemed, minted)  # Now this is the fees to charge
         STABLECOIN.mint(receiver, mint_total)
+
+    i = 0
+    for market in market_list:
+        self._update_rate(market, amm_list[i], mp_idx_list[i])
+        i = unsafe_add(i, 1)
 
     log CollectFees(minted, redeemed, total_debt, mint_total)
     return mint_total
@@ -1455,5 +1460,7 @@ def _adjust_hook_debt(market: address, hook: address, adjustment: int256):
 
 @internal
 def _update_rate(market: address, amm: address, mp_idx: uint256):
+    # rate update is always the final action in a function, so that the
+    # monetary policy has an accurate view of the current state
     mp_rate: uint256 = min(self.monetary_policies[mp_idx].rate_write(market), MAX_RATE)
     AMM(amm).set_rate(mp_rate)
