@@ -185,7 +185,6 @@ def owner() -> address:
 
 @view
 @external
-@nonreentrant('lock')
 def debt(account: address) -> uint256:
     """
     @notice Get the value of debt without changing the state
@@ -197,7 +196,6 @@ def debt(account: address) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def loan_exists(account: address) -> bool:
     """
     @notice Check whether there is a loan of `account` in existence
@@ -225,7 +223,6 @@ def pending_debt() -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
     """
     @notice Calculation of maximum which can be borrowed (details in comments)
@@ -263,7 +260,6 @@ def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def min_collateral(debt: uint256, n_bands: uint256) -> uint256:
     """
     @notice Minimal amount of collateral required to support debt
@@ -281,7 +277,6 @@ def min_collateral(debt: uint256, n_bands: uint256) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> int256:
     """
     @notice Calculate the upper band number for the deposit to sit in to support
@@ -296,7 +291,6 @@ def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> i
 
 @view
 @external
-@nonreentrant('lock')
 def tokens_to_liquidate(caller: address, target: address, frac: uint256 = 10 ** 18) -> uint256:
     """
     @notice Calculate the required stablecoin balance to liquidate an account
@@ -317,7 +311,6 @@ def tokens_to_liquidate(caller: address, target: address, frac: uint256 = 10 ** 
 
 @view
 @external
-@nonreentrant('lock')
 def health(account: address, full: bool = False) -> int256:
     """
     @notice Returns position health normalized to 1e18 for the account.
@@ -329,7 +322,6 @@ def health(account: address, full: bool = False) -> int256:
 
 @view
 @external
-@nonreentrant('lock')
 def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position, 1000]:
     """
     @notice Returns a dynamic array of users who can be "hard-liquidated".
@@ -376,7 +368,6 @@ def amm_price() -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def user_prices(account: address) -> uint256[2]:  # Upper, lower
     """
     @notice Lowest price of the lower band and highest price of the upper band the account has deposit in the AMM
@@ -392,7 +383,6 @@ def user_prices(account: address) -> uint256[2]:  # Upper, lower
 
 @view
 @external
-@nonreentrant('lock')
 def user_state(account: address) -> uint256[4]:
     """
     @notice Return the account state in one call
@@ -407,7 +397,6 @@ def user_state(account: address) -> uint256[4]:
 
 @view
 @external
-@nonreentrant('lock')
 def health_calculator(account: address, coll_amount: int256, debt_amount: int256, full: bool, n_bands: uint256 = 0) -> int256:
     """
     @notice Health predictor in case account changes the debt or collateral
@@ -554,7 +543,6 @@ def set_amm_admin_fee(fee: uint256):
 
 
 @external
-@nonreentrant('lock')
 def set_borrowing_discounts(loan_discount: uint256, liquidation_discount: uint256):
     """
     @notice Set discounts at which we can borrow (defines max LTV) and where bad liquidation starts

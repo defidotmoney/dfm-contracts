@@ -1021,7 +1021,6 @@ def increase_hook_debt(market: address, hook: address, amount: uint256):
 # --- owner-only nonpayable functions ---
 
 @external
-@nonreentrant('lock')
 def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, oracle: PriceOracle,
                mp_idx: uint256, loan_discount: uint256, liquidation_discount: uint256,
                debt_ceiling: uint256) -> address[2]:
