@@ -79,11 +79,9 @@ interface CoreOwner:
     def owner() -> address: view
     def feeReceiver() -> address: view
 
-interface ControllerHooks:
-    def on_create_loan(account: address, market: address, coll_amount: uint256, debt_amount: uint256) -> int256: nonpayable
-    def on_adjust_loan(account: address, market: address, coll_change: int256, debt_changet: int256) -> int256: nonpayable
-    def on_close_loan(account: address, market: address, account_debt: uint256) -> int256: nonpayable
-    def on_liquidation(caller: address, market: address, target: address, debt_liquidated: uint256) -> int256: nonpayable
+interface MarketHook:
+    def get_configuration() -> (uint256, bool[NUM_HOOK_IDS]): view
+
 
 
 event AddMarket:
@@ -102,9 +100,23 @@ event SetImplementations:
     amm: address
     market: address
 
-event SetMarketHooks:
+event AddMarketHook:
     market: indexed(address)
-    hookdata: DynArray[MarketHookData, MAX_HOOKS]
+    hook: indexed(address)
+    hook_type: uint256
+    active_hooks: bool[NUM_HOOK_IDS]
+
+event RemoveMarketHook:
+    market: indexed(address)
+    hook: indexed(address)
+    hook_debt_released: uint256
+
+event HookDebtAjustment:
+    market: indexed(address)
+    hook: indexed(address)
+    adjustment: int256
+    new_hook_debt: uint256
+    new_total_hook_debt: uint256
 
 event AddMonetaryPolicy:
     mp_idx: indexed(uint256)
@@ -227,6 +239,7 @@ struct LiquidationState:
 
 struct MarketHookData:
     hooks: address
+    hook_type: uint256
     active_hooks: bool[NUM_HOOK_IDS]
 
 
@@ -235,6 +248,11 @@ enum HookId:
     ON_ADJUST_LOAN
     ON_CLOSE_LOAN
     ON_LIQUIDATION
+
+enum HookType:
+    VALIDATION_ONLY
+    FEE_ONLY
+    FEE_AND_REBATE
 
 
 NUM_HOOK_IDS: constant(uint256) = 4
@@ -267,11 +285,11 @@ minted: public(uint256)
 redeemed: public(uint256)
 
 isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
-
-global_hooks: DynArray[uint256, MAX_HOOKS]
-market_hooks: HashMap[address, DynArray[uint256, MAX_HOOKS]]
-hook_debt_adjustment: HashMap[address, uint256]
 implementations: HashMap[uint256, Implementations]
+
+market_hooks: HashMap[address, DynArray[uint256, MAX_HOOKS]]
+hook_debt: HashMap[address, HashMap[address, uint256]]
+total_hook_debt: public(uint256)
 
 
 @external
@@ -626,26 +644,23 @@ def get_implementations(A: uint256) -> Implementations:
 
 @view
 @external
-def get_hooks(market: address) -> DynArray[MarketHookData, MAX_HOOKS]:
+def get_market_hooks(market: address) -> DynArray[MarketHookData, MAX_HOOKS]:
     """
     @notice Get the hook contracts and active hooks for the given market
     @param market Market address. Set as empty(address) for global hooks.
     @return market hooks
     """
-    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = []
+    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market]
     hookdata_array: DynArray[MarketHookData, MAX_HOOKS] = []
 
-    if market == empty(address):
-        hookdata_packed_array = self.global_hooks
-    else:
-        hookdata_packed_array = self.market_hooks[market]
 
     for hookdata_packed in hookdata_packed_array:
         hookdata: MarketHookData = empty(MarketHookData)
-        hookdata.hooks = convert(hookdata_packed >> 96, address)
+        hookdata.hooks = self._get_hook_address(hookdata_packed)
+        hookdata.hook_type = (hookdata_packed & 7) >> 1
 
         for i in range(NUM_HOOK_IDS):
-            if hookdata_packed >> i & 1 != 0:
+            if hookdata_packed >> i & 8 != 0:
                 hookdata.active_hooks[i] = True
 
         hookdata_array.append(hookdata)
@@ -655,13 +670,13 @@ def get_hooks(market: address) -> DynArray[MarketHookData, MAX_HOOKS]:
 
 @view
 @external
-def get_total_hook_debt_adjustment(market: address) -> uint256:
+def get_market_hook_debt(market: address, hook: address) -> uint256:
     """
     @notice Get the total aggregate hook debt adjustments for the given market
     @dev The sum of all hook debt adjustments cannot ever be less than zero
          or the system will have uncollateralized debt.
     """
-    return self.hook_debt_adjustment[market]
+    return self.hook_debt[market][hook]
 
 
 @view
@@ -967,7 +982,7 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     mint_total: uint256 = 0
     minted: uint256 = self.minted
     redeemed: uint256 = self.redeemed
-    to_be_redeemed: uint256 = total_debt + redeemed
+    to_be_redeemed: uint256 = total_debt + redeemed - self.total_hook_debt
 
     # Difference between to_be_redeemed and minted amount is exactly due to interest charged
     if to_be_redeemed > minted:
@@ -980,15 +995,26 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
 
 
 @external
-def increase_total_hook_debt_adjustment(market: address, amount: uint256):
+def increase_hook_debt(market: address, hook: address, amount: uint256):
     """
-    @notice Burn debt to increase the total aggregate hook debt adjustment
-            value for the given market. Used to pre-fund hook debt rebates.
+    @notice Burn debt to increase the available hook debt value for a given
+            market hook. This can be used to pre-fund hook debt rebates.
     """
-    assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+    if market != empty(address):
+        assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+
+    num_hooks: uint256 = len(self.market_hooks[market])
+    for i in range(MAX_HOOKS + 1):
+        if i == num_hooks:
+            raise "DFM:C Unknown hook"
+        hookdata: uint256 = self.market_hooks[market][i]
+        if self._get_hook_address(hookdata) == hook:
+            assert self._get_hook_type(hookdata) == HookType.FEE_AND_REBATE, "DFM:C Hook does not track debt"
+            break
 
     STABLECOIN.burn(msg.sender, amount)
-    self.hook_debt_adjustment[market] += amount
+    self.hook_debt[market][hook] += amount
+    self.total_hook_debt += amount
 
 
 # --- owner-only nonpayable functions ---
@@ -1080,35 +1106,78 @@ def set_implementations(A: uint256, market: address, amm: address):
 
 
 @external
-def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, MAX_HOOKS]):
+def add_market_hook(market: address, hook: address):
     """
-    @notice Set callback hooks for `market`
-    @dev Existing hooks are replaced with this call, be sure to include
-         previously set hooks if the goal is to add a new one
-    @param market Market to set hooks for. Set as empty(address) for global hooks.
-    @param hookdata_array Dynamic array with hook configuration data
+    @notice Add a new callback hook contract for `market`
+    @dev Hook contracts must adhere to the interface and specification defined
+         at `interfaces/IControllerHooks.sol`
+    @param market Market to add a hook for. Use empty(address) to set a global hook.
+    @param hook Address of the hook contract.
     """
     self._assert_only_owner()
 
-    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = []
-    for hookdata in hookdata_array:
-        assert hookdata.hooks != empty(address), "DFM:C Empty hooks address"
-        hookdata_packed: uint256 = (convert(hookdata.hooks, uint256) << 96)
-
-        for i in range(NUM_HOOK_IDS):
-            if hookdata.active_hooks[i]:
-                hookdata_packed += 1 << i
-
-        assert hookdata_packed % (1 << NUM_HOOK_IDS) != 0, "DFM:C No active hooks"
-        hookdata_packed_array.append(hookdata_packed)
-
-    if market == empty(address):
-        self.global_hooks = hookdata_packed_array
-    else:
+    if market != empty(address):
         assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
-        self.market_hooks[market] = hookdata_packed_array
 
-    log SetMarketHooks(market, hookdata_array)
+    market_hooks: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market]
+    assert len(market_hooks) < MAX_HOOKS, "DFM:C Maximum hook count reached"
+    for hookdata in market_hooks:
+        assert self._get_hook_address(hookdata) != hook, "DFM:C Hook already added"
+
+    config: (uint256, bool[NUM_HOOK_IDS]) = MarketHook(hook).get_configuration()
+
+    # add hook type to 3 lowest bits
+    assert config[0] < 3, "DFM:C Invalid hook type"
+    hookdata_packed: uint256 = 1 << config[0]
+
+    # add hook ids starting from 4th bit
+    for i in range(NUM_HOOK_IDS):
+        if config[1][i]:
+            hookdata_packed += 1 << (i + 3)
+
+    assert (hookdata_packed >> 3) > 0, "DFM:C No active hook points"
+
+    # add address starting from 96th bit
+    hookdata_packed += convert(hook, uint256) << 96
+
+    self.market_hooks[market].append(hookdata_packed)
+
+    log AddMarketHook(market, hook, config[0], config[1])
+
+
+@external
+def remove_market_hook(market: address, hook: address):
+    """
+    @notice Remove a callback hook contract for `market`
+    @dev If the hook type is `FEE_AND_REBATE` and the current `hook_debt`
+         is non-zero, is balance is creditted to the protocol fees.
+    @param market Market to remove the hooks from. Set as empty(address) to
+                  remove a global hook.
+    @param hook Address of the hook contract.
+    """
+    self._assert_only_owner()
+
+    if market != empty(address):
+        assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+
+    num_hooks: uint256 = len(self.market_hooks[market])
+    for i in range(MAX_HOOKS + 1):
+        if i == num_hooks:
+            raise "DFM:C Unknown hook"
+        if self._get_hook_address(self.market_hooks[market][i]) != hook:
+            continue
+
+        last_hookdata: uint256 = self.market_hooks[market].pop()
+        if i < num_hooks - 1:
+            self.market_hooks[market][i] = last_hookdata
+        break
+
+    hook_debt: uint256 = self.hook_debt[market][hook]
+    if hook_debt > 0:
+        self._adjust_hook_debt(market, hook, -convert(hook_debt, int256))
+
+    log RemoveMarketHook(market, hook, hook_debt)
+
 
 
 @external
@@ -1254,47 +1323,63 @@ def _get_contracts(market: address) -> MarketContracts:
 
 @view
 @internal
-def _limit_debt_adjustment(market: address, debt_adjustment: int256) -> (int256, uint256):
-    total_adjustment: int256 = convert(self.hook_debt_adjustment[market], int256)
-    if debt_adjustment < 0 and abs(debt_adjustment) > total_adjustment:
-        debt_adjustment = -total_adjustment
-    return debt_adjustment, convert(debt_adjustment + total_adjustment, uint256)
+def _get_hook_address(hookdata: uint256) -> address:
+    # hook address is stored in the upper 160 bits
+    return convert(hookdata >> 96, address)
 
 
 @view
 @internal
-def _call_view_hook(
-    hookdata_array: DynArray[uint256, MAX_HOOKS],
-    hook_id: HookId,
-    calldata: Bytes[255],
-    bounds: int256[2]
-) -> int256:
-    if len(hookdata_array) == 0:
-        return 0
+def _get_hook_type(hookdata: uint256) -> HookType:
+    # hook type is indicated in the three lowest bits:
+    # 0b001 == VALIDATION_ONLY (cannot adjust debt)
+    # 0b010 == FEE_ONLY (can only increase debt, adjustment is added to fees)
+    # 0b100 == FEE_AND_REBATE (can increase and decrease debt, aggregate sum tracked in `hook_debt`)
+    return convert(hookdata & 7, HookType)
 
-    total: int256 = 0
-    for hookdata in hookdata_array:
-        if hookdata & convert(hook_id, uint256) == 0:
-            continue
 
-        hook: address = convert(hookdata >> 96, address)
-        response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
-        self._assert_in_bounds(response, bounds, False)
-        total += response
-
-    return total
+@view
+@internal
+def _is_hook_id_active(hookdata: uint256, hook_id: HookId) -> bool:
+    # hook ids are tracked from the 4th bit onward
+    return hookdata & (convert(hook_id, uint256) << 3) != 0
 
 
 @view
 @internal
 def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
     debt_adjustment: int256 = 0
+    for market_hooks_key in [market, empty(address)]:
+        hookdata_array: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market_hooks_key]
+        if len(hookdata_array) == 0:
+            continue
 
-    debt_adjustment += self._call_view_hook(self.market_hooks[market], hook_id, calldata, bounds)
-    debt_adjustment += self._call_view_hook(self.global_hooks, hook_id, calldata, bounds)
+        for hookdata in hookdata_array:
+            if not self._is_hook_id_active(hookdata, hook_id):
+                continue
 
-    self._assert_in_bounds(debt_adjustment, bounds, True)
-    return self._limit_debt_adjustment(market, debt_adjustment)[0]
+            hook: address = self._get_hook_address(hookdata)
+            response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
+            if response == 0:
+                continue
+
+            hook_type: HookType = self._get_hook_type(hookdata)
+            if hook_type == HookType.VALIDATION_ONLY:
+                raise "DFM:C Hook cannot adjust debt"
+            if hook_type == HookType.FEE_ONLY:
+                self._assert_in_bounds(response, [0, bounds[1]], False)
+            else:
+                self._assert_in_bounds(response, bounds, False)
+                if response < 0:
+                    hook_debt: uint256 = self.hook_debt[market_hooks_key][hook]
+                    assert hook_debt >= convert(-response, uint256), "DFM:C Hook debt underflow"
+
+            debt_adjustment += response
+
+    if debt_adjustment != 0:
+        self._assert_in_bounds(debt_adjustment, bounds, True)
+
+    return debt_adjustment
 
 
 @internal
@@ -1308,40 +1393,56 @@ def _withdraw_collateral(account: address, collateral: address, amm: address, am
 
 
 @internal
-def _call_hook(
-    hookdata_array: DynArray[uint256, MAX_HOOKS],
+def _call_hooks(
+    market: address,
     hook_id: HookId,
     calldata: Bytes[255],
     bounds: int256[2]
 ) -> int256:
-    if len(hookdata_array) == 0:
-        return 0
-
-    total: int256 = 0
-    for hookdata in hookdata_array:
-        if hookdata & convert(hook_id, uint256) == 0:
+    debt_adjustment: int256 = 0
+    for market_hooks_key in [market, empty(address)]:
+        hookdata_array: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market_hooks_key]
+        if len(hookdata_array) == 0:
             continue
 
-        hook: address = convert(hookdata >> 96, address)
-        response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
-        self._assert_in_bounds(response, bounds, False)
-        total += response
+        for hookdata in hookdata_array:
+            if not self._is_hook_id_active(hookdata, hook_id):
+                continue
 
-    return total
+            hook: address = self._get_hook_address(hookdata)
+            response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
+            if response == 0:
+                continue
 
+            hook_type: HookType = self._get_hook_type(hookdata)
+            if hook_type == HookType.VALIDATION_ONLY:
+                raise "DFM:C Hook cannot adjust debt"
+            if hook_type == HookType.FEE_ONLY:
+                self._assert_in_bounds(response, [0, bounds[1]], False)
+            else:
+                self._assert_in_bounds(response, bounds, False)
+                self._adjust_hook_debt(market_hooks_key, hook, response)
 
-@internal
-def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
-    debt_adjustment: int256 = 0
-
-    debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata, bounds)
-    debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata, bounds)
+            debt_adjustment += response
 
     if debt_adjustment != 0:
         self._assert_in_bounds(debt_adjustment, bounds, True)
-        debt_adjustment, self.hook_debt_adjustment[market] = self._limit_debt_adjustment(market, debt_adjustment)
 
     return debt_adjustment
+
+
+@internal
+def _adjust_hook_debt(market: address, hook: address, adjustment: int256):
+    hook_debt: uint256 = self.hook_debt[market][hook]
+    if adjustment < 0:
+        assert hook_debt >= convert(-adjustment, uint256), "DFM:C Hook debt underflow"
+
+    hook_debt = self._uint_plus_int(hook_debt, adjustment)
+    total_hook_debt: uint256 = self._uint_plus_int(self.total_hook_debt, adjustment)
+    self.hook_debt[market][hook] = hook_debt
+    self.total_hook_debt = total_hook_debt
+
+    log HookDebtAjustment(market, hook, adjustment, hook_debt, total_hook_debt)
 
 
 @internal
