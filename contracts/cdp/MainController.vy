@@ -535,16 +535,17 @@ def get_close_loan_amounts(account: address, market: address) -> CloseLoanState:
     debt: uint256 = MarketOperator(market).debt(account)
 
     if debt != 0:
+        state.total_debt_repaid = debt
         state.hook_debt_adjustment = self._call_view_hooks(
             market,
             HookId.ON_CLOSE_LOAN,
             _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)")),
             self._positive_only_bounds(debt)
         )
-        state.total_debt_repaid = self._uint_plus_int(debt, state.hook_debt_adjustment)
         state.debt_from_amm, state.coll_withdrawn = AMM(c.amm).get_sum_xy(account)
-        if state.debt_from_amm < state.total_debt_repaid:
-            state.debt_burned = state.total_debt_repaid - state.debt_from_amm
+        debt_to_burn: uint256 = self._uint_plus_int(debt, state.hook_debt_adjustment)
+        if state.debt_from_amm < debt_to_burn:
+            state.debt_burned = debt_to_burn - state.debt_from_amm
 
     return state
 
@@ -578,6 +579,7 @@ def get_liquidation_amounts(
     for item in liquidatable_accounts:
         state: LiquidationState = empty(LiquidationState)
         state.account = item.account
+        state.total_debt_repaid = item.debt
         state.hook_debt_adjustment = self._call_view_hooks(
             market,
             HookId.ON_LIQUIDATION,
@@ -590,11 +592,11 @@ def get_liquidation_amounts(
             ),
             self._positive_only_bounds(item.debt)
         )
-        state.total_debt_repaid = self._uint_plus_int(item.debt, state.hook_debt_adjustment)
         state.debt_from_amm = item.x
         state.coll_received = item.y
-        if state.debt_from_amm < state.total_debt_repaid:
-            state.debt_burned = state.total_debt_repaid - state.debt_from_amm
+        debt_to_burn: uint256 = self._uint_plus_int(item.debt, state.hook_debt_adjustment)
+        if state.debt_from_amm < debt_to_burn:
+            state.debt_burned = debt_to_burn - state.debt_from_amm
         liquidation_states.append(state)
 
     return liquidation_states
