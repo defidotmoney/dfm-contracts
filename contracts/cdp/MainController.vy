@@ -480,7 +480,7 @@ def get_pending_market_state_for_account(
             Liquidation price range (high, low)
             Debt adjustment applied by hooks
     """
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
     state: PendingAccountState = empty(PendingAccountState)
     debt: uint256 = MarketOperator(market).debt(account)
     assert convert(debt, int256) + debt_change > 0, "DFM:C Non-positive debt"
@@ -543,7 +543,7 @@ def get_close_loan_amounts(account: address, market: address) -> CloseLoanState:
             Collateral amount received by `account` once loan is closed
             Debt adjustment amount applied by hooks
     """
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
     state: CloseLoanState = empty(CloseLoanState)
     debt: uint256 = MarketOperator(market).debt(account)
 
@@ -585,7 +585,8 @@ def get_liquidation_amounts(
                 Collateral amount received by `caller` from liquidation
                 Debt adjustment amount applied by hooks
     """
-    self._get_contracts(market)
+    self._assert_market_exists(market)
+
     liquidatable_accounts: DynArray[Position, 1000] = MarketOperator(market).users_to_liquidate(start, limit)
     liquidation_states: DynArray[LiquidationState, 1000] = []
 
@@ -752,7 +753,7 @@ def create_loan(
     """
     assert coll_amount > 0 and debt_amount > 0, "DFM:C 0 coll or debt"
     self._assert_caller_or_approved_delegate(account)
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     hook_adjust: int256 = self._call_hooks(
         market,
@@ -803,7 +804,7 @@ def adjust_loan(
     assert coll_change != 0 or debt_change != 0, "DFM:C No change"
 
     self._assert_caller_or_approved_delegate(account)
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     debt_change_final: int256 = self._call_hooks(
         market,
@@ -855,7 +856,7 @@ def close_loan(account: address, market: address):
     @param market Market of the loan being closed
     """
     self._assert_caller_or_approved_delegate(account)
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     debt_adjustment: int256 = 0
     burn_amount: uint256 = 0
@@ -894,7 +895,7 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
     @param frac Fraction to liquidate; 100% = 10**18
     """
     assert frac <= 10**18, "DFM:C frac too high"
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     debt_adjustment: int256 = 0
     debt_amount: uint256 = 0
@@ -952,7 +953,7 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
 
     # collect market fees and calculate aggregate debt increase
     for market in market_list:
-        c: MarketContracts = self._get_contracts(market)
+        c: MarketContracts = self._get_market_contracts_or_revert(market)
 
         debt_increase: uint256 = 0
         xy: uint256[2] = empty(uint256[2])
@@ -1001,7 +1002,7 @@ def increase_hook_debt(market: address, hook: address, amount: uint256):
             market hook. This can be used to pre-fund hook debt rebates.
     """
     if market != empty(address):
-        assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+        self._assert_market_exists(market)
 
     num_hooks: uint256 = len(self.market_hooks[market])
     for i in range(MAX_HOOKS + 1):
@@ -1117,7 +1118,7 @@ def add_market_hook(market: address, hook: address):
     self._assert_only_owner()
 
     if market != empty(address):
-        assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+        self._assert_market_exists(market)
 
     market_hooks: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market]
     assert len(market_hooks) < MAX_HOOKS, "DFM:C Maximum hook count reached"
@@ -1158,7 +1159,7 @@ def remove_market_hook(market: address, hook: address):
     self._assert_only_owner()
 
     if market != empty(address):
-        assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+        self._assert_market_exists(market)
 
     num_hooks: uint256 = len(self.market_hooks[market])
     for i in range(MAX_HOOKS + 1):
@@ -1216,8 +1217,9 @@ def change_market_monetary_policy(market: address, mp_idx: uint256):
     @dev Also updates the current market rate
     """
     self._assert_only_owner()
-    assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+    self._assert_market_exists(market)
     assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
+
     self.market_contracts[market].mp_idx = mp_idx
     self._update_rate(market, self.market_contracts[market].amm, mp_idx)
 
@@ -1282,6 +1284,12 @@ def _assert_in_bounds(amount: int256, bounds: int256[2], is_sum: bool):
             raise "DFM:C Hook caused invalid debt"
 
 
+@view
+@internal
+def _assert_market_exists(market: address):
+    assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+
+
 @pure
 @internal
 def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
@@ -1313,7 +1321,7 @@ def _positive_only_bounds(debt_amount: uint256) -> int256[2]:
 
 @view
 @internal
-def _get_contracts(market: address) -> MarketContracts:
+def _get_market_contracts_or_revert(market: address) -> MarketContracts:
     c: MarketContracts = self.market_contracts[market]
 
     assert c.collateral != empty(address), "DFM:C Invalid market"
