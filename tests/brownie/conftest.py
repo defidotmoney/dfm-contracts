@@ -218,5 +218,8 @@ def hooks(ControllerHookTester, deployer):
 
 
 @pytest.fixture(scope="module")
-def amm_hook(AmmHookTester, controller, collateral, amm, deployer):
-    return AmmHookTester.deploy(controller, collateral, amm, {"from": deployer})
+def many_hooks(ControllerHookTester, deployer):
+    contracts = [ControllerHookTester.deploy({"from": deployer}) for i in range(4)]
+    for c in contracts:
+        c.set_configuration(0, [True, True, True, True], {"from": deployer})
+    return contracts

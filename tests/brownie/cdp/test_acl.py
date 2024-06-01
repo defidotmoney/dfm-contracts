@@ -20,9 +20,14 @@ def test_set_implementations(controller, alice):
         controller.set_implementations(100, ZERO_ADDRESS, ZERO_ADDRESS, {"from": alice})
 
 
-def test_set_market_hooks(controller, market, alice):
+def test_add_market_hook(controller, market, hooks, alice):
     with brownie.reverts("DFM:C Only owner"):
-        controller.set_market_hooks(market, [[ZERO_ADDRESS, [False] * 4]], {"from": alice})
+        controller.add_market_hook(market, hooks, {"from": alice})
+
+
+def test_remove_market_hook(controller, market, hooks, alice):
+    with brownie.reverts("DFM:C Only owner"):
+        controller.remove_market_hook(market, hooks, {"from": alice})
 
 
 def test_add_new_monetary_policy(controller, policy, alice):

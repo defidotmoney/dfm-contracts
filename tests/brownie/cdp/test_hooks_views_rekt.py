@@ -13,13 +13,12 @@ def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob
     stable.approve(controller, 2**256 - 1, {"from": bob})
     stable.approve(amm, 2**256 - 1, {"from": deployer})
 
-    controller.set_market_hooks(
-        ZERO_ADDRESS, [[hooks, [True, True, True, True]]], {"from": deployer}
-    )
+    hooks.set_configuration(2, [True, True, True, True], {"from": deployer})
+    controller.add_market_hook(ZERO_ADDRESS, hooks, {"from": deployer})
 
     # ensure initial hook debt is sufficient for negative adjustments
     stable.mint(deployer, 200 * 10**18, {"from": controller})
-    controller.increase_total_hook_debt_adjustment(market, 200 * 10**18, {"from": deployer})
+    controller.increase_hook_debt(ZERO_ADDRESS, hooks, 200 * 10**18, {"from": deployer})
 
     # set rate to 100% APR
     policy.set_rate(int(1e18 * 1.0 / 365 / 86400), {"from": alice})
@@ -56,7 +55,7 @@ def test_liquidation(
 
     debt = market.debt(alice)
     assert actual[1] == debt
-    assert expected[1] == debt + adjustment
+    assert expected[1] == debt
 
     debt_amm, coll_amm = amm.get_sum_xy(alice)
     if swap_coll:
@@ -97,7 +96,7 @@ def test_close_loan_underwater(
 
     debt = market.debt(alice)
     assert actual[1] == debt
-    assert expected[0] == debt + adjustment
+    assert expected[0] == debt
 
     debt_amm, coll_amm = amm.get_sum_xy(alice)
     if swap_coll:

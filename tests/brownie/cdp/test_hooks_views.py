@@ -9,13 +9,12 @@ def setup(hooks, collateral, controller, market, stable, alice, deployer):
         collateral._mint_for_testing(acct, 100 * 10**18)
         collateral.approve(controller, 2**256 - 1, {"from": acct})
 
-    controller.set_market_hooks(
-        ZERO_ADDRESS, [[hooks, [True, True, True, True]]], {"from": deployer}
-    )
+    hooks.set_configuration(2, [True, True, True, True], {"from": deployer})
+    controller.add_market_hook(ZERO_ADDRESS, hooks, {"from": deployer})
 
     # ensure initial hook debt is sufficient for negative adjustments
     stable.mint(deployer, 200 * 10**18, {"from": controller})
-    controller.increase_total_hook_debt_adjustment(market, 200 * 10**18, {"from": deployer})
+    controller.increase_hook_debt(ZERO_ADDRESS, hooks, 200 * 10**18, {"from": deployer})
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
@@ -121,7 +120,7 @@ def test_close_loan_simple(market, hooks, controller, alice, adjustment):
 
     expected = controller.get_close_loan_amounts(alice, market)
 
-    assert expected["total_debt_repaid"] == 1000 * 10**18 + adjustment
+    assert expected["total_debt_repaid"] == 1000 * 10**18
     assert expected["debt_burned"] == 1000 * 10**18 + adjustment
     assert expected["debt_from_amm"] == 0
     assert expected["coll_withdrawn"] == 50 * 10**18

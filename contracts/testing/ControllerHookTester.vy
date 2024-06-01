@@ -2,9 +2,25 @@
 
 response: public(int256)
 is_reverting: public(bool)
+hook_type: public(uint256)
+active_hooks: public(bool[4])
+
 
 event HookFired:
     pass
+
+
+@external
+def set_configuration(hook_type: uint256, active_hooks: bool[4]):
+    self.hook_type = hook_type
+    self.active_hooks = active_hooks
+
+
+@view
+@external
+def get_configuration() -> (uint256, bool[4]):
+    return self.hook_type, self.active_hooks
+
 
 @external
 def set_response(response: int256):
