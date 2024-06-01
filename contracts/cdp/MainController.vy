@@ -261,6 +261,7 @@ MAX_HOOKS: constant(uint256) = 4
 # Limits
 MIN_A: constant(uint256) = 2
 MAX_A: constant(uint256) = 10000
+MAX_RATE: constant(uint256) = 43959106799  # 300% APY
 MIN_FEE: constant(uint256) = 10**6  # 1e-12, still needs to be above 0
 MAX_FEE: constant(uint256) = 10**17  # 10%
 MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
@@ -1454,5 +1455,5 @@ def _adjust_hook_debt(market: address, hook: address, adjustment: int256):
 
 @internal
 def _update_rate(market: address, amm: address, mp_idx: uint256):
-    mp_rate: uint256 = self.monetary_policies[mp_idx].rate_write(market)
+    mp_rate: uint256 = min(self.monetary_policies[mp_idx].rate_write(market), MAX_RATE)
     AMM(amm).set_rate(mp_rate)
