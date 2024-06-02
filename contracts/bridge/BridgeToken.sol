@@ -38,7 +38,7 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         address _lzEndpoint,
         bytes memory _defaultOptions, // 0x0003010011010000000000000000000000000000ea60
         Peer[] memory _tokenPeers
-    ) OFT(_name, _symbol, _lzEndpoint, msg.sender) {
+    ) OFT(_name, _symbol, _lzEndpoint, address(this)) {
         CORE_OWNER = _core;
         thisId = endpoint.eid();
         _setDefaultOptions(_defaultOptions);
