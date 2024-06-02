@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.25;
 
-import "../interfaces/ICoreOwner.sol";
+import "../interfaces/IProtocolCore.sol";
 import "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -10,13 +10,13 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 contract StableCoin is OFT, ERC20FlashMint {
     using EnumerableSet for EnumerableSet.UintSet;
 
-    ICoreOwner public immutable CORE_OWNER;
+    IProtocolCore public immutable CORE_OWNER;
 
     EnumerableSet.UintSet private __eids;
     mapping(address => bool) public isMinter;
 
     constructor(
-        ICoreOwner _core,
+        IProtocolCore _core,
         string memory _name,
         string memory _symbol,
         address _lzEndpoint

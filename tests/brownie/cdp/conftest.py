@@ -40,8 +40,8 @@ def fee_receiver():
 
 
 @pytest.fixture(scope="module")
-def core(CoreOwner, deployer, fee_receiver):
-    return CoreOwner.deploy(fee_receiver, {"from": deployer})
+def core(DFMProtocolCore, deployer, fee_receiver):
+    return DFMProtocolCore.deploy(deployer, fee_receiver, 0, {"from": deployer})
 
 
 @pytest.fixture(scope="module")
