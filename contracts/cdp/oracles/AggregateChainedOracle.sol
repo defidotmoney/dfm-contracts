@@ -39,12 +39,21 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
 
     // --- IPriceOracle required interface ---
 
+    /**
+        @notice The current oracle price, normalized to 1e18 precision
+        @dev Read-only version used within view methods
+     */
     function price() external view returns (uint256) {
         uint256 result = _maybeGetStoredPrice();
         if (result == 0) return _fetchAggregateResult();
         return result;
     }
 
+    /**
+        @notice The current oracle price, normalized to 1e18 precision
+        @dev Write version that also stores the price. The stored price is
+             returned later if the uptime oracle reports a downtime.
+     */
     function price_w() external returns (uint256) {
         uint256 result = _maybeGetStoredPrice();
         if (result == 0) {
@@ -56,15 +65,30 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
 
     // --- external view functions ---
 
-    function getCallPathCount() external view returns (uint256) {
+    /**
+        @notice Get the current number of oracle call paths
+        @return count Number of oracle call paths
+     */
+    function getCallPathCount() external view returns (uint256 count) {
         return oracleCallPaths.length;
     }
 
+    /**
+        @notice Get an array of `OracleCall` tuples that collectively
+                form one oracle call path
+        @param idx Index of the oracle call path
+        @return path Dynamic array of `OracleCall` tuples
+     */
     function getCallPath(uint256 idx) external view returns (OracleCall[] memory path) {
         return oracleCallPaths[idx];
     }
 
-    function getCallPathResult(uint256 idx) external view returns (uint256) {
+    /**
+        @notice Fetches the current response for a single oracle call path
+        @param idx Index of the oracle call path to query
+        @return response Oracle call path response
+     */
+    function getCallPathResult(uint256 idx) external view returns (uint256 response) {
         return _fetchCallPathResult(oracleCallPaths[idx]);
     }
 
@@ -77,6 +101,14 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
         uptimeOracle = _uptimeOracle;
     }
 
+    /**
+        @notice Add a new sequence of 1 or more oracle calls
+        @dev When querying a price from this contract, each "oracle call path"
+             is executed independently. The final returned price is an average
+             of the values returned from each path.
+        @param path Dynamic array of one or more `OraclePath` structs. The
+                    comments in the struct definition explain the layout.
+     */
     function addCallPath(OracleCall[] calldata path) external onlyOwner {
         uint256 length = path.length;
         require(length > 0, "DFM: Cannot set empty path");
@@ -91,6 +123,13 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
         _fetchCallPathResult(path);
     }
 
+    /**
+        @notice Remove an oracle call path
+        @dev Once a path has been set, the contract cannot ever return to a
+             state where there is no set path. If you wish to remove the last
+             path you should first add a new path that will replace it.
+        @param idx Index of the oracle call path to remove
+     */
     function removeCallPath(uint256 idx) external onlyOwner {
         uint256 length = oracleCallPaths.length;
         require(idx < length, "DFM: Invalid path index");
@@ -106,8 +145,11 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
     function _maybeGetStoredPrice() internal view returns (uint256 response) {
         IUptimeOracle oracle = uptimeOracle;
         if (address(oracle) != address(0) && !oracle.getUptimeStatus()) {
+            // If uptime oracle is set and currently reports downtime,
+            // return the last stored price
             return storedPrice;
         }
+        // Otherwise return 0 to indicate that a new price should be queried
         return 0;
     }
 
