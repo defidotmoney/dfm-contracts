@@ -405,4 +405,4 @@ def mint_alice(alice, stablecoin, redeemable_tokens, swaps, initial_amounts, _mi
 
 @pytest.fixture(scope="module")
 def chainlink_price_oracle(admin):
-    return boa.load("contracts/testing/ChainlinkAggregatorMock.vy", 8, admin, 1000)
+    return boa.load("contracts/testing/ChainlinkAggregatorMock.vy", 8, 1000)

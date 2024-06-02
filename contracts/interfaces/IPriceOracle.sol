@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity >=0.8.0;
+pragma solidity ^0.8.0;
 
 /**
-    @dev Oracles must implement all functions outlined within this interface
+    @dev Price oracles must implement all functions outlined within this interface
  */
 interface IPriceOracle {
     /**
