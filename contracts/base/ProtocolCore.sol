@@ -67,12 +67,24 @@ contract DFMProtocolCore is IProtocolCore {
 
     /**
         @notice Address of the bridge relay
-        @dev Not set within the constructor. Bridging functionality should
-             verify that the relay is set before attempting an action. The
-             relay contract must adhere to the `IBridgeRelay` interface.
+        @dev * Not set within the constructor. Bridging functionality should
+               verify that the relay is set before attempting an action.
+             * The relay contract must adhere to the `IBridgeRelay` interface.
      */
     function bridgeRelay() external view returns (address) {
         return addressRegistry[Addresses.BRIDGE_RELAY];
+    }
+
+    /**
+        @notice Address with capability to quickly pause certain elements
+                of the protocol in the event of an exploit
+        @dev * Not set within the constructor. If using a guardian, it must be
+               set after deployment.
+             * It is critical that the guardian is not able to block an admin
+               action to change or remove the guardian.
+     */
+    function guardian() external view returns (address) {
+        return addressRegistry[Addresses.GUARDIAN];
     }
 
     function getAddress(bytes32 identifier) external view returns (address) {
