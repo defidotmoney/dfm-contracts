@@ -78,6 +78,7 @@ interface PegKeeperRegulator:
 interface CoreOwner:
     def owner() -> address: view
     def feeReceiver() -> address: view
+    def guardian() -> address: view
 
 interface MarketHook:
     def get_configuration() -> (uint256, bool[NUM_HOOK_IDS]): view
@@ -94,6 +95,10 @@ event SetDelegateApproval:
     account: indexed(address)
     delegate: indexed(address)
     is_approved: bool
+
+event SetDelegationEnabled:
+    caller: address
+    is_enabled: bool
 
 event SetImplementations:
     A: indexed(uint256)
@@ -285,6 +290,8 @@ minted: public(uint256)
 redeemed: public(uint256)
 
 isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
+isDelegationEnabled: public(bool)
+
 implementations: HashMap[uint256, Implementations]
 
 market_hooks: HashMap[address, DynArray[uint256, MAX_HOOKS]]
@@ -311,6 +318,8 @@ def __init__(
 
     self.global_market_debt_ceiling = debt_ceiling
     log SetGlobalMarketDebtCeiling(debt_ceiling)
+
+    self.isDelegationEnabled = True
 
 
 # --- external view functions ---
@@ -1256,6 +1265,20 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool
     log SetPegKeeperRegulator(regulator.address, with_migration)
 
 
+@external
+def setDelegationEnabled(is_enabled: bool):
+    """
+    @notice Enable or disable all delegated operations within this contract
+    @dev Delegated operations are enabled by default upon deployment.
+         Only the owner can enable. The owner or the guardian can disable.
+    """
+    self._assert_owner_or_guardian_toggle(is_enabled)
+    self.isDelegationEnabled = is_enabled
+
+    log SetDelegationEnabled(msg.sender, is_enabled)
+
+
+
 # --- internal functions ---
 
 @view
@@ -1266,8 +1289,19 @@ def _assert_only_owner():
 
 @view
 @internal
+def _assert_owner_or_guardian_toggle(is_enabled: bool):
+    if msg.sender != CORE_OWNER.owner():
+        if msg.sender == CORE_OWNER.guardian():
+            assert not is_enabled, "DFM:C Guardian can only disable"
+        else:
+            raise "DFM:C Not owner or guardian"
+
+
+@view
+@internal
 def _assert_caller_or_approved_delegate(account: address):
     if msg.sender != account:
+        assert self.isDelegationEnabled, "DFM: Delegation disabled"
         assert self.isApprovedDelegate[account][msg.sender], "DFM:C Delegate not approved"
 
 
