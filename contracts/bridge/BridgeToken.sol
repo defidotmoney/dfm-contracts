@@ -26,10 +26,14 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
     EnumerableSet.UintSet private __eids;
 
     bytes public defaultOptions;
+    bool public isMintEnabled;
+    bool public isFlashMintEnabled;
 
     mapping(address => bool) public isMinter;
 
     event MinterSet(address minter, bool isApproved);
+    event MintEnabledSet(address caller, bool isEnabled);
+    event FlashMintEnabledSet(address caller, bool isEnabled);
 
     /**
         @notice Contract constructor
@@ -66,6 +70,9 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         for (uint256 i; i < length; i++) {
             _setPeer(_tokenPeers[i].eid, _tokenPeers[i].peer);
         }
+
+        isMintEnabled = true;
+        isFlashMintEnabled = true;
     }
 
     // --- external view functions ---
@@ -81,7 +88,10 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         @return The amount of token that can be loaned
      */
     function maxFlashLoan(address token) public view override returns (uint256) {
-        return token == address(this) ? 2 ** 127 - totalSupply() : 0;
+        if (token == address(this) && isMintEnabled && isFlashMintEnabled) {
+            return 2 ** 127 - totalSupply();
+        }
+        return 0;
     }
 
     /**
@@ -230,6 +240,30 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         _setDefaultOptions(options);
     }
 
+    /**
+        @notice Enable or disable all minting of this token.
+        @dev Enabled by default on deployment. Only the owner can enable.
+             Both the owner and guardian can disable.
+     */
+    function setMintEnabled(bool _isEnabled) external {
+        _onlyOwnerOrGuardian(_isEnabled);
+        isMintEnabled = _isEnabled;
+
+        emit MintEnabledSet(msg.sender, _isEnabled);
+    }
+
+    /**
+        @notice Enable or disable flashmints of this token.
+        @dev Enabled by default on deployment. Only the owner can enable.
+             Both the owner and guardian can disable.
+     */
+    function setFlashMintEnabled(bool _isEnabled) external {
+        _onlyOwnerOrGuardian(_isEnabled);
+        isFlashMintEnabled = _isEnabled;
+
+        emit FlashMintEnabledSet(msg.sender, _isEnabled);
+    }
+
     // --- external overrides for non-implemented functionality ---
 
     /**
@@ -249,6 +283,13 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
     }
 
     // --- internal functions ---
+
+    /** @dev Enforce `isMintEnabled` */
+    function _beforeTokenTransfer(address from, address, uint256) internal override {
+        if (from == address(0)) {
+            require(isMintEnabled, "DFM:T Minting disabled");
+        }
+    }
 
     /** @dev Convert address to layerzero-formatted bytes32 peer */
     function _addressToBytes32(address account) internal pure returns (bytes32) {
@@ -276,5 +317,15 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
     function _setDefaultOptions(bytes memory options) internal {
         if (options.length > 0) _assertOptionsType3(options);
         defaultOptions = options;
+    }
+
+    function _onlyOwnerOrGuardian(bool _isEnabled) internal {
+        if (msg.sender != owner()) {
+            if (msg.sender == CORE_OWNER.guardian()) {
+                require(!_isEnabled, "DFM:T Guardian can only disable");
+            } else {
+                revert("DFM:T Not owner or guardian");
+            }
+        }
     }
 }
