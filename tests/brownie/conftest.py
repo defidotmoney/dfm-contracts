@@ -25,13 +25,20 @@ def deployer(accounts):
 
 
 @pytest.fixture(scope="module")
-def alice(accounts):
+def guardian(accounts, core, deployer):
+    key = b"GUARDIAN".ljust(32, b"\x00")
+    core.setAddress(key, accounts[1], {"from": deployer})
     return accounts[1]
 
 
 @pytest.fixture(scope="module")
-def bob(accounts):
+def alice(accounts):
     return accounts[2]
+
+
+@pytest.fixture(scope="module")
+def bob(accounts):
+    return accounts[3]
 
 
 @pytest.fixture(scope="module")
