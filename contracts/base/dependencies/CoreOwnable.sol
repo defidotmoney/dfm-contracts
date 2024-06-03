@@ -27,6 +27,21 @@ abstract contract CoreOwnable {
         _;
     }
 
+    /**
+        @dev Access control modifier for toggle actions where the only the protocol
+             owner is allowed to enabled, but both the owner and guardian can disable.
+     */
+    modifier ownerOrGuardianToggle(bool isEnabled) {
+        if (msg.sender != owner()) {
+            if (msg.sender == guardian()) {
+                require(!isEnabled, "DFM: Guardian can only disable");
+            } else {
+                revert("DFM Not owner or guardian");
+            }
+        }
+        _;
+    }
+
     function owner() public view returns (address) {
         return address(CORE_OWNER.owner());
     }
@@ -37,5 +52,9 @@ abstract contract CoreOwnable {
 
     function feeReceiver() internal view returns (address) {
         return CORE_OWNER.feeReceiver();
+    }
+
+    function guardian() internal view returns (address) {
+        return CORE_OWNER.guardian();
     }
 }

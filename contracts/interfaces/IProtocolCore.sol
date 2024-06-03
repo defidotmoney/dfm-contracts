@@ -12,4 +12,6 @@ interface IProtocolCore {
     function bridgeRelay() external view returns (address);
 
     function feeReceiver() external view returns (address);
+
+    function guardian() external view returns (address);
 }
