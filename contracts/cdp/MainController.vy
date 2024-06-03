@@ -100,6 +100,10 @@ event SetDelegationEnabled:
     caller: address
     is_enabled: bool
 
+event SetProtocolEnabled:
+    caller: address
+    is_enabled: bool
+
 event SetImplementations:
     A: indexed(uint256)
     amm: address
@@ -291,6 +295,7 @@ redeemed: public(uint256)
 
 isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
 isDelegationEnabled: public(bool)
+is_protocol_enabled: public(bool)
 
 implementations: HashMap[uint256, Implementations]
 
@@ -319,6 +324,7 @@ def __init__(
     self.global_market_debt_ceiling = debt_ceiling
     log SetGlobalMarketDebtCeiling(debt_ceiling)
 
+    self.is_protocol_enabled = True
     self.isDelegationEnabled = True
 
 
@@ -761,6 +767,7 @@ def create_loan(
                    Can be from market.MIN_TICKS() to market.MAX_TICKS()
     """
     assert coll_amount > 0 and debt_amount > 0, "DFM:C 0 coll or debt"
+    self._assert_is_protocol_enabled()
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_market_contracts_or_revert(market)
 
@@ -813,6 +820,7 @@ def adjust_loan(
     """
     assert coll_change != 0 or debt_change != 0, "DFM:C No change"
 
+    self._assert_is_protocol_enabled()
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_market_contracts_or_revert(market)
 
@@ -957,6 +965,8 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     @param market_list List of markets to collect fees from. Can be left empty
                        to only claim already-stored interest fees.
     """
+    self._assert_is_protocol_enabled()
+
     receiver: address = CORE_OWNER.feeReceiver()
 
     debt_increase_total: uint256 = 0
@@ -1266,6 +1276,21 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool
 
 
 @external
+def set_protocol_enabled(is_enabled: bool):
+    """
+    @notice Enable or disable the protocol in case of an emergency.
+    @dev * While disabled, `close_loan` and `liquidate` are the only callable
+           functions related to loan management.
+         * Only the owner can enable.
+         * The owner and the guardian are both able to disable.
+    """
+    self._assert_owner_or_guardian_toggle(is_enabled)
+    self.is_protocol_enabled = is_enabled
+
+    log SetProtocolEnabled(msg.sender, is_enabled)
+
+
+@external
 def setDelegationEnabled(is_enabled: bool):
     """
     @notice Enable or disable all delegated operations within this contract
@@ -1299,9 +1324,16 @@ def _assert_owner_or_guardian_toggle(is_enabled: bool):
 
 @view
 @internal
+def _assert_is_protocol_enabled():
+    assert self.is_protocol_enabled, "DFM:C Protocol pause, close only"
+
+
+
+@view
+@internal
 def _assert_caller_or_approved_delegate(account: address):
     if msg.sender != account:
-        assert self.isDelegationEnabled, "DFM: Delegation disabled"
+        assert self.isDelegationEnabled, "DFM:C Delegation disabled"
         assert self.isApprovedDelegate[account][msg.sender], "DFM:C Delegate not approved"
 
 
