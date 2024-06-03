@@ -21,9 +21,9 @@ def setup(collateral, alice, controller, market, policy):
     controller.collect_fees([market], {"from": alice})
 
 
-def test_liquidation(market, stable, controller, collateral, fee_receiver, alice, bob):
+def test_liquidation(views, market, stable, controller, collateral, fee_receiver, alice, bob):
     # hacky mint
-    debt = controller.get_market_states_for_account(alice, [market])[0][1]
+    debt = views.get_market_states_for_account(alice, [market])[0][1]
     stable.mint(bob, debt, {"from": controller})
 
     # liquidation time
@@ -46,10 +46,10 @@ def test_liquidation(market, stable, controller, collateral, fee_receiver, alice
 
 @pytest.mark.parametrize("frac", [10**17, 123456789, 4 * 10**13])
 def test_partial_liquidation(
-    market, stable, controller, collateral, fee_receiver, alice, bob, frac, amm
+    views, market, stable, controller, collateral, fee_receiver, alice, bob, frac, amm
 ):
     # hacky mint
-    debt = controller.get_market_states_for_account(alice, [market])[0][1]
+    debt = views.get_market_states_for_account(alice, [market])[0][1]
     liquidation_amount = debt * frac // 10**18
     stable.mint(bob, liquidation_amount, {"from": controller})
 
@@ -75,18 +75,18 @@ def test_partial_liquidation(
 
 
 @pytest.mark.parametrize("frac", [10**18 + 1, 2**255 - 1, 2**256 - 1])
-def test_frac_too_high(market, stable, controller, alice, bob, frac):
+def test_frac_too_high(views, market, stable, controller, alice, bob, frac):
     # hacky mint
-    debt = controller.get_market_states_for_account(alice, [market])[0][1]
+    debt = views.get_market_states_for_account(alice, [market])[0][1]
     stable.mint(bob, debt, {"from": controller})
 
     with brownie.reverts("DFM:C frac too high"):
         controller.liquidate(market, alice, 0, frac, {"from": bob})
 
 
-def test_frac_zero(market, stable, controller, alice, bob):
+def test_frac_zero(views, market, stable, controller, alice, bob):
     # hacky mint
-    debt = controller.get_market_states_for_account(alice, [market])[0][1]
+    debt = views.get_market_states_for_account(alice, [market])[0][1]
     stable.mint(bob, debt, {"from": controller})
 
     with brownie.reverts("DFM:M No Debt"):
@@ -98,8 +98,8 @@ def test_invalid_market(controller, alice):
         controller.liquidate(ZERO_ADDRESS, alice, 0, {"from": alice})
 
 
-def test_slippage(market, stable, controller, alice, bob):
-    debt = controller.get_market_states_for_account(alice, [market])[0][1]
+def test_slippage(views, market, stable, controller, alice, bob):
+    debt = views.get_market_states_for_account(alice, [market])[0][1]
     stable.mint(bob, debt, {"from": controller})
 
     with brownie.reverts("DFM:M Slippage"):
