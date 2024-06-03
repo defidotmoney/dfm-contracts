@@ -25,13 +25,20 @@ def deployer(accounts):
 
 
 @pytest.fixture(scope="module")
-def alice(accounts):
+def guardian(accounts, core, deployer):
+    key = b"GUARDIAN".ljust(32, b"\x00")
+    core.setAddress(key, accounts[1], {"from": deployer})
     return accounts[1]
 
 
 @pytest.fixture(scope="module")
-def bob(accounts):
+def alice(accounts):
     return accounts[2]
+
+
+@pytest.fixture(scope="module")
+def bob(accounts):
+    return accounts[3]
 
 
 @pytest.fixture(scope="module")
@@ -45,13 +52,16 @@ def core(DFMProtocolCore, deployer, fee_receiver):
 
 
 @pytest.fixture(scope="module")
-def mock_endpoint(MockEndpoint, deployer):
-    return MockEndpoint.deploy({"from": deployer})
+def mock_endpoint(MockLzEndpoint, deployer):
+    return MockLzEndpoint.deploy({"from": deployer})
 
 
 @pytest.fixture(scope="module")
-def stable(StableCoin, core, deployer, mock_endpoint):
-    return StableCoin.deploy(core, "Test Stablecoin", "TST", mock_endpoint, {"from": deployer})
+def stable(BridgeToken, core, deployer, mock_endpoint):
+    default_opts = b""
+    return BridgeToken.deploy(
+        core, "Stablecoin", "SC", mock_endpoint, default_opts, [], {"from": deployer}
+    )
 
 
 @pytest.fixture(scope="module")
