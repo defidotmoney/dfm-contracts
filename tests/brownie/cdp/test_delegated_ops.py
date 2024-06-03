@@ -106,3 +106,44 @@ def test_set_delegate_approval(market, controller, alice, bob):
 
     with brownie.reverts("DFM:C Delegate not approved"):
         controller.create_loan(bob, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
+
+
+def test_set_delegation_enabled(controller, alice, deployer, guardian):
+    controller.setDelegationEnabled(False, {"from": deployer})
+    assert not controller.isDelegationEnabled()
+
+    controller.setDelegationEnabled(True, {"from": deployer})
+    assert controller.isDelegationEnabled()
+
+    controller.setDelegationEnabled(False, {"from": guardian})
+    assert not controller.isDelegationEnabled()
+
+    with brownie.reverts("DFM:C Guardian can only disable"):
+        controller.setDelegationEnabled(True, {"from": guardian})
+
+    for is_enabled in [True, False]:
+        with brownie.reverts("DFM:C Not owner or guardian"):
+            controller.setDelegationEnabled(is_enabled, {"from": alice})
+
+
+def test_create_loan_delegation_disabled(market, deployer, controller, alice, bob):
+    controller.setDelegationEnabled(False, {"from": deployer})
+
+    with brownie.reverts("DFM:C Delegation disabled"):
+        controller.create_loan(bob, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
+
+
+def test_adjust_loan_delegation_disabled(market, deployer, controller, alice, bob):
+    controller.create_loan(bob, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
+    controller.setDelegationEnabled(False, {"from": deployer})
+
+    with brownie.reverts("DFM:C Delegation disabled"):
+        controller.adjust_loan(bob, market, 25 * 10**18, 0, {"from": alice})
+
+
+def test_close_loan_delegation_disabled(market, deployer, controller, alice, bob):
+    controller.create_loan(bob, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
+    controller.setDelegationEnabled(False, {"from": deployer})
+
+    with brownie.reverts("DFM:C Delegation disabled"):
+        controller.close_loan(bob, market, {"from": alice})
