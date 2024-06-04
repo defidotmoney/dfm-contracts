@@ -712,7 +712,7 @@ def stored_admin_fees() -> uint256:
     """
     @notice Calculate the amount of fees obtained from the interest
     """
-    return self.total_debt + self.redeemed - self.minted
+    return self.total_debt + self.redeemed - self.minted - self.total_hook_debt
 
 
 # --- unguarded nonpayable functions ---
@@ -1020,6 +1020,7 @@ def increase_hook_debt(market: address, hook: address, amount: uint256):
     STABLECOIN.burn(msg.sender, amount)
     self.hook_debt[market][hook] += amount
     self.total_hook_debt += amount
+    self.redeemed += amount
 
 
 # --- owner-only nonpayable functions ---
