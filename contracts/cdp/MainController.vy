@@ -299,6 +299,14 @@ def __init__(
     monetary_policies: DynArray[MonetaryPolicy, 10],
     debt_ceiling: uint256
 ):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param stable Address of the protocol stablecoin. This contract must be given
+                  minter privileges within the stablecoin.
+    @param monetary_policies Array of `MonetaryPolicy` contracts to initially set.
+    @param debt_ceiling Initial global debt ceiling
+    """
     CORE_OWNER = core
     STABLECOIN = stable
 
@@ -324,30 +332,48 @@ def owner() -> address:
 @view
 @external
 def get_market_count() -> uint256:
+    """
+    @notice Get the total number of deployed markets
+    """
     return len(self.markets)
 
 
 @view
 @external
 def get_collateral_count() -> uint256:
+    """
+    @notice Get the number of unique collaterals used within the system
+    @dev It is possible to deploy multiple markets for a collateral, so
+         this number does not necessarily equal the number of markets.
+    """
     return len(self.collaterals)
 
 
 @view
 @external
 def get_all_markets() -> DynArray[MarketOperator, 65536]:
+    """
+    @notice Get a list of all deployed `MarketOperator` contracts
+    """
     return self.markets
 
 
 @view
 @external
 def get_all_collaterals() -> DynArray[address, 65536]:
+    """
+    @notice Get a list of collaterals for which a market exists
+    """
     return self.collaterals
 
 
 @view
 @external
 def get_all_markets_for_collateral(collateral: address) -> DynArray[address, 256]:
+    """
+    @notice Get a list of all deployed `MarketOperator` contracts
+            that use a given collateral
+    """
     return self.collateral_markets[collateral]
 
 
@@ -640,6 +666,11 @@ def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint25
 @view
 @external
 def get_implementations(A: uint256) -> Implementations:
+    """
+    @notice Get the `MarketOperator` and `AMM` implementation contracts used
+            when deploying a market with the given amplification coefficient.
+    @return (AMM address, MarketOperator address)
+    """
     return self.implementations[A]
 
 

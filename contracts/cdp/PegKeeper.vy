@@ -77,12 +77,22 @@ caller_share: public(uint256)
 
 
 @external
-def __init__(core: CoreOwner, regulator: Regulator, controller: address, stable: ERC20, pool: CurvePool, caller_share: uint256):
+def __init__(
+    core: CoreOwner,
+    regulator: Regulator,
+    controller: address,
+    stable: ERC20,
+    pool: CurvePool,
+    caller_share: uint256
+):
     """
     @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
     @param regulator Peg Keeper Regulator
-    @param pool Contract pool address
-    @param caller_share Caller's share of profit
+    @param controller `MainController` address
+    @param stable Address of the protocol stablecoin
+    @param pool Curve StableSwap-ng pool where the peg keeper is active
+    @param caller_share Caller's share of profit (with SHARE_PRECISION precision)
     """
     CORE_OWNER = core
     POOL = pool
@@ -141,11 +151,13 @@ def estimate_caller_profit() -> uint256:
     call_profit: uint256 = 0
     if balance_peg > balance_pegged:
         allowed: uint256 = self.regulator.get_max_provide(self)
-        call_profit = self._calc_call_profit(min((balance_peg - balance_pegged) / 5, allowed), True)  # this dumps stablecoin
+        # this dumps stablecoin
+        call_profit = self._calc_call_profit(min((balance_peg - balance_pegged) / 5, allowed), True)
 
     else:
         allowed: uint256 = self.regulator.get_max_withdraw(self)
-        call_profit = self._calc_call_profit(min((balance_pegged - balance_peg) / 5, allowed), False)  # this pumps stablecoin
+        # this pumps stablecoin
+        call_profit = self._calc_call_profit(min((balance_pegged - balance_peg) / 5, allowed), False)
 
     return call_profit * self.caller_share / SHARE_PRECISION
 
@@ -240,6 +252,15 @@ def update(_beneficiary: address) -> (int256, uint256):
 
 @external
 def recall_debt(amount: uint256) -> uint256:
+    """
+    @notice Burn a stablecoin balance held within this contract
+    @dev Called by the regulator when reducing the peg keeper's debt ceiling
+         or completely removing it from the system.
+    @param amount Amount of stablecoin to burn. If the peg keeper's balance
+                  is insufficient, the delta is tracked within `owed_debt`
+                  and burned as it becomes available.
+    @return Actual amount of stablecoin that was burned
+    """
     self._assert_only_regulator()
     if amount == 0:
         return 0
