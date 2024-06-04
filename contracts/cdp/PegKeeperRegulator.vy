@@ -92,6 +92,15 @@ is_killed: public(Killed)
 
 @external
 def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, controller: address):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param _stablecoin Address of the protocol stablecoin. This contract must be given
+                  minter privileges within the stablecoin.
+    @param _agg `AggregatorStablePrice` address. Used to determine the stablecoin price.
+    @param controller `MainController` address. After deployment, this address must be
+                      set within the controller using `set_peg_keeper_regulator`.
+    """
     CORE_OWNER = core
     STABLECOIN = _stablecoin
     CONTROLLER = controller
@@ -156,6 +165,7 @@ def get_max_provide(pk: PegKeeper) -> uint256:
         1) current price in range of oracle in case of spam-attack
         2) current price location among other pools in case of contrary coin depeg
         3) stablecoin price is above 1
+    @param pk Address of the peg keeper to check max deposit amount for
     @return Amount of stablecoin allowed to provide
     """
     if self.is_killed in Killed.Provide:
@@ -196,6 +206,7 @@ def get_max_withdraw(pk: PegKeeper) -> uint256:
     @dev Checks
         1) current price in range of oracle in case of spam-attack
         2) stablecoin price is below 1
+    @param pk Address of the peg keeper to check max withdrawal amount for
     @return Amount of stablecoin allowed to withdraw
     """
     if self.is_killed in Killed.Withdraw:

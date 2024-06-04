@@ -56,6 +56,12 @@ last_price: public(uint256)
 
 @external
 def __init__(core: CoreOwner, stable: address, sigma: uint256):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param stable Address of the protocol stablecoin.
+    @param sigma Sigma value.
+    """
     CORE_OWNER = core
     STABLECOIN = stable
     SIGMA = sigma  # The change is so rare that we can change the whole thing altogether
@@ -66,6 +72,10 @@ def __init__(core: CoreOwner, stable: address, sigma: uint256):
 
 @external
 def add_price_pair(_pool: Stableswap):
+    """
+    @notice Add a Curve pool to include in the aggregate price
+    @param _pool Curve stableswap address
+    """
     assert msg.sender == CORE_OWNER.owner()
     price_pair: PricePair = empty(PricePair)
     price_pair.pool = _pool
@@ -89,6 +99,10 @@ def add_price_pair(_pool: Stableswap):
 
 @external
 def remove_price_pair(n: uint256):
+    """
+    @notice Remove a pool from the price aggregation
+    @param n Index of the pool within `price_pairs`
+    """
     assert msg.sender == CORE_OWNER.owner()
     n_max: uint256 = self.n_price_pairs - 1
     assert n <= n_max

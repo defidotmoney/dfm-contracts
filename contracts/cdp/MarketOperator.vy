@@ -129,6 +129,12 @@ loan_discount: public(uint256)
 
 @external
 def __init__(core: CoreOwner, controller: address, _A: uint256):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param controller `MainController` address.
+    @param _A amplification coefficient. The size of one band is 1/A.
+    """
     CONTROLLER = controller
     CORE_OWNER = core
 
@@ -595,10 +601,14 @@ def set_oracle(oracle: PriceOracle):
 def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256) -> uint256:
     """
     @notice Create loan
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.create_loan`.
+    @param account Account to open the loan for
     @param coll_amount Amount of collateral to use
     @param debt_amount Stablecoin amount to mint
     @param n_bands Number of bands to deposit into (to do autoliquidation-deliquidation),
            can be from MIN_TICKS to MAX_TICKS
+    @return Increase in total debt (including accrued interest since last interaction)
     """
     self._assert_only_controller()
 
@@ -631,6 +641,16 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
 
 @external
 def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_active_band: int256) -> int256:
+    """
+    @notice Adjust collateral/debt amounts for an existing loan
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.adjust_loan`.
+    @param account Account to adjust the loan for
+    @param coll_change Collateral adjustment amount. A positive value deposits, negative withdraws.
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @param max_active_band Maximum active band (used to prevent front-running)
+    @return Change in total debt (including accrued interest since last interaction)
+    """
     self._assert_only_controller()
 
     amm: LLAMMA = self.AMM
@@ -676,7 +696,12 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
 def close_loan(account: address) -> (int256, uint256, uint256[2]):
     """
     @notice Close an existing loan
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.close_loan`.
     @param account The account to close the loan for
+    @return Change in total debt (including accrued interest since last interaction)
+            Debt amount to be repaid
+            (debt, collateral) amounts withdrawn from AMM
     """
     self._assert_only_controller()
 
@@ -700,9 +725,15 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
 def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -> (int256, uint256, uint256[2]):
     """
     @notice Perform a bad liquidation (or self-liquidation) of account if health is not good
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.liquidate`.
+    @param caller Address of the account performing the liquidation
     @param target Address of the account to be liquidated
     @param min_x Minimal amount of stablecoin to receive (to avoid liquidators being sandwiched)
     @param frac Fraction to liquidate; 100% = 10**18
+    @return Change in total debt (including accrued interest since last interaction)
+            Debt amount to be repaid
+            (debt, collateral) amounts withdrawn from AMM
     """
     self._assert_only_controller()
 
@@ -749,6 +780,10 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
 def collect_fees() -> (uint256, uint256[2]):
     """
     @notice Collect the fees charged as interest
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.collect_fees`.
+    @return Increase in total debt (accrued interest since last interaction)
+            (debt, collateral) amounts taken from from AMM as fees
     """
     self._assert_only_controller()
 

@@ -139,6 +139,12 @@ lm_hook: public(LMGauge)
 
 @external
 def __init__(controller: address, stablecoin: ERC20, _A: uint256):
+    """
+    @notice Contract constructor
+    @param controller `MainController` address.
+    @param stablecoin Address of the protocol stablecoin.
+    @param _A amplification coefficient. The size of one band is 1/A.
+    """
     CONTROLLER = controller
     BORROWED_TOKEN = stablecoin
     A = _A
