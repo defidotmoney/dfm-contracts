@@ -7,7 +7,7 @@ PRICE = 3000
 
 @pytest.fixture(scope="module")
 def borrowed_token(get_borrowed_token):
-    return get_borrowed_token(6)
+    return get_borrowed_token(18)
 
 
 @pytest.fixture(scope="module")

@@ -27,7 +27,7 @@ def test_create_loan_adjust(market, stable, fee_receiver, controller, alice, hoo
         assert stable.totalSupply() == 1000 * 10**18
         assert stable.balanceOf(alice) == 1000 * 10**18
         assert controller.minted() == 1000 * 10**18
-        assert controller.redeemed() == 0
+        assert controller.redeemed() == 200 * 10**18
         assert controller.total_hook_debt() == 200 * 10**18 + adjustment
 
         # expect adjusted amounts
@@ -54,7 +54,7 @@ def test_adjust_loan_increase_debt(
         assert stable.totalSupply() == 2000 * 10**18
         assert stable.balanceOf(alice) == 2000 * 10**18
         assert controller.minted() == 2000 * 10**18
-        assert controller.redeemed() == 0
+        assert controller.redeemed() == 200 * 10**18
         assert controller.total_hook_debt() == 200 * 10**18 + adjustment
 
         assert market.user_state(alice)[:3] == (50 * 10**18, 0, 2000 * 10**18 + adjustment)
@@ -78,7 +78,7 @@ def test_adjust_loan_decrease_debt(
         assert stable.totalSupply() == 2000 * 10**18
         assert stable.balanceOf(alice) == 2000 * 10**18
         assert controller.minted() == 3000 * 10**18
-        assert controller.redeemed() == 1000 * 10**18
+        assert controller.redeemed() == 1000 * 10**18 + 200 * 10**18
         assert controller.total_hook_debt() == 200 * 10**18 + adjustment
 
         assert market.user_state(alice)[:3] == (50 * 10**18, 0, 2000 * 10**18 + adjustment)
@@ -102,7 +102,7 @@ def test_close_loan(market, hooks, stable, fee_receiver, controller, alice, adju
     for _ in range(2):
         assert stable.totalSupply() == 0 + max(-adjustment, 0)
         assert controller.minted() == 1000 * 10**18
-        assert controller.redeemed() == 1000 * 10**18 + adjustment
+        assert controller.redeemed() == 200 * 10**18 + 1000 * 10**18 + adjustment
         assert controller.total_hook_debt() == 200 * 10**18 + adjustment
 
         assert market.user_state(alice)[:3] == (0, 0, 0)
@@ -127,7 +127,7 @@ def test_liquidation(market, stable, fee_receiver, controller, oracle, alice, ho
     for _ in range(2):
         assert stable.totalSupply() == 0 + max(-adjustment, 0)
         assert controller.minted() == 100_000 * 10**18
-        assert controller.redeemed() == 100_000 * 10**18 + adjustment
+        assert controller.redeemed() == 200 * 10**18 + 100_000 * 10**18 + adjustment
         assert controller.total_hook_debt() == 200 * 10**18 + adjustment
 
         assert market.user_state(alice)[:3] == (0, 0, 0)
