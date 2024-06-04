@@ -178,6 +178,7 @@ def get_max_provide(pk: PegKeeper) -> uint256:
             largest_price = price_oracle
         debt_ratios.append(self._get_ratio(info.peg_keeper))
 
+    # underflow here is OK, in a severe depeg we do not wish to add liquidity
     if largest_price < unsafe_sub(price, self.worst_price_threshold):
         return 0
 
@@ -322,6 +323,8 @@ def remove_peg_keeper(pk: PegKeeper):
 def set_worst_price_threshold(_threshold: uint256):
     """
     @notice Set threshold for the worst price that is still accepted
+    @dev If this threshold is violated (due to depeg of one of the paired assets)
+         the peg keepers will not provide any further liquidity.
     @param _threshold Price threshold with base 10 ** 18 (1.0 = 10 ** 18)
     """
     self._assert_only_owner()
