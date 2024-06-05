@@ -29,6 +29,7 @@ interface MainController:
     ) -> int256: view
     def on_close_loan_hook_adjustment(account: address, market: address) -> int256: view
     def on_liquidate_hook_adjustment(caller: address, market: address, target: address) -> int256: view
+    def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint256) -> uint256: view
 
 interface MarketOperator:
     def total_debt() -> uint256: view
@@ -46,6 +47,7 @@ interface MarketOperator:
         num_bands: uint256
     ) -> (uint256, uint256, uint256, int256, int256[2]): view
     def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position, 1000]: view
+    def min_collateral(debt_amount: uint256, n_bands: uint256) -> uint256: view
 
 interface AMM:
     def A() -> uint256: view
@@ -401,6 +403,32 @@ def get_liquidation_amounts(
         liquidation_states.append(state)
 
     return liquidation_states
+
+
+@view
+@external
+def get_max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint256) -> uint256:
+    """
+    @notice Calculation of maximum which can be borrowed in the given market
+    @param market Market where the loan will be taken
+    @param coll_amount Collateral amount against which to borrow
+    @param n_bands number of bands the collateral will be deposited over
+    @return Maximum amount of stablecoin that can be borrowed
+    """
+    return MAIN_CONTROLLER.max_borrowable(market, coll_amount, n_bands)
+
+
+@view
+@external
+def get_min_collateral(market: MarketOperator, debt_amount: uint256, n_bands: uint256) -> uint256:
+    """
+    @notice Calculate teh minimal amount of collateral required to support debt
+    @param market Market where the loan will be taken
+    @param debt_amount The debt to support
+    @param n_bands Number of bands to deposit into
+    @return Minimal collateral required
+    """
+    return market.min_collateral(debt_amount, n_bands)
 
 
 @pure
