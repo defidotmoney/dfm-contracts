@@ -347,6 +347,20 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
 
 @view
 @external
+def get_oracle_price(collateral: address) -> uint256:
+    """
+    @notice Get the current oracle price for `collateral`
+    @dev Uses the AMM of the first market created for this collateral.
+         Reverts if there is no existing market.
+    @param collateral Address of collateral token
+    @return Oracle price of `collateral` with 1e18 precision
+    """
+    market: address = self.collateral_markets[collateral][0]
+    return AMM(self.market_contracts[market].amm).price_oracle()
+
+
+@view
+@external
 def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint256) -> uint256:
     """
     @notice Calculation of maximum which can be borrowed in the given market
