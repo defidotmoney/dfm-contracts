@@ -347,6 +347,18 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
 
 @view
 @external
+def get_collateral(market: address) -> address:
+    """
+    @notice Get collateral token for a market
+    @dev Returns empty(address) if market does not exist
+    @param market Market address
+    @return Address of collateral token
+    """
+    return self.market_contracts[market].collateral
+
+
+@view
+@external
 def get_oracle_price(collateral: address) -> uint256:
     """
     @notice Get the current oracle price for `collateral`
