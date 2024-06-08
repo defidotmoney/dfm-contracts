@@ -736,13 +736,17 @@ def adjust_loan(
 
 @external
 @nonreentrant('lock')
-def close_loan(account: address, market: address):
+def close_loan(account: address, market: address) -> (int256, uint256):
     """
     @notice Close an existing loan
     @dev This function does not interact with the market's price oracle, so that
          users can still close their loans in case of a reverting oracle.
     @param account The account to close the loan for
     @param market Market of the loan being closed
+    @return Debt balance change for caller
+             * negative value indicates the amount burned to close
+             * positive value indicates a surplus from the AMM after closing
+            Collateral balance received from AMM
     """
     self._assert_caller_or_approved_delegate(account)
     c: MarketContracts = self._get_market_contracts_or_revert(market)
@@ -773,16 +777,22 @@ def close_loan(account: address, market: address):
 
     log CloseLoan(market, account, msg.sender, xy[1], xy[0], burn_amount)
 
+    return convert(xy[0], int256) - convert(burn_amount, int256), xy[1]
+
 
 @external
 @nonreentrant('lock')
-def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 10**18):
+def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 10**18) -> (int256, uint256):
     """
     @notice Perform a liquidation (or self-liquidation) on an unhealthy account
     @param market Market of the loan being liquidated
     @param target Address of the account to be liquidated
     @param min_x Minimal amount of stablecoin to receive (to avoid liquidators being sandwiched)
     @param frac Fraction to liquidate; 100% = 10**18
+    @return Debt balance change for caller
+             * negative value indicates the amount burned to liquidate
+             * positive value indicates a surplus received from the AMM
+            Collateral balance received from AMM
     """
     assert frac <= 10**18, "DFM:C frac too high"
     c: MarketContracts = self._get_market_contracts_or_revert(market)
@@ -825,6 +835,8 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
     self._update_rate(market, c.amm, c.mp_idx)
 
     log LiquidateLoan(market, msg.sender, target, xy[1], xy[0], debt_amount)
+
+    return convert(xy[0], int256) - convert(debt_amount, int256), xy[1]
 
 
 @external
