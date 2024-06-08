@@ -114,6 +114,8 @@ def test_close_loan_underwater(
     actual = views.get_market_states_for_account(alice, [market])[0]
     # (debt repaid, debt burned from owner, debt burned from amm, coll withdrawn, hook adjustment)
     expected = views.get_close_loan_amounts(alice, market)
+    # (debt adjustment for caller, coll withdrawn)
+    expected2 = controller.get_close_loan_amounts(alice, market)
 
     debt = market.debt(alice)
     assert actual[1] == debt
@@ -126,12 +128,12 @@ def test_close_loan_underwater(
         assert debt_amm == 0
 
     assert actual[2] == coll_amm
-    assert expected[3] == coll_amm
+    assert expected[3] == expected2[1] == coll_amm
 
     assert actual[3] == debt_amm
     assert expected[2] == debt_amm
 
-    assert expected[1] == debt - debt_amm + adjustment
+    assert expected[1] == -expected2[0] == debt - debt_amm + adjustment
     assert expected[4] == adjustment
 
     # hacky mint alice enough stable to close the loan
