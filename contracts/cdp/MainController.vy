@@ -446,6 +446,33 @@ def stored_admin_fees() -> uint256:
 
 @view
 @external
+def get_close_loan_amounts(account: address, market: address) -> (int256, uint256):
+    """
+    @notice Get balance information related to closing a loan
+    @param account The account to close the loan for
+    @param market Market of the loan being closed
+    @return Debt balance change for caller
+             * negative value indicates the amount burned to close
+             * positive value indicates a surplus from the AMM after closing
+            Collateral balance received from AMM
+    """
+    amm: AMM = AMM(self._get_market_contracts_or_revert(market).amm)
+    xy: (uint256, uint256) = amm.get_sum_xy(account)
+
+    debt: uint256 = MarketOperator(market).debt(account)
+    hook_debt_adjustment: int256 = self._call_view_hooks(
+        market,
+        HookId.ON_CLOSE_LOAN,
+        _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)")),
+        self._positive_only_bounds(debt)
+    )
+    debt = self._uint_plus_int(debt, hook_debt_adjustment)
+
+    return convert(xy[0], int256) - convert(debt, int256), xy[1]
+
+
+@view
+@external
 def on_create_loan_hook_adjustment(
     account: address,
     market: address,
