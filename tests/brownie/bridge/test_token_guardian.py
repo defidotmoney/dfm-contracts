@@ -9,52 +9,47 @@ def setup(stable, alice, deployer):
 
 
 def test_initial_state(stable):
-    assert stable.isMintEnabled()
+    assert stable.isBridgeEnabled()
     assert stable.isFlashMintEnabled()
     assert stable.maxFlashLoan(stable) == 2**127
 
 
-def test_disable_mint_guardian(stable, guardian, alice):
-    stable.setMintEnabled(False, {"from": guardian})
+def test_disable_bridge_guardian(stable, guardian, alice):
+    stable.setBridgeEnabled(False, {"from": guardian})
 
-    assert not stable.isMintEnabled()
-    assert stable.maxFlashLoan(stable) == 0
+    assert not stable.isBridgeEnabled()
 
-    with brownie.reverts("DFM:T Minting disabled"):
-        stable.mint(alice, 10**18, {"from": alice})
+    with brownie.reverts("DFM:T Bridging disabled"):
+        stable.sendSimple(0, alice, 10**18, {"from": alice})
 
 
 def test_disable_mint_owner(stable, alice, deployer):
-    stable.setMintEnabled(False, {"from": deployer})
+    stable.setBridgeEnabled(False, {"from": deployer})
 
-    assert not stable.isMintEnabled()
-    assert stable.maxFlashLoan(stable) == 0
-
-    with brownie.reverts("DFM:T Minting disabled"):
-        stable.mint(alice, 10**18, {"from": alice})
+    assert not stable.isBridgeEnabled()
 
 
 def test_enable_mint_owner(stable, guardian, alice, deployer):
-    stable.setMintEnabled(False, {"from": guardian})
-    stable.setMintEnabled(True, {"from": deployer})
+    stable.setBridgeEnabled(False, {"from": guardian})
+    stable.setBridgeEnabled(True, {"from": deployer})
 
-    assert stable.isMintEnabled()
-    assert stable.maxFlashLoan(stable) == 2**127
+    assert stable.isBridgeEnabled()
 
-    stable.mint(alice, 10**18, {"from": alice})
+    with brownie.reverts("ERC20: burn amount exceeds balance"):
+        stable.sendSimple(0, alice, 10**18, {"from": alice})
 
 
 def test_enable_mint_reverts_guardian(stable, guardian):
-    stable.setMintEnabled(False, {"from": guardian})
+    stable.setBridgeEnabled(False, {"from": guardian})
 
     with brownie.reverts("DFM:T Guardian can only disable"):
-        stable.setMintEnabled(True, {"from": guardian})
+        stable.setBridgeEnabled(True, {"from": guardian})
 
 
 def test_set_mint_reverts_general(stable, alice):
     for enabled in [True, False]:
         with brownie.reverts("DFM:T Not owner or guardian"):
-            stable.setMintEnabled(enabled, {"from": alice})
+            stable.setBridgeEnabled(enabled, {"from": alice})
 
 
 def test_disable_flashmint_guardian(stable, guardian, alice):

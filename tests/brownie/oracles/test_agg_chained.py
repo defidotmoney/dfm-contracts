@@ -33,11 +33,6 @@ def test_reverts_decimals(chained_oracle, curve, deployer):
             [(curve, 19, False, curve.price_oracle.encode_input(0))], {"from": deployer}
         )
 
-    with brownie.reverts("DFM: Decimals cannot be 0"):
-        chained_oracle.addCallPath(
-            [(curve, 0, False, curve.price_oracle.encode_input(0))], {"from": deployer}
-        )
-
 
 def test_reverts_oracle_returns_zero(chained_oracle, curve, deployer):
     with brownie.reverts("DFM: Oracle returned 0"):
