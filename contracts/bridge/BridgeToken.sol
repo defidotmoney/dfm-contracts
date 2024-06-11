@@ -27,13 +27,13 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
     EnumerableSet.UintSet private __eids;
 
     bytes public defaultOptions;
-    bool public isMintEnabled;
+    bool public isBridgeEnabled;
     bool public isFlashMintEnabled;
 
     mapping(address => bool) public isMinter;
 
     event MinterSet(address minter, bool isApproved);
-    event MintEnabledSet(address caller, bool isEnabled);
+    event BridgeEnabledSet(address caller, bool isEnabled);
     event FlashMintEnabledSet(address caller, bool isEnabled);
 
     /**
@@ -72,7 +72,7 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
             _setPeer(_tokenPeers[i].eid, _tokenPeers[i].peer);
         }
 
-        isMintEnabled = true;
+        isBridgeEnabled = true;
         isFlashMintEnabled = true;
     }
 
@@ -89,7 +89,7 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         @return The amount of token that can be loaned
      */
     function maxFlashLoan(address token) public view override returns (uint256) {
-        if (token == address(this) && isMintEnabled && isFlashMintEnabled) {
+        if (token == address(this) && isFlashMintEnabled) {
             return 2 ** 127 - totalSupply();
         }
         return 0;
@@ -246,15 +246,15 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
     }
 
     /**
-        @notice Enable or disable all minting of this token.
+        @notice Enable or disable bridge actions for this token.
         @dev Enabled by default on deployment. Only the owner can enable.
              Both the owner and guardian can disable.
      */
-    function setMintEnabled(bool _isEnabled) external {
+    function setBridgeEnabled(bool _isEnabled) external {
         _onlyOwnerOrGuardian(_isEnabled);
-        isMintEnabled = _isEnabled;
+        isBridgeEnabled = _isEnabled;
 
-        emit MintEnabledSet(msg.sender, _isEnabled);
+        emit BridgeEnabledSet(msg.sender, _isEnabled);
     }
 
     /**
@@ -289,11 +289,25 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
 
     // --- internal functions ---
 
-    /** @dev Enforce `isMintEnabled` */
-    function _beforeTokenTransfer(address from, address, uint256) internal override {
-        if (from == address(0)) {
-            require(isMintEnabled, "DFM:T Minting disabled");
-        }
+    /** @dev Internal function to perform a debit operation. Inherited from `OFT`. */
+    function _debit(
+        address _from,
+        uint256 _amountLD,
+        uint256 _minAmountLD,
+        uint32 _dstEid
+    ) internal override returns (uint256 amountSentLD, uint256 amountReceivedLD) {
+        require(isBridgeEnabled, "DFM:T Bridging disabled");
+        return super._debit(_from, _amountLD, _minAmountLD, _dstEid);
+    }
+
+    /** @dev Internal function to perform a credit operation. Inherited from `OFT`. */
+    function _credit(
+        address _to,
+        uint256 _amountLD,
+        uint32 _srcEid
+    ) internal override returns (uint256 amountReceivedLD) {
+        require(isBridgeEnabled, "DFM:T Bridging disabled");
+        return super._credit(_to, _amountLD, _srcEid);
     }
 
     /** @dev Convert address to layerzero-formatted bytes32 peer */
