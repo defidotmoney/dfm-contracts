@@ -6,6 +6,7 @@ import { MessagingFee } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interf
 import { OFTMsgCodec } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTMsgCodec.sol";
 import { OFT } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
 import { OAppCore } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppCore.sol";
+import { IOAppMsgInspector } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/interfaces/IOAppMsgInspector.sol";
 import { ERC20FlashMint } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IProtocolCore } from "../interfaces/IProtocolCore.sol";
@@ -156,6 +157,10 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
 
         (bytes memory message, ) = OFTMsgCodec.encode(_addressToBytes32(_target), _toSD(amountReceivedLD), bytes(""));
         bytes memory options = enforcedOptions[_eid][1];
+
+        // @dev Optionally inspect the message and options depending if the OApp owner has set a msg inspector.
+        // @dev If it fails inspection, needs to revert in the implementation. ie. does not rely on return boolean
+        if (msgInspector != address(0)) IOAppMsgInspector(msgInspector).inspect(message, options);
 
         bytes32 guid = _lzSend(_eid, message, options, MessagingFee(msg.value, 0), msg.sender).guid;
 
