@@ -6,6 +6,9 @@
 @license MIT
 """
 
+from vyper.interfaces import ERC20
+
+
 interface MainController:
     def markets(i: uint256) -> address: view
     def market_contracts(market: address) -> MarketContracts: view
@@ -63,7 +66,6 @@ interface AMM:
     def has_liquidity(account: address) -> bool: view
     def bands_x(n: int256) -> uint256: view
     def bands_y(n: int256) -> uint256: view
-    def collateral_balance() -> uint256: view
     def rate() -> uint256: view
     def min_band() -> int256: view
     def max_band() -> int256: view
@@ -168,7 +170,7 @@ def get_market_states(markets: DynArray[MarketOperator, 255]) -> DynArray[Market
 
         if c.collateral != empty(address):
             state.total_debt = market.total_debt()
-            state.total_coll = AMM(c.amm).collateral_balance()
+            state.total_coll = ERC20(c.collateral).balanceOf(c.amm)
             state.debt_ceiling = market.debt_ceiling()
 
             if state.debt_ceiling > state.total_debt:
