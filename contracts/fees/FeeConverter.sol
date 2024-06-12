@@ -5,12 +5,13 @@ pragma solidity 0.8.25;
 import "./dependencies/FeeConverterBase.sol";
 
 /**
-    @title Fee Converter and Bridge
+    @title Fee Converter
+    @dev For use on primary chain (no bridging functionality)
     @author defidotmoney
     @notice Unguarded, incentivized functionality to:
              * Buy fee tokens for `stableCoin`
              * Buy `stableCoin` for native gas
-             * Bridge `stableCoin` back to the primary chain
+             * Transfer `stableCoin` to the fee aggregator
  */
 contract FeeConverter is FeeConverterBase {
     using SafeERC20 for IERC20Metadata;

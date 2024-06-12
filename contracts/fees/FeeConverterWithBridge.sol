@@ -5,7 +5,8 @@ pragma solidity 0.8.25;
 import "./dependencies/FeeConverterBase.sol";
 
 /**
-    @title Fee Converter and Bridge
+    @title Fee Converter
+    @dev For use on non-primary chains (includes bridging functionality)
     @author defidotmoney
     @notice Unguarded, incentivized functionality to:
              * Buy fee tokens for `stableCoin`

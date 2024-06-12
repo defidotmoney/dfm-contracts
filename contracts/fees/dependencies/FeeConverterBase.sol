@@ -10,10 +10,8 @@ import "../../interfaces/IBridgeToken.sol";
 
 /**
     @title Fee Converter Abstract Base
+    @dev Shared logic for `FeeConverter` and `FeeConverterWithBridge`
     @author defidotmoney
-    @notice Unguarded, incentivized functionality to:
-             * Buy fee tokens for `stableCoin`
-             * Buy `stableCoin` for native gas
  */
 abstract contract FeeConverterBase is CoreOwnable {
     using SafeERC20 for IERC20Metadata;
