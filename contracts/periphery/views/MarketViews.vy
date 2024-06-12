@@ -293,8 +293,6 @@ def get_pending_market_state_for_account(
     """
     c: MarketContracts = self._get_market_contracts_or_revert(market)
 
-    assert c.collateral != empty(address), "DFM:C Invalid market"
-
     state: PendingAccountState = empty(PendingAccountState)
     debt: uint256 = MarketOperator(market).debt(account)
     assert convert(debt, int256) + debt_change > 0, "DFM:C Non-positive debt"
