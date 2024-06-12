@@ -20,6 +20,7 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
     IFeeReceiver public fallbackReceiver;
     uint16 public lastDistributionWeek;
     uint16 public totalPriorityReceiverPct;
+    uint256 public callerIncentive;
 
     PriorityReceiver[] public priorityReceivers;
 
@@ -29,8 +30,9 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
         uint256 maximumAmount; // Maximum amount sent each week. Set to 0 for no limit.
     }
 
-    constructor(address _core, IERC20 _stable) CoreOwnable(_core) SystemStart(_core) {
+    constructor(address _core, IERC20 _stable, uint256 _callerIncentive) CoreOwnable(_core) SystemStart(_core) {
         stableCoin = _stable;
+        callerIncentive = _callerIncentive;
     }
 
     function priorityReceiverCount() external view returns (uint256) {
@@ -43,13 +45,17 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
         require(lastDistributionWeek < getWeek(), "DFM: Already distro'd this week");
         lastDistributionWeek = uint16(getWeek());
 
+        // transfer incentive to the caller
+        uint256 amount = callerIncentive;
+        if (amount > 0) stableCoin.transfer(msg.sender, callerIncentive);
+
         uint256 initialAmount = stableCoin.balanceOf(address(this));
         require(initialAmount > 0, "DFM: Nothing to distribute");
 
         uint256 length = priorityReceivers.length;
         for (uint256 i = 0; i < length; i++) {
             PriorityReceiver memory p = priorityReceivers[i];
-            uint256 amount = (initialAmount * p.pctInBps) / MAX_BPS;
+            amount = (initialAmount * p.pctInBps) / MAX_BPS;
             if (p.maximumAmount != 0 && amount > p.maximumAmount) amount = p.maximumAmount;
             stableCoin.transfer(address(p.target), amount);
             p.target.notifyWeeklyFees(amount);
@@ -57,7 +63,7 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
 
         // we fetch the balance again so that priority receivers have
         // the option to return a portion of their received balance
-        uint256 amount = stableCoin.balanceOf(address(this));
+        amount = stableCoin.balanceOf(address(this));
         if (amount > 0) {
             stableCoin.transfer(address(fallbackReceiver), amount);
             fallbackReceiver.notifyWeeklyFees(amount);
@@ -103,5 +109,15 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
      */
     function setFallbackReceiver(IFeeReceiver _fallbackReceiver) external onlyOwner {
         fallbackReceiver = _fallbackReceiver;
+    }
+
+    /**
+        @notice Set the caller incentive
+        @dev This amount is paid to the caller of `processWeeklyDistribution`
+             as an incentive to keep the fee distribution system functioning
+        @param _callerIncentive Amount paid as an incentive.
+     */
+    function setCallerIncentive(uint256 _callerIncentive) external onlyOwner {
+        callerIncentive = _callerIncentive;
     }
 }
