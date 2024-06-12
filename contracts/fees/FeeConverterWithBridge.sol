@@ -17,7 +17,6 @@ contract FeeConverterWithBridge is FeeConverterBase {
 
     uint32 public immutable primaryId;
 
-    address public primaryChainFeeAggregator;
     uint16 public bridgeBonusPctBps;
     uint256 public maxBridgeBonusAmount;
 
@@ -25,13 +24,13 @@ contract FeeConverterWithBridge is FeeConverterBase {
         address _core,
         IMainController _mainController,
         IBridgeToken _stableCoin,
+        address _primaryChainFeeAggregator,
         address _wrappedNativeToken,
         uint16 _swapBonusPctBps,
         uint256 _maxSwapBonusAmount,
         uint256 _minRelayBalance,
         uint256 _maxRelaySwapDebtAmount,
         uint32 _primaryId,
-        address _primaryChainFeeAggregator,
         uint16 _bridgeBonusPctBps,
         uint256 _maxBridgeBonusAmount
     )
@@ -39,6 +38,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
             _core,
             _mainController,
             _stableCoin,
+            _primaryChainFeeAggregator,
             _wrappedNativeToken,
             _swapBonusPctBps,
             _maxSwapBonusAmount,
@@ -47,7 +47,6 @@ contract FeeConverterWithBridge is FeeConverterBase {
         )
     {
         primaryId = _primaryId;
-        primaryChainFeeAggregator = _primaryChainFeeAggregator;
         bridgeBonusPctBps = _bridgeBonusPctBps;
         maxBridgeBonusAmount = _maxBridgeBonusAmount;
     }
@@ -107,13 +106,6 @@ contract FeeConverterWithBridge is FeeConverterBase {
     }
 
     // --- owner-only external functions ---
-
-    /**
-        @notice Set the address of the fee receiver on the primary chain.
-     */
-    function setPrimaryChainFeeAggregator(address _primaryChainFeeAggregator) external onlyOwner {
-        primaryChainFeeAggregator = _primaryChainFeeAggregator;
-    }
 
     /**
         @notice Set the percent of `stableCoin` paid as a bonus when calling

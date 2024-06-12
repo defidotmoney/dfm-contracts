@@ -22,6 +22,7 @@ abstract contract FeeConverterBase is CoreOwnable {
     IMainController public immutable mainController;
     IBridgeToken public immutable stableCoin;
     address public immutable wrappedNativeToken;
+    address public primaryChainFeeAggregator;
 
     bool public isEnabled;
 
@@ -34,6 +35,7 @@ abstract contract FeeConverterBase is CoreOwnable {
         address _core,
         IMainController _mainController,
         IBridgeToken _stableCoin,
+        address _primaryChainFeeAggregator,
         address _wrappedNativeToken,
         uint16 _swapBonusPctBps,
         uint256 _maxSwapBonusAmount,
@@ -42,6 +44,7 @@ abstract contract FeeConverterBase is CoreOwnable {
     ) CoreOwnable(_core) {
         mainController = _mainController;
         stableCoin = _stableCoin;
+        primaryChainFeeAggregator = _primaryChainFeeAggregator;
         wrappedNativeToken = _wrappedNativeToken;
 
         swapBonusPctBps = _swapBonusPctBps;
@@ -151,7 +154,7 @@ abstract contract FeeConverterBase is CoreOwnable {
         IERC20Metadata outputToken,
         uint256 amountIn,
         uint256 minAmountOut
-    ) external whenEnabled returns (uint256 amountOut) {
+    ) public virtual whenEnabled returns (uint256 amountOut) {
         amountOut = getSwapDebtForCollAmountOut(outputToken, amountIn);
         require(amountOut >= minAmountOut, "DFM: Slippage");
         stableCoin.transferFrom(msg.sender, address(this), amountIn);
@@ -193,6 +196,14 @@ abstract contract FeeConverterBase is CoreOwnable {
      */
     function setIsEnabled(bool _isEnabled) external onlyOwner {
         isEnabled = _isEnabled;
+    }
+
+    /**
+        @notice Set the address of the fee aggregator on the primary chain.
+        @dev The aggregator receives converted protocol fees from all chains.
+     */
+    function setPrimaryChainFeeAggregator(address _primaryChainFeeAggregator) external onlyOwner {
+        primaryChainFeeAggregator = _primaryChainFeeAggregator;
     }
 
     /**
