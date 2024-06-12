@@ -25,13 +25,19 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
 
     struct PriorityReceiver {
         IFeeReceiver target;
-        uint16 pctInBps;
-        uint256 maximumAmount;
+        uint16 pctInBps; // Percent of weekly fees sent to this receiver.
+        uint256 maximumAmount; // Maximum amount sent each week. Set to 0 for no limit.
     }
 
     constructor(address _core, IERC20 _stable) CoreOwnable(_core) SystemStart(_core) {
         stableCoin = _stable;
     }
+
+    function priorityReceiverCount() external view returns (uint256) {
+        return priorityReceivers.length;
+    }
+
+    // --- unguarded external functions
 
     function processWeeklyDistribution() external {
         require(lastDistributionWeek < getWeek(), "DFM: Already distro'd this week");
@@ -56,5 +62,46 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
             stableCoin.transfer(address(fallbackReceiver), amount);
             fallbackReceiver.notifyWeeklyFees(amount);
         }
+    }
+
+    // --- owner-only external functions ---
+
+    /**
+        @notice Add new priority receivers
+        @param _receivers Array of new receivers to add
+     */
+    function addPriorityReceivers(PriorityReceiver[] calldata _receivers) external onlyOwner {
+        uint256 totalPct = totalPriorityReceiverPct;
+
+        uint256 length = _receivers.length;
+        for (uint256 i = 0; i < length; i++) {
+            totalPct += _receivers[i].pctInBps;
+            priorityReceivers.push(_receivers[i]);
+        }
+        require(totalPct <= MAX_BPS, "DFM: priority receiver pct > 100");
+        totalPriorityReceiverPct = uint16(totalPct);
+    }
+
+    /**
+        @notice Remove a priority receiver
+        @param idx Index of the receiver to remove from `priorityReceivers`
+     */
+    function removePriorityReceiver(uint256 idx) external onlyOwner {
+        uint256 maxIdx = priorityReceivers.length - 1;
+        totalPriorityReceiverPct -= priorityReceivers[idx].pctInBps;
+        if (idx < maxIdx) {
+            priorityReceivers[idx] = priorityReceivers[maxIdx];
+        }
+        priorityReceivers.pop();
+    }
+
+    /**
+        @notice Set the fallback receiver
+        @dev The fallback receiver is sent the remaining stablecoin balance
+             each week, after all the priority receivers have been funded.
+        @param _fallbackReceiver Fallback receiver address.
+     */
+    function setFallbackReceiver(IFeeReceiver _fallbackReceiver) external onlyOwner {
+        fallbackReceiver = _fallbackReceiver;
     }
 }
