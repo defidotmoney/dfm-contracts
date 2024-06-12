@@ -244,7 +244,7 @@ def get_market_states_for_account(
             Account debt,
             AMM balances (collateral, stablecoin),
             Number of bands,
-            Account health (liquidation is possible at 0),
+            Account health (liquidation is possible if health < 0),
             Liquidation price range (high, low)
     """
     account_states: DynArray[AccountState, 255] = []
