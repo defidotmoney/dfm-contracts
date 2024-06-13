@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Rewards logic inspired by xERC20 (https://github.com/ZeframLou/playpen/blob/main/src/xERC20.sol)
 
-pragma solidity ^0.8.0;
+pragma solidity 0.8.25;
 
 import "@solmate/tokens/ERC4626.sol";
-import "@solmate/utils/SafeCastLib.sol";
-
-// import "./interfaces/IxERC4626.sol";
+import "../base/dependencies/CoreOwnable.sol";
+import "../base/dependencies/SystemStart.sol";
+import "../interfaces/IFeeReceiver.sol";
 
 /**
  @title  An xERC4626 Single Staking Contract
@@ -17,82 +17,104 @@ import "@solmate/utils/SafeCastLib.sol";
 
          Operates on "cycles" which distribute the rewards surplus over the internal balance to users linearly over the remainder of the cycle window.
 */
-abstract contract xERC4626 is ERC4626 {
-    using SafeCastLib for *;
+contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
+    address public feeAggregator;
 
-    /// @notice the maximum length of a rewards cycle
-    uint32 public immutable rewardsCycleLength;
+    uint16 public lastDistributionWeek;
+    uint32 public lastDistributionDay;
 
-    /// @notice the effective start of the current cycle
-    uint32 public lastSync;
+    uint32 lastUpdate;
+    uint32 periodFinish;
 
-    /// @notice the end of the current cycle. Will always be evenly divisible by `rewardsCycleLength`.
-    uint32 public rewardsCycleEnd;
+    uint256 rewardsPerSecond;
 
     /// @notice the amount of rewards distributed in a the most recent cycle.
-    uint192 public lastRewardAmount;
+    uint256 public lastWeeeklyAmountReceived;
 
     uint256 internal storedTotalAssets;
 
-    constructor(uint32 _rewardsCycleLength) {
-        rewardsCycleLength = _rewardsCycleLength;
-        // seed initial rewardsCycleEnd
-        rewardsCycleEnd = (block.timestamp.safeCastTo32() / rewardsCycleLength) * rewardsCycleLength;
+    constructor(
+        address _core,
+        ERC20 _stable,
+        address _feeAggregator
+    )
+        ERC4626(_stable, string.concat("Staked ", _stable.name()), string.concat("s", _stable.symbol()))
+        CoreOwnable(_core)
+        SystemStart(_core)
+    {
+        feeAggregator = _feeAggregator;
     }
 
     /// @notice Compute the amount of tokens available to share holders.
     ///         Increases linearly during a reward distribution period from the sync call, not the cycle start.
     function totalAssets() public view override returns (uint256) {
-        // cache global vars
-        uint256 storedTotalAssets_ = storedTotalAssets;
-        uint192 lastRewardAmount_ = lastRewardAmount;
-        uint32 rewardsCycleEnd_ = rewardsCycleEnd;
-        uint32 lastSync_ = lastSync;
-
-        if (block.timestamp >= rewardsCycleEnd_) {
-            // no rewards or rewards fully unlocked
-            // entire reward amount is available
-            return storedTotalAssets_ + lastRewardAmount_;
-        }
-
-        // rewards not fully unlocked
-        // add unlocked rewards to stored total
-        uint256 unlockedRewards = (lastRewardAmount_ * (block.timestamp - lastSync_)) / (rewardsCycleEnd_ - lastSync_);
-        return storedTotalAssets_ + unlockedRewards;
+        uint256 updateUntil = min(periodFinish, block.timestamp);
+        uint256 duration = updateUntil - lastUpdate;
+        return storedTotalAssets + (duration * rewardsPerSecond);
     }
 
     // Update storedTotalAssets on withdraw/redeem
     function beforeWithdraw(uint256 amount, uint256 shares) internal virtual override {
         super.beforeWithdraw(amount, shares);
+        _updateDailyStream();
         storedTotalAssets -= amount;
     }
 
     // Update storedTotalAssets on deposit/mint
     function afterDeposit(uint256 amount, uint256 shares) internal virtual override {
         storedTotalAssets += amount;
+        _updateDailyStream();
         super.afterDeposit(amount, shares);
     }
 
     /// @notice Distributes rewards to xERC4626 holders.
     /// All surplus `asset` balance of the contract over the internal balance becomes queued for the next cycle.
-    function syncRewards() public virtual {
-        uint192 lastRewardAmount_ = lastRewardAmount;
-        uint32 timestamp = block.timestamp.safeCastTo32();
+    function notifyWeeklyFees(uint256) public virtual {
+        require(msg.sender == feeAggregator);
 
-        // if (timestamp < rewardsCycleEnd) revert SyncError();
+        uint256 updateUntil = _advanceCurrentStream();
+        uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
+        uint256 newAmount = asset.balanceOf(address(this)) - storedTotalAssets - residualAmount;
+        lastWeeeklyAmountReceived = newAmount;
+        _setNewStream(newAmount, residualAmount);
+    }
 
-        uint256 storedTotalAssets_ = storedTotalAssets;
-        uint256 nextRewards = asset.balanceOf(address(this)) - storedTotalAssets_ - lastRewardAmount_;
+    function _updateDailyStream() internal {
+        uint256 updateUntil = _advanceCurrentStream();
 
-        storedTotalAssets = storedTotalAssets_ + lastRewardAmount_; // SSTORE
+        uint256 updateDays = getDay() - lastDistributionDay;
+        if (updateDays == 0) return;
 
-        uint32 end = ((timestamp + rewardsCycleLength) / rewardsCycleLength) * rewardsCycleLength;
+        // only `notifyWeeklyFees` can update us across weeks
+        if (getDay() / 7 > lastDistributionWeek) return;
 
-        // Combined single SSTORE
-        lastRewardAmount = nextRewards.safeCastTo192();
-        lastSync = timestamp;
-        rewardsCycleEnd = end;
+        uint256 newAmount = (lastWeeeklyAmountReceived / 7) * updateDays;
+        uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
+        _setNewStream(newAmount, residualAmount);
+    }
 
-        // emit NewRewardsCycle(end, nextRewards);
+    function _advanceCurrentStream() internal returns (uint256 updateUntil) {
+        updateUntil = min(periodFinish, block.timestamp);
+        uint256 duration = updateUntil - lastUpdate;
+        if (duration > 0) {
+            storedTotalAssets = storedTotalAssets + (duration * rewardsPerSecond);
+            lastUpdate = uint32(updateUntil);
+        }
+        return updateUntil;
+    }
+
+    function _setNewStream(uint256 newAmount, uint256 residualAmount) internal {
+        // TODO only retain a portion of newAmount, rest forwards onward
+
+        newAmount += residualAmount;
+        rewardsPerSecond = newAmount / 2 days;
+
+        lastUpdate = uint32(block.timestamp);
+        periodFinish = uint32(block.timestamp + 2 days);
+        lastDistributionDay = uint32(getDay());
+    }
+
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 }
