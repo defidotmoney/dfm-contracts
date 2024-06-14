@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import "./CoreOwnable.sol";
+import { CoreOwnable } from "./CoreOwnable.sol";
 
 /**
     @title Delegated Operations

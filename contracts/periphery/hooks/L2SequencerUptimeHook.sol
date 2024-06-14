@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.25;
 
-import "../../interfaces/IUptimeOracle.sol";
+import { IUptimeOracle } from "../../interfaces/IUptimeOracle.sol";
 
 /**
     @title DFM L2 Sequencer Uptime Hook

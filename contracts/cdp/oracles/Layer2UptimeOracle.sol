@@ -2,8 +2,8 @@
 
 pragma solidity 0.8.25;
 
-import "../../interfaces/IChainlinkAggregator.sol";
-import "../../interfaces/IUptimeOracle.sol";
+import { IChainlinkAggregator } from "../../interfaces/IChainlinkAggregator.sol";
+import { IUptimeOracle } from "../../interfaces/IUptimeOracle.sol";
 
 /**
     @title Layer2 Uptime Oracle
