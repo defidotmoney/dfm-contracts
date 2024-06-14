@@ -32,6 +32,16 @@ contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
     uint256 public lastWeeeklyAmountReceived;
 
     uint256 internal storedTotalAssets;
+    uint256 internal totalCooldownAssets;
+
+    uint32 public cooldownDuration;
+
+    struct AssetCooldown {
+        uint224 underlyingAmount;
+        uint32 cooldownEnd;
+    }
+
+    mapping(address => AssetCooldown) public cooldowns;
 
     constructor(
         address _core,
@@ -43,6 +53,55 @@ contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
         SystemStart(_core)
     {
         feeAggregator = _feeAggregator;
+    }
+
+    /// @notice redeem assets and starts a cooldown to claim the converted underlying asset
+    /// @param assets assets to redeem
+    function cooldownAssets(uint256 assets) external returns (uint256 shares) {
+        _updateDailyStream();
+        require(assets <= maxWithdraw(msg.sender), "sMONEY: insufficient assets");
+
+        shares = previewWithdraw(assets);
+        _cooldown(assets, shares);
+        return shares;
+    }
+
+    /// @notice redeem shares into assets and starts a cooldown to claim the converted underlying asset
+    /// @param shares shares to redeem
+    function cooldownShares(uint256 shares) external returns (uint256 assets) {
+        _updateDailyStream();
+        require(shares <= maxRedeem(msg.sender), "sMONEY: insufficient shares");
+
+        assets = previewRedeem(shares);
+        _cooldown(assets, shares);
+        return assets;
+    }
+
+    function _cooldown(uint256 assets, uint256 shares) internal {
+        require(assets > 0, "sMONEY: zero assets");
+
+        cooldowns[msg.sender].cooldownEnd = uint32(block.timestamp + cooldownDuration);
+        cooldowns[msg.sender].underlyingAmount = uint224(cooldowns[msg.sender].underlyingAmount + assets);
+        totalCooldownAssets = totalCooldownAssets + assets;
+        storedTotalAssets = storedTotalAssets - assets;
+
+        _burn(msg.sender, shares);
+
+        // TODO event
+    }
+
+    function unstake(address receiver) external {
+        AssetCooldown memory ac = cooldowns[msg.sender];
+        uint256 amount = ac.underlyingAmount;
+        require(amount > 0, "sMONEY: Nothing to withdraw");
+        require(ac.cooldownEnd <= block.timestamp, "sMONEY: cooldown still active");
+
+        delete cooldowns[msg.sender];
+        totalCooldownAssets = totalCooldownAssets - amount;
+
+        asset.transfer(receiver, amount);
+
+        // TODO event
     }
 
     /// @notice Compute the amount of tokens available to share holders.
@@ -74,7 +133,7 @@ contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
 
         uint256 updateUntil = _advanceCurrentStream();
         uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
-        uint256 newAmount = asset.balanceOf(address(this)) - storedTotalAssets - residualAmount;
+        uint256 newAmount = asset.balanceOf(address(this)) - storedTotalAssets - totalCooldownAssets - residualAmount;
         lastWeeeklyAmountReceived = newAmount;
         _setNewStream(newAmount, residualAmount);
     }
