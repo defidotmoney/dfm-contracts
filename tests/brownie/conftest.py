@@ -25,13 +25,20 @@ def deployer(accounts):
 
 
 @pytest.fixture(scope="module")
-def alice(accounts):
+def guardian(accounts, core, deployer):
+    key = b"GUARDIAN".ljust(32, b"\x00")
+    core.setAddress(key, accounts[1], {"from": deployer})
     return accounts[1]
 
 
 @pytest.fixture(scope="module")
-def bob(accounts):
+def alice(accounts):
     return accounts[2]
+
+
+@pytest.fixture(scope="module")
+def bob(accounts):
+    return accounts[3]
 
 
 @pytest.fixture(scope="module")
@@ -45,13 +52,16 @@ def core(DFMProtocolCore, deployer, fee_receiver):
 
 
 @pytest.fixture(scope="module")
-def mock_endpoint(MockEndpoint, deployer):
-    return MockEndpoint.deploy({"from": deployer})
+def mock_endpoint(MockLzEndpoint, deployer):
+    return MockLzEndpoint.deploy({"from": deployer})
 
 
 @pytest.fixture(scope="module")
-def stable(StableCoin, core, deployer, mock_endpoint):
-    return StableCoin.deploy(core, "Test Stablecoin", "TST", mock_endpoint, {"from": deployer})
+def stable(BridgeToken, core, deployer, mock_endpoint):
+    default_opts = b""
+    return BridgeToken.deploy(
+        core, "Stablecoin", "SC", mock_endpoint, default_opts, [], {"from": deployer}
+    )
 
 
 @pytest.fixture(scope="module")
@@ -79,7 +89,7 @@ def controller(MainController, MarketOperator, AMM, core, stable, policy, deploy
     contract = MainController.deploy(core, stable, [policy], 2**256 - 1, {"from": deployer})
     stable.setMinter(contract, True, {"from": deployer})
 
-    market_impl = MarketOperator.deploy(core, contract, stable, MARKET_A, {"from": deployer})
+    market_impl = MarketOperator.deploy(core, contract, MARKET_A, {"from": deployer})
     amm_impl = AMM.deploy(contract, stable, MARKET_A, {"from": deployer})
     contract.set_implementations(MARKET_A, market_impl, amm_impl, {"from": deployer})
 
@@ -218,5 +228,13 @@ def hooks(ControllerHookTester, deployer):
 
 
 @pytest.fixture(scope="module")
-def amm_hook(AmmHookTester, controller, collateral, amm, deployer):
-    return AmmHookTester.deploy(controller, collateral, amm, {"from": deployer})
+def many_hooks(ControllerHookTester, deployer):
+    contracts = [ControllerHookTester.deploy({"from": deployer}) for i in range(4)]
+    for c in contracts:
+        c.set_configuration(0, [True, True, True, True], {"from": deployer})
+    return contracts
+
+
+@pytest.fixture(scope="module")
+def views(MarketViews, controller, deployer):
+    return MarketViews.deploy(controller, {"from": deployer})

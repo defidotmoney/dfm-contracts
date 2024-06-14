@@ -20,14 +20,14 @@ def test_set_implementations(controller, alice):
         controller.set_implementations(100, ZERO_ADDRESS, ZERO_ADDRESS, {"from": alice})
 
 
-def test_set_market_hooks(controller, market, alice):
+def test_add_market_hook(controller, market, hooks, alice):
     with brownie.reverts("DFM:C Only owner"):
-        controller.set_market_hooks(market, [[ZERO_ADDRESS, [False] * 4]], {"from": alice})
+        controller.add_market_hook(market, hooks, {"from": alice})
 
 
-def test_set_amm_hook(controller, market, alice):
+def test_remove_market_hook(controller, market, hooks, alice):
     with brownie.reverts("DFM:C Only owner"):
-        controller.set_amm_hook(market, ZERO_ADDRESS, {"from": alice})
+        controller.remove_market_hook(market, hooks, {"from": alice})
 
 
 def test_add_new_monetary_policy(controller, policy, alice):
@@ -205,8 +205,3 @@ def test_set_liquidity_mining_hook(amm, alice):
 def test_set_rate(amm, alice):
     with brownie.reverts("DFM:A Only controller"):
         amm.set_rate(0, {"from": alice})
-
-
-def test_set_exchange_hook(amm, alice):
-    with brownie.reverts("DFM:A Only controller"):
-        amm.set_exchange_hook(ZERO_ADDRESS, {"from": alice})

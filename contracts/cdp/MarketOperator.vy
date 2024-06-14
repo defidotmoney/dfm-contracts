@@ -93,14 +93,13 @@ struct Position:
 
 CORE_OWNER: public(immutable(CoreOwner))
 CONTROLLER: public(immutable(address))
-STABLECOIN: public(immutable(ERC20))
 COLLATERAL_TOKEN: public(ERC20)
 AMM: public(LLAMMA)
 
 COLLATERAL_PRECISION: uint256
 A: public(immutable(uint256))
 Aminus1: immutable(uint256)
-LOG2_A_RATIO: immutable(int256)  # log(A / (A - 1))
+LOGN_A_RATIO: immutable(int256)  # log(A / (A - 1))
 SQRT_BAND_RATIO: immutable(uint256)
 
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
@@ -110,7 +109,6 @@ MIN_TICKS: public(constant(uint256)) = 4
 MAX_SKIP_TICKS: constant(uint256) = 1024
 MAX_P_BASE_BANDS: constant(int256) = 5
 
-MAX_RATE: constant(uint256) = 43959106799  # 300% APY
 MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
 MIN_FEE: constant(uint256) = 10**6  # 1e-12, still needs to be above 0
 MAX_FEE: public(immutable(uint256))  # MIN_TICKS / A: for example, 4% max fee for A=100
@@ -130,14 +128,19 @@ loan_discount: public(uint256)
 
 
 @external
-def __init__(core: CoreOwner, controller: address, stablecoin: ERC20, _A: uint256):
+def __init__(core: CoreOwner, controller: address, _A: uint256):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param controller `MainController` address.
+    @param _A amplification coefficient. The size of one band is 1/A.
+    """
     CONTROLLER = controller
     CORE_OWNER = core
-    STABLECOIN = stablecoin
 
     A = _A
     Aminus1 = unsafe_sub(_A, 1)
-    LOG2_A_RATIO = self.log2(unsafe_div(_A * 10**18, unsafe_sub(_A, 1)))
+    LOGN_A_RATIO = self.wad_ln(unsafe_div(_A * 10**18, unsafe_sub(_A, 1)))
     MAX_FEE = min(unsafe_div(10**18 * MIN_TICKS, A), 10**17)
     SQRT_BAND_RATIO = isqrt(unsafe_div(10**36 * _A, unsafe_sub(_A, 1)))
 
@@ -169,6 +172,9 @@ def initialize(
     self.loan_discount = loan_discount
     self._total_debt.rate_mul = 10**18
 
+    log SetDebtCeiling(debt_ceiling)
+    log SetBorrowingDiscounts(loan_discount, liquidation_discount)
+
 
 # --- external view functions ---
 # Most views in this contract should instead be accessed via related methods in `MainController`
@@ -182,7 +188,6 @@ def owner() -> address:
 
 @view
 @external
-@nonreentrant('lock')
 def debt(account: address) -> uint256:
     """
     @notice Get the value of debt without changing the state
@@ -194,7 +199,6 @@ def debt(account: address) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def loan_exists(account: address) -> bool:
     """
     @notice Check whether there is a loan of `account` in existence
@@ -222,7 +226,6 @@ def pending_debt() -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
     """
     @notice Calculation of maximum which can be borrowed (details in comments)
@@ -246,6 +249,9 @@ def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
     # When n1 -= 1:
     # p_oracle_up *= A / (A - 1)
 
+    assert n_bands > MIN_TICKS-1, "DFM:M Need more ticks"
+    assert n_bands < MAX_TICKS+1, "DFM:M Need less ticks"
+
     total_debt: uint256 = self._get_total_debt()
     debt_ceiling: uint256 = self.debt_ceiling
     if total_debt < debt_ceiling:
@@ -260,7 +266,6 @@ def max_borrowable(collateral: uint256, n_bands: uint256) -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def min_collateral(debt: uint256, n_bands: uint256) -> uint256:
     """
     @notice Minimal amount of collateral required to support debt
@@ -269,18 +274,15 @@ def min_collateral(debt: uint256, n_bands: uint256) -> uint256:
     @return Minimal collateral required
     """
     # Add N**2 to account for precision loss in multiple bands, e.g. N / (y/N) = N**2 / y
-    return unsafe_div(
-        unsafe_div(
-            debt * 10**18 / self.max_p_base() * 10**18 / self.get_y_effective(10**18, n_bands, self.loan_discount) + n_bands * (n_bands + 2 * DEAD_SHARES),
-            self.COLLATERAL_PRECISION
-        ) * 10**18,
-        10**18 - 10**14
-    )
+    y_effective: uint256 = self.get_y_effective(10**18, n_bands, self.loan_discount)
+    x: uint256 = debt * 10**18 / self.max_p_base() * 10**18 / y_effective
+    x += n_bands * (n_bands + 2 * DEAD_SHARES) + self.COLLATERAL_PRECISION - 1
+    return ((x / self.COLLATERAL_PRECISION) * 10**18) / (10**18 - 10**14)
+
 
 
 @view
 @external
-@nonreentrant('lock')
 def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> int256:
     """
     @notice Calculate the upper band number for the deposit to sit in to support
@@ -295,7 +297,6 @@ def calculate_debt_n1(collateral: uint256, debt: uint256, n_bands: uint256) -> i
 
 @view
 @external
-@nonreentrant('lock')
 def tokens_to_liquidate(caller: address, target: address, frac: uint256 = 10 ** 18) -> uint256:
     """
     @notice Calculate the required stablecoin balance to liquidate an account
@@ -316,7 +317,6 @@ def tokens_to_liquidate(caller: address, target: address, frac: uint256 = 10 ** 
 
 @view
 @external
-@nonreentrant('lock')
 def health(account: address, full: bool = False) -> int256:
     """
     @notice Returns position health normalized to 1e18 for the account.
@@ -328,7 +328,6 @@ def health(account: address, full: bool = False) -> int256:
 
 @view
 @external
-@nonreentrant('lock')
 def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position, 1000]:
     """
     @notice Returns a dynamic array of users who can be "hard-liquidated".
@@ -375,7 +374,6 @@ def amm_price() -> uint256:
 
 @view
 @external
-@nonreentrant('lock')
 def user_prices(account: address) -> uint256[2]:  # Upper, lower
     """
     @notice Lowest price of the lower band and highest price of the upper band the account has deposit in the AMM
@@ -391,7 +389,6 @@ def user_prices(account: address) -> uint256[2]:  # Upper, lower
 
 @view
 @external
-@nonreentrant('lock')
 def user_state(account: address) -> uint256[4]:
     """
     @notice Return the account state in one call
@@ -406,7 +403,6 @@ def user_state(account: address) -> uint256[4]:
 
 @view
 @external
-@nonreentrant('lock')
 def health_calculator(account: address, coll_amount: int256, debt_amount: int256, full: bool, n_bands: uint256 = 0) -> int256:
     """
     @notice Health predictor in case account changes the debt or collateral
@@ -553,7 +549,6 @@ def set_amm_admin_fee(fee: uint256):
 
 
 @external
-@nonreentrant('lock')
 def set_borrowing_discounts(loan_discount: uint256, liquidation_discount: uint256):
     """
     @notice Set discounts at which we can borrow (defines max LTV) and where bad liquidation starts
@@ -606,10 +601,14 @@ def set_oracle(oracle: PriceOracle):
 def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_bands: uint256) -> uint256:
     """
     @notice Create loan
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.create_loan`.
+    @param account Account to open the loan for
     @param coll_amount Amount of collateral to use
     @param debt_amount Stablecoin amount to mint
     @param n_bands Number of bands to deposit into (to do autoliquidation-deliquidation),
            can be from MIN_TICKS to MAX_TICKS
+    @return Increase in total debt (including accrued interest since last interaction)
     """
     self._assert_only_controller()
 
@@ -642,6 +641,16 @@ def create_loan(account: address, coll_amount: uint256, debt_amount: uint256, n_
 
 @external
 def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_active_band: int256) -> int256:
+    """
+    @notice Adjust collateral/debt amounts for an existing loan
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.adjust_loan`.
+    @param account Account to adjust the loan for
+    @param coll_change Collateral adjustment amount. A positive value deposits, negative withdraws.
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @param max_active_band Maximum active band (used to prevent front-running)
+    @return Change in total debt (including accrued interest since last interaction)
+    """
     self._assert_only_controller()
 
     amm: LLAMMA = self.AMM
@@ -687,7 +696,12 @@ def adjust_loan(account: address, coll_change: int256, debt_change: int256, max_
 def close_loan(account: address) -> (int256, uint256, uint256[2]):
     """
     @notice Close an existing loan
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.close_loan`.
     @param account The account to close the loan for
+    @return Change in total debt (including accrued interest since last interaction)
+            Debt amount to be repaid
+            (debt, collateral) amounts withdrawn from AMM
     """
     self._assert_only_controller()
 
@@ -699,11 +713,10 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
 
     xy: uint256[2] = amm.withdraw(account, 10**18)
 
-    log UserState(account, 0, 0, 0, 0, 0)
-    self._remove_from_list(account)
-
     self.loan[account] = Loan({initial_debt: 0, rate_mul: 0})
     debt_adjustment: int256 = self._decrease_total_debt(account_debt, rate_mul)
+    debt_adjustment -= self._remove_from_list(account)
+    log UserState(account, 0, 0, 0, 0, 0)
 
     return debt_adjustment, account_debt, xy
 
@@ -712,9 +725,15 @@ def close_loan(account: address) -> (int256, uint256, uint256[2]):
 def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -> (int256, uint256, uint256[2]):
     """
     @notice Perform a bad liquidation (or self-liquidation) of account if health is not good
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.liquidate`.
+    @param caller Address of the account performing the liquidation
     @param target Address of the account to be liquidated
     @param min_x Minimal amount of stablecoin to receive (to avoid liquidators being sandwiched)
     @param frac Fraction to liquidate; 100% = 10**18
+    @return Change in total debt (including accrued interest since last interaction)
+            Debt amount to be repaid
+            (debt, collateral) amounts withdrawn from AMM
     """
     self._assert_only_controller()
 
@@ -748,12 +767,11 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
     assert xy[0] >= min_x, "DFM:M Slippage"
 
     self.loan[target] = Loan({initial_debt: final_debt, rate_mul: rate_mul})
+    debt_adjustment: int256 = self._decrease_total_debt(debt, rate_mul)
+
     if final_debt == 0:
         log UserState(target, 0, 0, 0, 0, 0)  # Not logging partial removeal b/c we have not enough info
-        self._remove_from_list(target)
-
-
-    debt_adjustment: int256 = self._decrease_total_debt(debt, rate_mul)
+        debt_adjustment -= self._remove_from_list(target)
 
     return debt_adjustment, debt, xy
 
@@ -762,6 +780,10 @@ def liquidate(caller: address, target: address, min_x: uint256, frac: uint256) -
 def collect_fees() -> (uint256, uint256[2]):
     """
     @notice Collect the fees charged as interest
+    @dev Only callable by the controller. End users access this functionality
+         by calling `MainController.collect_fees`.
+    @return Increase in total debt (accrued interest since last interaction)
+            (debt, collateral) amounts taken from from AMM as fees
     """
     self._assert_only_controller()
 
@@ -793,36 +815,116 @@ def _assert_only_controller():
 
 @pure
 @internal
-def log2(_x: uint256) -> int256:
+def _log_2(x: uint256) -> uint256:
     """
-    @notice int(1e18 * log2(_x / 1e18))
+    @dev An `internal` helper function that returns the log in base 2
+         of `x`, following the selected rounding direction.
+    @notice Note that it returns 0 if given 0. The implementation is
+            inspired by OpenZeppelin's implementation here:
+            https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/math/Math.sol.
+            This code is taken from snekmate.
+    @param x The 32-byte variable.
+    @return uint256 The 32-byte calculation result.
     """
-    # adapted from: https://medium.com/coinmonks/9aef8515136e
-    # and vyper log implementation
-    # Might use more optimal solmate's log
-    inverse: bool = _x < 10**18
-    res: uint256 = 0
-    x: uint256 = _x
-    if inverse:
-        x = 10**36 / x
-    t: uint256 = 2**7
-    for i in range(8):
-        p: uint256 = pow_mod256(2, t)
-        if x >= unsafe_mul(p, 10**18):
-            x = unsafe_div(x, p)
-            res = unsafe_add(unsafe_mul(t, 10**18), res)
-        t = unsafe_div(t, 2)
-    d: uint256 = 10**18
-    for i in range(34):  # 10 decimals: math.log(10**10, 2) == 33.2. Need more?
-        if (x >= 2 * 10**18):
-            res = unsafe_add(res, d)
-            x = unsafe_div(x, 2)
-        x = unsafe_div(unsafe_mul(x, x), 10**18)
-        d = unsafe_div(d, 2)
-    if inverse:
-        return -convert(res, int256)
-    else:
-        return convert(res, int256)
+    value: uint256 = x
+    result: uint256 = empty(uint256)
+
+    # The following lines cannot overflow because we have the well-known
+    # decay behaviour of `log_2(max_value(uint256)) < max_value(uint256)`.
+    if (x >> 128 != empty(uint256)):
+        value = x >> 128
+        result = 128
+    if (value >> 64 != empty(uint256)):
+        value = value >> 64
+        result = unsafe_add(result, 64)
+    if (value >> 32 != empty(uint256)):
+        value = value >> 32
+        result = unsafe_add(result, 32)
+    if (value >> 16 != empty(uint256)):
+        value = value >> 16
+        result = unsafe_add(result, 16)
+    if (value >> 8 != empty(uint256)):
+        value = value >> 8
+        result = unsafe_add(result, 8)
+    if (value >> 4 != empty(uint256)):
+        value = value >> 4
+        result = unsafe_add(result, 4)
+    if (value >> 2 != empty(uint256)):
+        value = value >> 2
+        result = unsafe_add(result, 2)
+    if (value >> 1 != empty(uint256)):
+        result = unsafe_add(result, 1)
+
+    return result
+
+
+@internal
+@pure
+def wad_ln(x: uint256) -> int256:
+    """
+    @dev Calculates the natural logarithm of a signed integer with a
+         precision of 1e18.
+    @notice Note that it returns 0 if given 0. Furthermore, this function
+            consumes about 1,400 to 1,650 gas units depending on the value
+            of `x`. The implementation is inspired by Remco Bloemen's
+            implementation under the MIT license here:
+            https://xn--2-umb.com/22/exp-ln.
+            This code is taken from snekmate.
+    @param x The 32-byte variable.
+    @return int256 The 32-byte calculation result.
+    """
+    value: int256 = convert(x, int256)
+
+    assert x > 0
+
+    # We want to convert `x` from "10 ** 18" fixed point to "2 ** 96"
+    # fixed point. We do this by multiplying by "2 ** 96 / 10 ** 18".
+    # But since "ln(x * C) = ln(x) + ln(C)" holds, we can just do nothing
+    # here and add "ln(2 ** 96 / 10 ** 18)" at the end.
+
+    # Reduce the range of `x` to "(1, 2) * 2 ** 96".
+    # Also remember that "ln(2 ** k * x) = k * ln(2) + ln(x)" holds.
+    k: int256 = unsafe_sub(convert(self._log_2(x), int256), 96)
+    # Note that to circumvent Vyper's safecast feature for the potentially
+    # negative expression `value <<= uint256(159 - k)`, we first convert the
+    # expression `value <<= uint256(159 - k)` to `bytes32` and subsequently
+    # to `uint256`. Remember that the EVM default behaviour is to use two's
+    # complement representation to handle signed integers.
+    value = convert(convert(convert(value << convert(unsafe_sub(159, k), uint256), bytes32), uint256) >> 159, int256)
+
+    # Evaluate using a "(8, 8)"-term rational approximation. Since `p` is monic,
+    # we will multiply by a scaling factor later.
+    p: int256 = unsafe_add(unsafe_mul(unsafe_add(value, 3_273_285_459_638_523_848_632_254_066_296), value) >> 96, 24_828_157_081_833_163_892_658_089_445_524)
+    p = unsafe_add(unsafe_mul(p, value) >> 96, 43_456_485_725_739_037_958_740_375_743_393)
+    p = unsafe_sub(unsafe_mul(p, value) >> 96, 11_111_509_109_440_967_052_023_855_526_967)
+    p = unsafe_sub(unsafe_mul(p, value) >> 96, 45_023_709_667_254_063_763_336_534_515_857)
+    p = unsafe_sub(unsafe_mul(p, value) >> 96, 14_706_773_417_378_608_786_704_636_184_526)
+    p = unsafe_sub(unsafe_mul(p, value), 795_164_235_651_350_426_258_249_787_498 << 96)
+
+    # We leave `p` in the "2 ** 192" base so that we do not have to scale it up
+    # again for the division. Note that `q` is monic by convention.
+    q: int256 = unsafe_add(unsafe_mul(unsafe_add(value, 5_573_035_233_440_673_466_300_451_813_936), value) >> 96, 71_694_874_799_317_883_764_090_561_454_958)
+    q = unsafe_add(unsafe_mul(q, value) >> 96, 283_447_036_172_924_575_727_196_451_306_956)
+    q = unsafe_add(unsafe_mul(q, value) >> 96, 401_686_690_394_027_663_651_624_208_769_553)
+    q = unsafe_add(unsafe_mul(q, value) >> 96, 204_048_457_590_392_012_362_485_061_816_622)
+    q = unsafe_add(unsafe_mul(q, value) >> 96, 31_853_899_698_501_571_402_653_359_427_138)
+    q = unsafe_add(unsafe_mul(q, value) >> 96, 909_429_971_244_387_300_277_376_558_375)
+
+    # It is known that the polynomial `q` has no zeros in the domain.
+    # No scaling is required, as `p` is already "2 ** 96" too large. Also,
+    # `r` is in the range "(0, 0.125) * 2 ** 96" after the division.
+    r: int256 = unsafe_div(p, q)
+
+    # To finalise the calculation, we have to proceed with the following steps:
+    #   - multiply by the scaling factor "s = 5.549...",
+    #   - add "ln(2 ** 96 / 10 ** 18)",
+    #   - add "k * ln(2)", and
+    #   - multiply by "10 ** 18 / 2 ** 96 = 5 ** 18 >> 78".
+    # In order to perform the most gas-efficient calculation, we carry out all
+    # these steps in one expression.
+    return unsafe_add(unsafe_add(unsafe_mul(r, 1_677_202_110_996_718_588_342_820_967_067_443_963_516_166),\
+           unsafe_mul(k, 16_597_577_552_685_614_221_487_285_958_193_947_469_193_820_559_219_878_177_908_093_499_208_371)),\
+           600_920_179_829_731_861_736_702_779_321_621_459_595_472_258_049_074_101_567_377_883_020_018_308) >> 174
 
 
 @view
@@ -909,13 +1011,13 @@ def _calculate_debt_n1(amm: LLAMMA, collateral: uint256, debt: uint256, n_bands:
     # n1 is band number based on adiabatic trading, e.g. when p_oracle ~ p
     y_effective = unsafe_div(y_effective * p_base, debt + 1)  # Now it's a ratio
 
-    # n1 = floor(log2(y_effective) / self.logAratio)
+    # n1 = floor(log(y_effective) / self.logAratio)
     # EVM semantics is not doing floor unlike Python, so we do this
     assert y_effective > 0, "DFM:M Amount too low"
-    n1: int256 = self.log2(y_effective)
+    n1: int256 = self.wad_ln(y_effective)
     if n1 < 0:
-        n1 -= unsafe_sub(LOG2_A_RATIO, 1)  # This is to deal with vyper's rounding of negative numbers
-    n1 = unsafe_div(n1, LOG2_A_RATIO)
+        n1 -= unsafe_sub(LOGN_A_RATIO, 1)  # This is to deal with vyper's rounding of negative numbers
+    n1 = unsafe_div(n1, LOGN_A_RATIO)
 
     n1 = min(n1, 1024 - convert(n_bands, int256)) + n0
     if n1 <= n0:
@@ -937,10 +1039,10 @@ def max_p_base() -> uint256:
     amm: LLAMMA = self.AMM
     p_oracle: uint256 = amm.price_oracle()
     # Should be correct unless price changes suddenly by MAX_P_BASE_BANDS+ bands
-    n1: int256 = self.log2(amm.get_base_price() * 10**18 / p_oracle)
+    n1: int256 = self.wad_ln(amm.get_base_price() * 10**18 / p_oracle)
     if n1 < 0:
-        n1 -= LOG2_A_RATIO - 1  # This is to deal with vyper's rounding of negative numbers
-    n1 = unsafe_div(n1, LOG2_A_RATIO) + MAX_P_BASE_BANDS
+        n1 -= LOGN_A_RATIO - 1  # This is to deal with vyper's rounding of negative numbers
+    n1 = unsafe_div(n1, LOGN_A_RATIO) + MAX_P_BASE_BANDS
     n_min: int256 = amm.active_band_with_skip()
     n1 = max(n1, n_min + 1)
     p_base: uint256 = amm.p_oracle_up(n1)
@@ -1031,7 +1133,7 @@ def _decrease_total_debt(amount: uint256, rate_mul: uint256) -> int256:
 
 
 @internal
-def _remove_from_list(receiver: address):
+def _remove_from_list(receiver: address) -> int256:
     last_loan_ix: uint256 = self.n_loans - 1
     loan_ix: uint256 = self.loan_ix[receiver]
     assert self.loans[loan_ix] == receiver  # dev: should never fail but safety first
@@ -1041,3 +1143,11 @@ def _remove_from_list(receiver: address):
         self.loans[loan_ix] = last_loan
         self.loan_ix[last_loan] = loan_ix
     self.n_loans = last_loan_ix
+
+    if last_loan_ix == 0:
+        # if this was the last loan, zero the total debt to avoid rounding dust
+        remaining: int256 = convert(self._total_debt.initial_debt, int256)
+        self._total_debt.initial_debt = 0
+        return remaining
+
+    return 0

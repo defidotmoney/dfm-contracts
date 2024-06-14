@@ -1,7 +1,9 @@
 # @version 0.3.10
 """
 @title AggMonetaryPolicy
-@dev monetary policy based on aggregated prices for the protocol stablecoin
+@notice Monetary policy based on aggregated prices for the protocol stablecoin
+@dev To simulate how the interest rate is affected by the different parameters
+     within this contract: https://crvusd-rate.0xreviews.xyz/
 @author Curve.Fi  (with edits by defidotmoney)
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 """
@@ -45,22 +47,35 @@ MAX_SIGMA: constant(uint256) = 10**18
 MIN_SIGMA: constant(uint256) = 10**14
 MAX_EXP: constant(uint256) = 1000 * 10**18
 MAX_RATE: constant(uint256) = 43959106799  # 300% APY
-TARGET_REMAINDER: constant(uint256) = 10**17  # rate is x2 when 10% left before ceiling
+TARGET_REMAINDER: constant(uint256) = 10**17  # rate is scaled by factor of 1.9 at 90% utilization
 
 
 @external
-def __init__(core: CoreOwner,
-             price_oracle: PriceOracle,
-             controller: Controller,
-             rate: uint256,
-             sigma: uint256,
-             target_debt_fraction: uint256):
+def __init__(
+    core: CoreOwner,
+    price_oracle: PriceOracle,
+    controller: Controller,
+    rate: uint256,
+    sigma: uint256,
+    target_debt_fraction: uint256
+):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param price_oracle `AggregateStablePrice` address. Used to determine the
+                        stablecoin price.
+    @param controller `MainController` address.
+    @param rate Base per-second interest rate charged.
+    @param sigma Initial sigma value.
+    @param target_debt_fraction Ideal peg keeper debt fraction.
+    """
     CORE_OWNER = core
     PRICE_ORACLE = price_oracle
     CONTROLLER = controller
 
     assert sigma >= MIN_SIGMA
     assert sigma <= MAX_SIGMA
+    assert target_debt_fraction > 0
     assert target_debt_fraction <= MAX_TARGET_DEBT_FRACTION
     assert rate <= MAX_RATE
     self.rate0 = rate
@@ -89,6 +104,11 @@ def rate_write(market: address) -> uint256:
 
 @external
 def set_rate(rate: uint256):
+    """
+    @notice Set the rate0 variable
+    @dev rate0 determines the base per-second interest rate charged.
+         To calculate from APR: `rate0 = 10**18 * ((apr + 1) ** (1 / 31536000) - 1)`
+    """
     self._assert_only_owner()
     assert rate <= MAX_RATE
     self.rate0 = rate
@@ -97,6 +117,11 @@ def set_rate(rate: uint256):
 
 @external
 def set_sigma(sigma: uint256):
+    """
+    @notice Set the sigma variable
+    @dev Sigma determines how quickly rates increase and decrease due to a stablecoin
+         depeg. A lower value corresponds to a quicker interest rate adjustment.
+    """
     self._assert_only_owner()
     assert sigma >= MIN_SIGMA
     assert sigma <= MAX_SIGMA
@@ -107,6 +132,14 @@ def set_sigma(sigma: uint256):
 
 @external
 def set_target_debt_fraction(target_debt_fraction: uint256):
+    """
+    @notice Set the target peg keeper debt fraction
+    @dev The actual debt fraction is calculated as `peg_keeper_debt / total_debt`.
+         As the debt fraction increases the rate goes lower. As the debt fraction
+         decreases the rate goes higher.
+    @param target_debt_fraction Ideal peg keeper debt fraction, expressed
+                                as a whole number out of 1e18.
+    """
     self._assert_only_owner()
     assert target_debt_fraction <= MAX_TARGET_DEBT_FRACTION
 

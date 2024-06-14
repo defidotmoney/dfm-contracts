@@ -12,12 +12,12 @@ interface ERC20:
     def mint(target: address, amount: uint256) -> bool: nonpayable
     def burn(target: address, amount: uint256) -> bool: nonpayable
 
-interface StableSwap:
-    def get_p() -> uint256: view
-    def price_oracle() -> uint256: view
+interface StableSwapNG:
+    def get_p(i: uint256) -> uint256: view
+    def price_oracle(i: uint256) -> uint256: view
 
 interface PegKeeper:
-    def POOL() -> StableSwap: view
+    def POOL() -> StableSwapNG: view
     def regulator() -> address: view
     def debt() -> uint256: view
     def owed_debt() -> uint256: view
@@ -35,7 +35,7 @@ interface CoreOwner:
 
 event AddPegKeeper:
     peg_keeper: PegKeeper
-    pool: StableSwap
+    pool: StableSwapNG
     is_inverse: bool
 
 event RemovePegKeeper:
@@ -58,7 +58,7 @@ event SetKilled:
 
 struct PegKeeperInfo:
     peg_keeper: PegKeeper
-    pool: StableSwap
+    pool: StableSwapNG
     is_inverse: bool
     debt_ceiling: uint256
 
@@ -74,8 +74,8 @@ ONE: constant(uint256) = 10 ** 18
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(CoreOwner))
 CONTROLLER: public(immutable(address))
+AGGREGATOR: public(immutable(Aggregator))
 
-aggregator: public(Aggregator)
 peg_keepers: public(DynArray[PegKeeperInfo, MAX_LEN])
 peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
 
@@ -92,10 +92,19 @@ is_killed: public(Killed)
 
 @external
 def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: Aggregator, controller: address):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param _stablecoin Address of the protocol stablecoin. This contract must be given
+                  minter privileges within the stablecoin.
+    @param _agg `AggregatorStablePrice` address. Used to determine the stablecoin price.
+    @param controller `MainController` address. After deployment, this address must be
+                      set within the controller using `set_peg_keeper_regulator`.
+    """
     CORE_OWNER = core
     STABLECOIN = _stablecoin
     CONTROLLER = controller
-    self.aggregator = _agg
+    AGGREGATOR = _agg
 
     self.worst_price_threshold = 3 * 10 ** (18 - 4)  # 0.0003
     self.price_deviation = 5 * 10 ** (18 - 4) # 0.0005 = 0.05%
@@ -156,12 +165,13 @@ def get_max_provide(pk: PegKeeper) -> uint256:
         1) current price in range of oracle in case of spam-attack
         2) current price location among other pools in case of contrary coin depeg
         3) stablecoin price is above 1
+    @param pk Address of the peg keeper to check max deposit amount for
     @return Amount of stablecoin allowed to provide
     """
     if self.is_killed in Killed.Provide:
         return 0
 
-    if self.aggregator.price() < ONE:
+    if AGGREGATOR.price() < ONE:
         return 0
 
     price: uint256 = max_value(uint256)
@@ -178,6 +188,7 @@ def get_max_provide(pk: PegKeeper) -> uint256:
             largest_price = price_oracle
         debt_ratios.append(self._get_ratio(info.peg_keeper))
 
+    # underflow here is OK, in a severe depeg we do not wish to add liquidity
     if largest_price < unsafe_sub(price, self.worst_price_threshold):
         return 0
 
@@ -195,12 +206,13 @@ def get_max_withdraw(pk: PegKeeper) -> uint256:
     @dev Checks
         1) current price in range of oracle in case of spam-attack
         2) stablecoin price is below 1
+    @param pk Address of the peg keeper to check max withdrawal amount for
     @return Amount of stablecoin allowed to withdraw
     """
     if self.is_killed in Killed.Withdraw:
         return 0
 
-    if self.aggregator.price() > ONE:
+    if AGGREGATOR.price() > ONE:
         return 0
 
     i: uint256 = self.peg_keeper_i[pk]
@@ -251,6 +263,9 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
     })
     self.peg_keepers.append(info)  # dev: too many pairs
     self.peg_keeper_i[pk] = len(self.peg_keepers)
+
+    # confirm StableSwapNG interface
+    self._get_price_oracle(info)
 
     if debt_ceiling > 0:
         self._mint(pk, debt_ceiling)
@@ -319,6 +334,8 @@ def remove_peg_keeper(pk: PegKeeper):
 def set_worst_price_threshold(_threshold: uint256):
     """
     @notice Set threshold for the worst price that is still accepted
+    @dev If this threshold is violated (due to depeg of one of the paired assets)
+         the peg keepers will not provide any further liquidity.
     @param _threshold Price threshold with base 10 ** 18 (1.0 = 10 ** 18)
     """
     self._assert_only_owner()
@@ -417,7 +434,7 @@ def _get_price(_info: PegKeeperInfo) -> uint256:
     """
     @return Price of the coin in STABLECOIN
     """
-    price: uint256 = _info.pool.get_p()
+    price: uint256 = _info.pool.get_p(0)
     if _info.is_inverse:
         price = 10 ** 36 / price
     return price
@@ -429,7 +446,7 @@ def _get_price_oracle(_info: PegKeeperInfo) -> uint256:
     """
     @return Price of the coin in STABLECOIN
     """
-    price: uint256 = _info.pool.price_oracle()
+    price: uint256 = _info.pool.price_oracle(0)
     if _info.is_inverse:
         price = 10 ** 36 / price
     return price

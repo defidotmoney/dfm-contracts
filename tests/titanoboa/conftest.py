@@ -78,7 +78,7 @@ def price_oracle(admin):
 @pytest.fixture(scope="module")
 def core(admin, fee_receiver):
     with boa.env.prank(admin):
-        return boa.load("contracts/base/DFMProtocolCore.vy", admin, fee_receiver, 0)
+        return boa.load("contracts/testing/MockCoreOwner.vy", admin, fee_receiver)
 
 
 @pytest.fixture(scope="module")
@@ -108,7 +108,7 @@ def controller(core, stablecoin, admin, monetary_policy):
             2**256 - 1,
         )
         stablecoin.setMinter(contract.address, True)
-        operator_impl = boa.load("contracts/cdp/MarketOperator.vy", core, contract, stablecoin, 100)
+        operator_impl = boa.load("contracts/cdp/MarketOperator.vy", core, contract, 100)
         amm_impl = boa.load("contracts/cdp/AMM.vy", contract, stablecoin, 100)
         contract.set_implementations(100, operator_impl, amm_impl)
     return contract

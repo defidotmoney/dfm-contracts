@@ -49,13 +49,6 @@ interface LMGauge:
     def callback_collateral_shares(n: int256, collateral_per_share: DynArray[uint256, MAX_TICKS_UINT]): nonpayable
     def callback_user_shares(user: address, n: int256, user_shares: DynArray[uint256, MAX_TICKS_UINT]): nonpayable
 
-interface AmmHooks:
-    def collateral_balance() -> uint256: view
-    def on_add_hook(market: address, amm: address): nonpayable
-    def on_remove_hook(): nonpayable
-    def before_collateral_out(amount: uint256): nonpayable
-    def after_collateral_in(amount: uint256): nonpayable
-
 
 event TokenExchange:
     buyer: indexed(address)
@@ -106,7 +99,6 @@ CONTROLLER: immutable(address)
 MARKET_OPERATOR: public(address)
 ORACLE: public(PriceOracle)
 
-BORROWED_PRECISION: immutable(uint256)
 COLLATERAL_PRECISION: uint256
 BASE_PRICE: uint256
 A: public(immutable(uint256))
@@ -143,21 +135,24 @@ user_shares: HashMap[address, UserTicks]
 DEAD_SHARES: constant(uint256) = 1000
 
 lm_hook: public(LMGauge)
-exchange_hook: public(AmmHooks)
 
 
 @external
 def __init__(controller: address, stablecoin: ERC20, _A: uint256):
+    """
+    @notice Contract constructor
+    @param controller `MainController` address.
+    @param stablecoin Address of the protocol stablecoin.
+    @param _A amplification coefficient. The size of one band is 1/A.
+    """
     CONTROLLER = controller
     BORROWED_TOKEN = stablecoin
-    BORROWED_PRECISION = 10**(18 - stablecoin.decimals())
     A = _A
 
     Aminus1 = unsafe_sub(A, 1)
     A2 = pow_mod256(A, 2)
     Aminus12 = pow_mod256(unsafe_sub(A, 1), 2)
 
-    # sqrt(A / (A - 1)) - needs to be pre-calculated externally
     SQRT_BAND_RATIO = self.sqrt_int(unsafe_div(10**36 * _A, unsafe_sub(_A, 1)))
 
     # log(A / (A - 1))
@@ -171,7 +166,7 @@ def __init__(controller: address, stablecoin: ERC20, _A: uint256):
             x /= p
             res += t * 10**18
     d: uint256 = 10**18
-    for i in range(59):  # 18 decimals: math.log2(10**10) == 59.7
+    for i in range(59):
         if (x >= 2 * 10**18):
             res += d
             x /= 2
@@ -237,18 +232,6 @@ def coins(i: uint256) -> ERC20:
     if i == 1:
         return self.COLLATERAL_TOKEN
     raise
-
-
-@view
-@external
-def collateral_balance() -> uint256:
-    """
-    @notice The total collateral balance held within the AMM
-    """
-    hook: AmmHooks = self.exchange_hook
-    if hook == empty(AmmHooks):
-        return self.COLLATERAL_TOKEN.balanceOf(self)
-    return hook.collateral_balance()
 
 
 @view
@@ -535,6 +518,8 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
     j: uint256 = MAX_TICKS_UINT
     pump: bool = True
 
+    fee: uint256 = max(self.fee, p_o[1])
+
     for i in range(MAX_TICKS + MAX_SKIP_TICKS):
         assert p_o_up > 0
         x: uint256 = self.bands_x[n]
@@ -542,7 +527,9 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
         if i == 0:
             if p < self._get_p(n, x, y):
                 pump = False
+        dynamic_fee: uint256 = fee
         not_empty: bool = x > 0 or y > 0
+
         if not_empty:
             y0 = self._get_y0(x, y, p_o[0], p_o_up)
             f = unsafe_div(unsafe_div(A * y0 * p_o[0], p_o_up) * p_o[0], 10**18)
@@ -550,6 +537,12 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
             Inv = (f + x) * (g + y)
             if j == MAX_TICKS_UINT:
                 j = 0
+            dynamic_fee = max(self.get_dynamic_fee(p_o[0], p_o_up), fee)
+
+        antifee: uint256 = unsafe_div(
+            (10**18)**2,
+            unsafe_sub(10**18, min(dynamic_fee, 10**18 - 1))
+        )
 
         if p <= p_up:
             if p >= p_down:
@@ -557,9 +550,9 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
                     ynew: uint256 = unsafe_sub(max(self.sqrt_int(Inv * 10**18 / p), g), g)
                     xnew: uint256 = unsafe_sub(max(Inv / (g + ynew), f), f)
                     if pump:
-                        amount += unsafe_sub(max(xnew, x), x)
+                        amount += unsafe_div(unsafe_sub(max(xnew, x), x) * antifee, 10**18)
                     else:
-                        amount += unsafe_sub(max(ynew, y), y)
+                        amount += unsafe_div(unsafe_sub(max(ynew, y), y) * antifee, 10**18)
                 break
 
         # Need this to break if price is too far
@@ -567,7 +560,7 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
 
         if pump:
             if not_empty:
-                amount += (Inv / g - f) - x
+                amount += unsafe_div(((Inv / g - f) - x) * antifee, 10**18)
             if n == max_band:
                 break
             if j == MAX_TICKS_UINT - 1:
@@ -582,7 +575,7 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
 
         else:
             if not_empty:
-                amount += (Inv / f - g) - y
+                amount += unsafe_div(((Inv / f - g) - y) * antifee, 10**18)
             if n == min_band:
                 break
             if j == MAX_TICKS_UINT - 1:
@@ -598,14 +591,11 @@ def get_amount_for_price(p: uint256) -> (uint256, bool):
         if j != MAX_TICKS_UINT:
             j = unsafe_add(j, 1)
 
-    amount = amount * 10**18 / unsafe_sub(10**18, max(self.fee, p_o[1]))
     if amount == 0:
         return 0, pump
 
     # Precision and round up
-    if pump:
-        amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), BORROWED_PRECISION), 1)
-    else:
+    if not pump:
         amount = unsafe_add(unsafe_div(unsafe_sub(amount, 1), self.COLLATERAL_PRECISION), 1)
 
     return amount, pump
@@ -814,7 +804,6 @@ def withdraw(user: address, frac: uint256) -> uint256[2]:
     if old_max_band <= ns[1]:
         self.max_band = max_band
 
-    total_x = unsafe_div(total_x, BORROWED_PRECISION)
     total_y = unsafe_div(total_y, coll_precision)
     log Withdraw(user, total_x, total_y)
 
@@ -891,21 +880,6 @@ def set_rate(rate: uint256) -> uint256:
     self.rate = rate
     log SetRate(rate, rate_mul, block.timestamp)
     return rate_mul
-
-
-@external
-def set_exchange_hook(hook: AmmHooks):
-    self._assert_only_controller()
-    old_hook: AmmHooks = self.exchange_hook
-    if old_hook != empty(AmmHooks):
-        old_hook.on_remove_hook()
-        self._approve_token(self.COLLATERAL_TOKEN, old_hook.address, 0)
-
-    if hook != empty(AmmHooks):
-        self._approve_token(self.COLLATERAL_TOKEN, hook.address, max_value(uint256))
-        hook.on_add_hook(self.MARKET_OPERATOR, self)
-
-    self.exchange_hook = hook
 
 
 # --- internal functions ---
@@ -1391,10 +1365,10 @@ def _get_dxdy(i: uint256, j: uint256, amount: uint256, is_in: bool) -> DetailedT
     out: DetailedTrade = empty(DetailedTrade)
     if amount != 0:
         in_precision: uint256 = self.COLLATERAL_PRECISION
-        out_precision: uint256 = BORROWED_PRECISION
+        out_precision: uint256 = 1
         if i == 0:
             out_precision = in_precision
-            in_precision = BORROWED_PRECISION
+            in_precision = 1
         p_o: uint256[2] = self._price_oracle_ro()
         if is_in:
             out = self.calc_swap_out(i == 0, amount * in_precision, p_o, in_precision, out_precision)
@@ -1689,7 +1663,7 @@ def get_xy_up(user: address, use_y: bool) -> uint256:
     if use_y:
         return unsafe_div(XY, self.COLLATERAL_PRECISION)
 
-    return unsafe_div(XY, BORROWED_PRECISION)
+    return XY
 
 
 @view
@@ -1720,14 +1694,14 @@ def _get_xy(user: address, is_sum: bool) -> DynArray[uint256, MAX_TICKS_UINT][2]
                 xs[0] += dx
                 ys[0] += dy
             else:
-                xs.append(unsafe_div(dx, BORROWED_PRECISION))
+                xs.append(dx)
                 ys.append(unsafe_div(dy, coll_precision))
             if ns[0] == ns[1]:
                 break
             ns[0] = unsafe_add(ns[0], 1)
 
     if is_sum:
-        xs[0] = unsafe_div(xs[0], BORROWED_PRECISION)
+        xs[0] = xs[0]
         ys[0] = unsafe_div(ys[0], coll_precision)
 
     return [xs, ys]
@@ -1775,12 +1749,12 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
 
     in_coin: ERC20 = BORROWED_TOKEN
     out_coin: ERC20 = self.COLLATERAL_TOKEN
-    in_precision: uint256 = BORROWED_PRECISION
+    in_precision: uint256 = 1
     out_precision: uint256 = self.COLLATERAL_PRECISION
     if i == 1:
         in_precision = out_precision
         in_coin = out_coin
-        out_precision = BORROWED_PRECISION
+        out_precision = 1
         out_coin = BORROWED_TOKEN
 
     out: DetailedTrade = empty(DetailedTrade)
@@ -1842,14 +1816,6 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
         lm.callback_collateral_shares(n_start, collateral_shares)
 
     assert in_coin.transferFrom(msg.sender, self, in_amount_done, default_return_value=True)
-
-    hook: AmmHooks = self.exchange_hook
-    if hook != empty(AmmHooks):
-        if j == 0:
-            hook.after_collateral_in(in_amount_done)
-        else:
-            hook.before_collateral_out(out_amount_done)
-
     assert out_coin.transfer(_for, out_amount_done, default_return_value=True)
 
     return [in_amount_done, out_amount_done]

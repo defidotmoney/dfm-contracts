@@ -13,13 +13,12 @@ def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob
     stable.approve(controller, 2**256 - 1, {"from": bob})
     stable.approve(amm, 2**256 - 1, {"from": deployer})
 
-    controller.set_market_hooks(
-        ZERO_ADDRESS, [[hooks, [True, True, True, True]]], {"from": deployer}
-    )
+    hooks.set_configuration(2, [True, True, True, True], {"from": deployer})
+    controller.add_market_hook(ZERO_ADDRESS, hooks, {"from": deployer})
 
     # ensure initial hook debt is sufficient for negative adjustments
     stable.mint(deployer, 200 * 10**18, {"from": controller})
-    controller.increase_total_hook_debt_adjustment(market, 200 * 10**18, {"from": deployer})
+    controller.increase_hook_debt(ZERO_ADDRESS, hooks, 200 * 10**18, {"from": deployer})
 
     # set rate to 100% APR
     policy.set_rate(int(1e18 * 1.0 / 365 / 86400), {"from": alice})
@@ -39,16 +38,27 @@ def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
 @pytest.mark.parametrize("swap_coll", [True, False])
 def test_liquidation(
-    market, stable, collateral, amm, controller, alice, bob, deployer, hooks, adjustment, swap_coll
+    views,
+    market,
+    stable,
+    collateral,
+    amm,
+    controller,
+    alice,
+    bob,
+    deployer,
+    hooks,
+    adjustment,
+    swap_coll,
 ):
     hooks.set_response(adjustment, {"from": alice})
 
     if swap_coll:
         amm.exchange(0, 1, 10_000 * 10**18, 0, {"from": deployer})
 
-    actual = controller.get_market_states_for_account(alice, [market])[0]
+    actual = views.get_market_states_for_account(alice, [market])[0]
     # (account, debt repaid, debt burned from caller, debt burned from amm, coll received, hook adjustment)
-    expected = controller.get_liquidation_amounts(alice, market)
+    expected = views.get_liquidation_amounts(alice, market)
     assert len(expected) == 1
     expected = expected[0]
 
@@ -56,7 +66,7 @@ def test_liquidation(
 
     debt = market.debt(alice)
     assert actual[1] == debt
-    assert expected[1] == debt + adjustment
+    assert expected[1] == debt
 
     debt_amm, coll_amm = amm.get_sum_xy(alice)
     if swap_coll:
@@ -84,20 +94,32 @@ def test_liquidation(
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
 @pytest.mark.parametrize("swap_coll", [True, False])
 def test_close_loan_underwater(
-    market, stable, collateral, amm, controller, alice, deployer, hooks, adjustment, swap_coll
+    views,
+    market,
+    stable,
+    collateral,
+    amm,
+    controller,
+    alice,
+    deployer,
+    hooks,
+    adjustment,
+    swap_coll,
 ):
     hooks.set_response(adjustment, {"from": alice})
 
     if swap_coll:
         amm.exchange(0, 1, 10_000 * 10**18, 0, {"from": deployer})
 
-    actual = controller.get_market_states_for_account(alice, [market])[0]
+    actual = views.get_market_states_for_account(alice, [market])[0]
     # (debt repaid, debt burned from owner, debt burned from amm, coll withdrawn, hook adjustment)
-    expected = controller.get_close_loan_amounts(alice, market)
+    expected = views.get_close_loan_amounts(alice, market)
+    # (debt adjustment for caller, coll withdrawn)
+    expected2 = controller.get_close_loan_amounts(alice, market)
 
     debt = market.debt(alice)
     assert actual[1] == debt
-    assert expected[0] == debt + adjustment
+    assert expected[0] == debt
 
     debt_amm, coll_amm = amm.get_sum_xy(alice)
     if swap_coll:
@@ -106,12 +128,12 @@ def test_close_loan_underwater(
         assert debt_amm == 0
 
     assert actual[2] == coll_amm
-    assert expected[3] == coll_amm
+    assert expected[3] == expected2[1] == coll_amm
 
     assert actual[3] == debt_amm
     assert expected[2] == debt_amm
 
-    assert expected[1] == debt - debt_amm + adjustment
+    assert expected[1] == -expected2[0] == debt - debt_amm + adjustment
     assert expected[4] == adjustment
 
     # hacky mint alice enough stable to close the loan

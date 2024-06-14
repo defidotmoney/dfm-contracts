@@ -31,13 +31,13 @@ def __init__(price: uint256, stablecoin: address):
 
 @external
 @view
-def price_oracle() -> uint256:
+def price_oracle(i: uint256) -> uint256:
     return self.price
 
 
 @external
 @view
-def get_p() -> uint256:
+def get_p(i: uint256) -> uint256:
     return self.price
 
 

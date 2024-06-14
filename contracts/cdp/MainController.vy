@@ -10,6 +10,7 @@ interface ERC20:
     def burn(_to: address, _value: uint256) -> bool: nonpayable
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
+    def balanceOf(account: address) -> uint256: view
 
 interface PriceOracle:
     def price() -> uint256: view
@@ -24,9 +25,7 @@ interface AMM:
         fee: uint256,
         admin_fee: uint256
     ): nonpayable
-    def set_exchange_hook(hook: address): nonpayable
     def set_rate(rate: uint256) -> uint256: nonpayable
-    def collateral_balance() -> uint256: view
     def price_oracle() -> uint256: view
     def rate() -> uint256: view
     def get_sum_xy(account: address) -> (uint256, uint256): view
@@ -62,7 +61,6 @@ interface MarketOperator:
         debt_change: int256,
         num_bands: uint256
     ) -> (uint256, uint256, uint256, int256, int256[2]): view
-    def users_to_liquidate(_from: uint256=0, _limit: uint256=0) -> DynArray[Position, 1000]: view
 
 interface MonetaryPolicy:
     def rate(market: MarketOperator) -> uint256: view
@@ -79,16 +77,11 @@ interface PegKeeperRegulator:
 interface CoreOwner:
     def owner() -> address: view
     def feeReceiver() -> address: view
+    def guardian() -> address: view
 
-interface ControllerHooks:
-    def on_create_loan(account: address, market: address, coll_amount: uint256, debt_amount: uint256) -> int256: nonpayable
-    def on_adjust_loan(account: address, market: address, coll_change: int256, debt_changet: int256) -> int256: nonpayable
-    def on_close_loan(account: address, market: address, account_debt: uint256) -> int256: nonpayable
-    def on_liquidation(caller: address, market: address, target: address, debt_liquidated: uint256) -> int256: nonpayable
+interface MarketHook:
+    def get_configuration() -> (uint256, bool[NUM_HOOK_IDS]): view
 
-interface AmmHooks:
-    def before_collateral_out(amount: uint256): nonpayable
-    def after_collateral_in(amount: uint256): nonpayable
 
 
 event AddMarket:
@@ -102,17 +95,36 @@ event SetDelegateApproval:
     delegate: indexed(address)
     is_approved: bool
 
+event SetDelegationEnabled:
+    caller: address
+    is_enabled: bool
+
+event SetProtocolEnabled:
+    caller: address
+    is_enabled: bool
+
 event SetImplementations:
+    A: indexed(uint256)
     amm: address
     market: address
 
-event SetMarketHooks:
+event AddMarketHook:
     market: indexed(address)
-    hookdata: DynArray[MarketHookData, MAX_HOOKS]
+    hook: indexed(address)
+    hook_type: uint256
+    active_hooks: bool[NUM_HOOK_IDS]
 
-event SetAmmHooks:
+event RemoveMarketHook:
     market: indexed(address)
-    hooks: indexed(address)
+    hook: indexed(address)
+    hook_debt_released: uint256
+
+event HookDebtAjustment:
+    market: indexed(address)
+    hook: indexed(address)
+    adjustment: int256
+    new_hook_debt: uint256
+    new_total_hook_debt: uint256
 
 event AddMonetaryPolicy:
     mp_idx: indexed(uint256)
@@ -136,18 +148,21 @@ event SetPegKeeperRegulator:
 event CreateLoan:
     market: indexed(address)
     account: indexed(address)
+    caller: indexed(address)
     coll_amount: uint256
     debt_amount: uint256
 
 event AdjustLoan:
     market: indexed(address)
     account: indexed(address)
+    caller: indexed(address)
     coll_adjustment: int256
     debt_adjustment: int256
 
 event CloseLoan:
     market: indexed(address)
     account: indexed(address)
+    caller: indexed(address)
     coll_withdrawn: uint256
     debt_withdrawn: uint256
     debt_repaid: uint256
@@ -181,57 +196,9 @@ struct Implementations:
     amm: address
     market_operator: address
 
-struct Position:
-    account: address
-    x: uint256
-    y: uint256
-    debt: uint256
-    health: int256
-
-struct MarketState:
-    total_debt: uint256
-    total_coll: uint256
-    debt_ceiling: uint256
-    remaining_mintable: uint256
-    oracle_price: uint256
-    current_rate: uint256
-    pending_rate: uint256
-
-struct AccountState:
-    market: MarketOperator
-    account_debt: uint256
-    amm_coll_balance: uint256
-    amm_stable_balance: uint256
-    health: int256
-    bands: int256[2]
-    liquidation_range: uint256[2]
-
-struct PendingAccountState:
-    account_debt: uint256
-    amm_coll_balance: uint256
-    amm_stable_balance: uint256
-    health: int256
-    bands: int256[2]
-    liquidation_range: uint256[2]
-    hook_debt_adjustment: int256
-
-struct CloseLoanState:
-    total_debt_repaid: uint256
-    debt_burned: uint256
-    debt_from_amm: uint256
-    coll_withdrawn: uint256
-    hook_debt_adjustment: int256
-
-struct LiquidationState:
-    account: address
-    total_debt_repaid: uint256
-    debt_burned: uint256
-    debt_from_amm: uint256
-    coll_received: uint256
-    hook_debt_adjustment: int256
-
 struct MarketHookData:
     hooks: address
+    hook_type: uint256
     active_hooks: bool[NUM_HOOK_IDS]
 
 
@@ -241,6 +208,11 @@ enum HookId:
     ON_CLOSE_LOAN
     ON_LIQUIDATION
 
+enum HookType:
+    VALIDATION_ONLY
+    FEE_ONLY
+    FEE_AND_REBATE
+
 
 NUM_HOOK_IDS: constant(uint256) = 4
 MAX_HOOKS: constant(uint256) = 4
@@ -248,12 +220,12 @@ MAX_HOOKS: constant(uint256) = 4
 # Limits
 MIN_A: constant(uint256) = 2
 MAX_A: constant(uint256) = 10000
+MAX_RATE: constant(uint256) = 43959106799  # 300% APY
 MIN_FEE: constant(uint256) = 10**6  # 1e-12, still needs to be above 0
 MAX_FEE: constant(uint256) = 10**17  # 10%
 MAX_ADMIN_FEE: constant(uint256) = 10**18  # 100%
 MAX_LOAN_DISCOUNT: constant(uint256) = 5 * 10**17
 MIN_LIQUIDATION_DISCOUNT: constant(uint256) = 10**16
-MAX_ACTIVE_BAND: constant(int256) = max_value(int256)
 
 STABLECOIN: public(immutable(ERC20))
 CORE_OWNER: public(immutable(CoreOwner))
@@ -272,12 +244,14 @@ minted: public(uint256)
 redeemed: public(uint256)
 
 isApprovedDelegate: public(HashMap[address, HashMap[address, bool]])
+isDelegationEnabled: public(bool)
+is_protocol_enabled: public(bool)
 
-global_hooks: DynArray[uint256, MAX_HOOKS]
-market_hooks: HashMap[address, DynArray[uint256, MAX_HOOKS]]
-amm_hooks: HashMap[address, address]
-hook_debt_adjustment: HashMap[address, uint256]
 implementations: HashMap[uint256, Implementations]
+
+market_hooks: HashMap[address, DynArray[uint256, MAX_HOOKS]]
+hook_debt: HashMap[address, HashMap[address, uint256]]
+total_hook_debt: public(uint256)
 
 
 @external
@@ -287,17 +261,29 @@ def __init__(
     monetary_policies: DynArray[MonetaryPolicy, 10],
     debt_ceiling: uint256
 ):
+    """
+    @notice Contract constructor
+    @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
+    @param stable Address of the protocol stablecoin. This contract must be given
+                  minter privileges within the stablecoin.
+    @param monetary_policies Array of `MonetaryPolicy` contracts to initially set.
+    @param debt_ceiling Initial global debt ceiling
+    """
     CORE_OWNER = core
     STABLECOIN = stable
 
     idx: uint256 = 0
     for mp in monetary_policies:
+        log AddMonetaryPolicy(idx, mp)
         self.monetary_policies[idx] = mp
         idx += 1
     self.n_monetary_policies = idx
 
     self.global_market_debt_ceiling = debt_ceiling
     log SetGlobalMarketDebtCeiling(debt_ceiling)
+
+    self.is_protocol_enabled = True
+    self.isDelegationEnabled = True
 
 
 # --- external view functions ---
@@ -311,30 +297,48 @@ def owner() -> address:
 @view
 @external
 def get_market_count() -> uint256:
+    """
+    @notice Get the total number of deployed markets
+    """
     return len(self.markets)
 
 
 @view
 @external
 def get_collateral_count() -> uint256:
+    """
+    @notice Get the number of unique collaterals used within the system
+    @dev It is possible to deploy multiple markets for a collateral, so
+         this number does not necessarily equal the number of markets.
+    """
     return len(self.collaterals)
 
 
 @view
 @external
 def get_all_markets() -> DynArray[MarketOperator, 65536]:
+    """
+    @notice Get a list of all deployed `MarketOperator` contracts
+    """
     return self.markets
 
 
 @view
 @external
 def get_all_collaterals() -> DynArray[address, 65536]:
+    """
+    @notice Get a list of collaterals for which a market exists
+    """
     return self.collaterals
 
 
 @view
 @external
 def get_all_markets_for_collateral(collateral: address) -> DynArray[address, 256]:
+    """
+    @notice Get a list of all deployed `MarketOperator` contracts
+            that use a given collateral
+    """
     return self.collateral_markets[collateral]
 
 
@@ -345,9 +349,9 @@ def get_market(collateral: address, i: uint256 = 0) -> address:
     @notice Get market address for collateral
     @dev Returns empty(address) if market does not exist
     @param collateral Address of collateral token
-    @param i Iterate over several markets for collateral if needed
+    @param i Access the i-th market within the list
     """
-    if i > len(self.collateral_markets[collateral]):
+    if i >= len(self.collateral_markets[collateral]):
         return empty(address)
     return self.collateral_markets[collateral][i]
 
@@ -359,9 +363,9 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
     @notice Get AMM address for collateral
     @dev Returns empty(address) if market does not exist
     @param collateral Address of collateral token
-    @param i Iterate over several amms for collateral if needed
+    @param i Access the i-th collateral within the list
     """
-    if i > len(self.collateral_markets[collateral]):
+    if i >= len(self.collateral_markets[collateral]):
         return empty(address)
     market: address = self.collateral_markets[collateral][i]
     return self.market_contracts[market].amm
@@ -369,235 +373,28 @@ def get_amm(collateral: address, i: uint256 = 0) -> address:
 
 @view
 @external
-def get_market_states(markets: DynArray[MarketOperator, 255]) -> DynArray[MarketState, 255]:
+def get_collateral(market: address) -> address:
     """
-    @notice Get information about the state of one or more markets
-    @dev To calculate annualized interest rate: (1 + rate/1e18)**31536000 - 1
-    @return Total debt,
-            Total deposited collateral,
-            Market debt ceiling,
-            Remaining mintable debt,
-            Oracle price (normalized to 1e18),
-            Current interest rate per second,
-            Pending interest rate (applied on the next interaction)
+    @notice Get collateral token for a market
+    @dev Returns empty(address) if market does not exist
+    @param market Market address
+    @return Address of collateral token
     """
-    market_states: DynArray[MarketState, 255] = []
-
-    for market in markets:
-        state: MarketState = empty(MarketState)
-        c: MarketContracts = self.market_contracts[market.address]
-
-        if c.collateral != empty(address):
-            state.total_debt = market.total_debt()
-            state.total_coll = AMM(c.amm).collateral_balance()
-            state.debt_ceiling = market.debt_ceiling()
-
-            if state.debt_ceiling > state.total_debt:
-                global_ceiling: uint256 = self.global_market_debt_ceiling
-                global_debt: uint256 = self.total_debt
-                if global_ceiling > global_debt:
-                    state.remaining_mintable = min(state.debt_ceiling - state.total_debt, global_ceiling - global_debt)
-
-            state.oracle_price = AMM(c.amm).price_oracle()
-            state.current_rate = AMM(c.amm).rate()
-            state.pending_rate = self.monetary_policies[c.mp_idx].rate(market)
-
-        market_states.append(state)
-
-    return market_states
+    return self.market_contracts[market].collateral
 
 
 @view
 @external
-def get_market_states_for_account(
-    account: address,
-    markets: DynArray[MarketOperator, 255]
-) -> DynArray[AccountState, 255]:
+def get_oracle_price(collateral: address) -> uint256:
     """
-    @notice Get information about the open loans for `account`
-    @dev Results are filtered by markets where `account` has non-zero debt
-    @return Market address,
-            Account debt,
-            AMM balances (collateral, stablecoin),
-            Number of bands,
-            Account health (liquidation is possible at 0),
-            Liquidation price range (high, low)
+    @notice Get the current oracle price for `collateral`
+    @dev Uses the AMM of the first market created for this collateral.
+         Reverts if there is no existing market.
+    @param collateral Address of collateral token
+    @return Oracle price of `collateral` with 1e18 precision
     """
-    account_states: DynArray[AccountState, 255] = []
-
-    for market in markets:
-        c: MarketContracts = self.market_contracts[market.address]
-
-        if c.collateral != empty(address):
-            debt: uint256 = market.debt(account)
-            if debt > 0:
-                state: AccountState = empty(AccountState)
-                state.market = market
-                state.account_debt = debt
-                amm: AMM = AMM(c.amm)
-                state.amm_stable_balance, state.amm_coll_balance = amm.get_sum_xy(account)
-                state.health = market.health(account, True)
-                state.bands = amm.read_user_tick_numbers(account)
-                state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
-                account_states.append(state)
-
-    return account_states
-
-
-@view
-@external
-def get_pending_market_state_for_account(
-    account: address,
-    market: address,
-    coll_change: int256,
-    debt_change: int256,
-    num_bands: uint256 = 0
-) -> PendingAccountState:
-    """
-    @notice Get adjusted market data if `account` opens or adjusts a loan
-    @param account Address opening or adjusting loan
-    @param market Market of the loan being adjusted
-    @param coll_change Collateral adjustment amount. A positive value deposits, negative withdraws.
-    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
-    @param num_bands Number of bands. Ignored if there is already an existing loan.
-    @return New account debt
-            AMM balances (Collateral, stablecoin)
-            Account health
-            Bands (high, low)
-            Liquidation price range (high, low)
-            Debt adjustment applied by hooks
-    """
-    c: MarketContracts = self._get_contracts(market)
-    state: PendingAccountState = empty(PendingAccountState)
-    debt: uint256 = MarketOperator(market).debt(account)
-    assert convert(debt, int256) + debt_change > 0, "DFM:C Negative debt"
-
-    if debt == 0:
-        if coll_change == 0 and debt_change == 0:
-            return state
-
-        assert coll_change > 0 and debt_change > 0, "DFM:C 0 coll or debt"
-        state.hook_debt_adjustment = self._call_view_hooks(
-            market,
-            HookId.ON_CREATE_LOAN,
-            _abi_encode(
-                account,
-                market,
-                coll_change,
-                debt_change,
-                method_id=method_id("on_create_loan_view(address,address,uint256,uint256)")
-            ),
-            self._positive_only_bounds(convert(debt_change, uint256))
-        )
-    elif coll_change != 0 or debt_change != 0:
-        state.hook_debt_adjustment = self._call_view_hooks(
-            market,
-            HookId.ON_ADJUST_LOAN,
-            _abi_encode(
-                account,
-                market,
-                coll_change,
-                debt_change,
-                method_id=method_id("on_adjust_loan_view(address,address,int256,int256)")
-            ),
-            self._adjust_loan_bounds(debt_change)
-        )
-
-    debt_final: int256 = debt_change + state.hook_debt_adjustment
-    (
-        state.account_debt,
-        state.amm_stable_balance,
-        state.amm_coll_balance,
-        state.health,
-        state.bands
-    ) = MarketOperator(market).pending_account_state_calculator(account, coll_change, debt_final, num_bands)
-    amm: AMM = AMM(c.amm)
-    state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
-
-    return state
-
-
-@view
-@external
-def get_close_loan_amounts(account: address, market: address) -> CloseLoanState:
-    """
-    @notice Get balance information related to closing a loan
-    @param account The account to close the loan for
-    @param market Market of the loan being closed
-    @return Total debt repaid
-            Stablecoin amount burned from `account` (balance required to close the loan)
-            Stablecoin amount withdrawn from AMM (used toward repayment)
-            Collateral amount received by `account` once loan is closed
-            Debt adjustment amount applied by hooks
-    """
-    c: MarketContracts = self._get_contracts(market)
-    state: CloseLoanState = empty(CloseLoanState)
-    debt: uint256 = MarketOperator(market).debt(account)
-
-    if debt != 0:
-        state.hook_debt_adjustment = self._call_view_hooks(
-            market,
-            HookId.ON_CLOSE_LOAN,
-            _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)")),
-            self._positive_only_bounds(debt)
-        )
-        state.total_debt_repaid = self._uint_plus_int(debt, state.hook_debt_adjustment)
-        state.debt_from_amm, state.coll_withdrawn = AMM(c.amm).get_sum_xy(account)
-        if state.debt_from_amm < state.total_debt_repaid:
-            state.debt_burned = state.total_debt_repaid - state.debt_from_amm
-
-    return state
-
-
-@view
-@external
-def get_liquidation_amounts(
-    caller: address,
-    market: address,
-    start: uint256=0,
-    limit: uint256=0
-) -> DynArray[LiquidationState, 1000]:
-    """
-    @notice Get a list of liquidatable accounts and related data
-    @param caller Caller address that will perform the liquidations
-    @param market Market to check for liquidations
-    @param start Loan index to start iteration from
-    @param limit Number of loans to iterate over (leave as 0 for all)
-    @return Array of detailed information about liquidatable positions:
-                Address of liquidatable account
-                Total debt to be repaid via liquidation
-                Stablecoin amount burned from `caller` (balance required to perform liquidation)
-                Stablecoin amount withdrawn from AMM (used toward liquidation)
-                Collateral amount received by `caller` from liquidation
-                Debt adjustment amount applied by hooks
-    """
-    self._get_contracts(market)
-    liquidatable_accounts: DynArray[Position, 1000] = MarketOperator(market).users_to_liquidate(start, limit)
-    liquidation_states: DynArray[LiquidationState, 1000] = []
-
-    for item in liquidatable_accounts:
-        state: LiquidationState = empty(LiquidationState)
-        state.account = item.account
-        state.hook_debt_adjustment = self._call_view_hooks(
-            market,
-            HookId.ON_LIQUIDATION,
-            _abi_encode(
-                caller,
-                market,
-                state.account,
-                item.debt,
-                method_id=method_id("on_liquidation_view(address,address,address,uint256)")
-            ),
-            self._positive_only_bounds(item.debt)
-        )
-        state.total_debt_repaid = self._uint_plus_int(item.debt, state.hook_debt_adjustment)
-        state.debt_from_amm = item.x
-        state.coll_received = item.y
-        if state.debt_from_amm < state.total_debt_repaid:
-            state.debt_burned = state.total_debt_repaid - state.debt_from_amm
-        liquidation_states.append(state)
-
-    return liquidation_states
+    market: address = self.collateral_markets[collateral][0]
+    return AMM(self.market_contracts[market].amm).price_oracle()
 
 
 @view
@@ -624,47 +421,49 @@ def max_borrowable(market: MarketOperator, coll_amount: uint256, n_bands: uint25
 @view
 @external
 def get_implementations(A: uint256) -> Implementations:
+    """
+    @notice Get the `MarketOperator` and `AMM` implementation contracts used
+            when deploying a market with the given amplification coefficient.
+    @return (AMM address, MarketOperator address)
+    """
     return self.implementations[A]
 
 
 @view
 @external
-def get_hooks(market: address) -> (address, DynArray[MarketHookData, MAX_HOOKS]):
+def get_market_hooks(market: address) -> DynArray[MarketHookData, MAX_HOOKS]:
     """
     @notice Get the hook contracts and active hooks for the given market
     @param market Market address. Set as empty(address) for global hooks.
-    @return (amm hooks, market hooks)
+    @return market hooks
     """
-    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = []
+    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market]
     hookdata_array: DynArray[MarketHookData, MAX_HOOKS] = []
 
-    if market == empty(address):
-        hookdata_packed_array = self.global_hooks
-    else:
-        hookdata_packed_array = self.market_hooks[market]
 
     for hookdata_packed in hookdata_packed_array:
         hookdata: MarketHookData = empty(MarketHookData)
-        hookdata.hooks = convert(hookdata_packed >> 96, address)
+        hookdata.hooks = self._get_hook_address(hookdata_packed)
+        hookdata.hook_type = (hookdata_packed & 7) >> 1
 
         for i in range(NUM_HOOK_IDS):
-            if hookdata_packed >> i & 1 != 0:
+            if hookdata_packed >> i & 8 != 0:
                 hookdata.active_hooks[i] = True
 
         hookdata_array.append(hookdata)
 
-    return self.amm_hooks[market], hookdata_array
+    return hookdata_array
 
 
 @view
 @external
-def get_total_hook_debt_adjustment(market: address) -> uint256:
+def get_market_hook_debt(market: address, hook: address) -> uint256:
     """
     @notice Get the total aggregate hook debt adjustments for the given market
     @dev The sum of all hook debt adjustments cannot ever be less than zero
          or the system will have uncollateralized debt.
     """
-    return self.hook_debt_adjustment[market]
+    return self.hook_debt[market][hook]
 
 
 @view
@@ -699,7 +498,137 @@ def stored_admin_fees() -> uint256:
     """
     @notice Calculate the amount of fees obtained from the interest
     """
-    return self.total_debt + self.redeemed - self.minted
+    return self.total_debt + self.redeemed - self.minted - self.total_hook_debt
+
+
+@view
+@external
+def get_close_loan_amounts(account: address, market: address) -> (int256, uint256):
+    """
+    @notice Get balance information related to closing a loan
+    @param account The account to close the loan for
+    @param market Market of the loan being closed
+    @return Debt balance change for caller
+             * negative value indicates the amount burned to close
+             * positive value indicates a surplus from the AMM after closing
+            Collateral balance received from AMM
+    """
+    amm: AMM = AMM(self._get_market_contracts_or_revert(market).amm)
+    xy: (uint256, uint256) = amm.get_sum_xy(account)
+
+    debt: uint256 = MarketOperator(market).debt(account)
+    hook_debt_adjustment: int256 = self._call_view_hooks(
+        market,
+        HookId.ON_CLOSE_LOAN,
+        _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)")),
+        self._positive_only_bounds(debt)
+    )
+    debt = self._uint_plus_int(debt, hook_debt_adjustment)
+
+    return convert(xy[0], int256) - convert(debt, int256), xy[1]
+
+
+@view
+@external
+def on_create_loan_hook_adjustment(
+    account: address,
+    market: address,
+    coll_amount: uint256,
+    debt_amount: uint256,
+) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when creating a new loan
+    @param account Account to open the loan for
+    @param market Market where the loan will be opened
+    @param coll_amount Collateral amount to deposit
+    @param debt_amount Stablecoin amount to mint
+    @return adjustment amount applied to the new debt created
+    """
+    return self._call_view_hooks(
+        market,
+        HookId.ON_CREATE_LOAN,
+        _abi_encode(
+            account,
+            market,
+            coll_amount,
+            debt_amount,
+            method_id=method_id("on_create_loan_view(address,address,uint256,uint256)")
+        ),
+        self._positive_only_bounds(debt_amount)
+    )
+
+
+@view
+@external
+def on_adjust_loan_hook_adjustment(
+    account: address,
+    market: address,
+    coll_change: int256,
+    debt_change: int256
+) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when adjusting an existing loan
+    @param account Account to adjust the loan for
+    @param market Market of the loan being adjusted
+    @param coll_change Collateral adjustment amount. A positive value deposits, negative withdraws.
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @return adjustment amount applied to `debt_change`
+    """
+    return self._call_view_hooks(
+        market,
+        HookId.ON_ADJUST_LOAN,
+        _abi_encode(
+            account,
+            market,
+            coll_change,
+            debt_change,
+            method_id=method_id("on_adjust_loan_view(address,address,int256,int256)")
+        ),
+        self._adjust_loan_bounds(debt_change)
+    )
+
+
+@view
+@external
+def on_close_loan_hook_adjustment(account: address, market: address) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when closing a loan
+    @param account The account to close the loan for
+    @param market Market of the loan being closed
+    @return adjustment amount applied to the debt burned when closing the loan
+    """
+    debt: uint256 = MarketOperator(market).debt(account)
+    return self._call_view_hooks(
+        market,
+        HookId.ON_CLOSE_LOAN,
+        _abi_encode(account, market, debt, method_id=method_id("on_close_loan_view(address,address,uint256)")),
+        self._positive_only_bounds(debt)
+    )
+
+
+@view
+@external
+def on_liquidate_hook_adjustment(caller: address, market: address, target: address) -> int256:
+    """
+    @notice Get the aggregate hook debt adjustment when liquidating a loan
+    @param caller Caller address that will perform the liquidations
+    @param market Market to check for liquidations
+    @param target Address of the account to be liquidated
+    @return adjustment amount applied to the debt burned during liquidation
+    """
+    debt: uint256 = MarketOperator(market).debt(target)
+    return self._call_view_hooks(
+        market,
+        HookId.ON_LIQUIDATION,
+        _abi_encode(
+            caller,
+            market,
+            target,
+            debt,
+            method_id=method_id("on_liquidation_view(address,address,address,uint256)")
+        ),
+        self._positive_only_bounds(debt)
+    )
 
 
 # --- unguarded nonpayable functions ---
@@ -739,8 +668,9 @@ def create_loan(
                    Can be from market.MIN_TICKS() to market.MAX_TICKS()
     """
     assert coll_amount > 0 and debt_amount > 0, "DFM:C 0 coll or debt"
+    self._assert_is_protocol_enabled()
     self._assert_caller_or_approved_delegate(account)
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     hook_adjust: int256 = self._call_hooks(
         market,
@@ -764,11 +694,12 @@ def create_loan(
 
     self.total_debt = total_debt
     self.minted += debt_amount
-    self._update_rate(market, c.amm, c.mp_idx)
 
     STABLECOIN.mint(msg.sender, debt_amount)
 
-    log CreateLoan(market, account, coll_amount, debt_amount_final)
+    self._update_rate(market, c.amm, c.mp_idx)
+
+    log CreateLoan(market, account, msg.sender, coll_amount, debt_amount_final)
 
 
 @external
@@ -790,8 +721,9 @@ def adjust_loan(
     """
     assert coll_change != 0 or debt_change != 0, "DFM:C No change"
 
+    self._assert_is_protocol_enabled()
     self._assert_caller_or_approved_delegate(account)
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     debt_change_final: int256 = self._call_hooks(
         market,
@@ -810,7 +742,6 @@ def adjust_loan(
 
     total_debt: uint256 = self._uint_plus_int(self.total_debt, debt_adjustment)
     self.total_debt = total_debt
-    self._update_rate(market, c.amm, c.mp_idx)
 
     if debt_change != 0:
         debt_change_abs: uint256 = convert(abs(debt_change), uint256)
@@ -829,21 +760,27 @@ def adjust_loan(
         else:
             self._withdraw_collateral(msg.sender, c.collateral, c.amm, coll_change_abs)
 
-    log AdjustLoan(market, account, coll_change, debt_change_final)
+    self._update_rate(market, c.amm, c.mp_idx)
+
+    log AdjustLoan(market, account, msg.sender, coll_change, debt_change_final)
 
 
 @external
 @nonreentrant('lock')
-def close_loan(account: address, market: address):
+def close_loan(account: address, market: address) -> (int256, uint256):
     """
     @notice Close an existing loan
     @dev This function does not interact with the market's price oracle, so that
          users can still close their loans in case of a reverting oracle.
     @param account The account to close the loan for
     @param market Market of the loan being closed
+    @return Debt balance change for caller
+             * negative value indicates the amount burned to close
+             * positive value indicates a surplus from the AMM after closing
+            Collateral balance received from AMM
     """
     self._assert_caller_or_approved_delegate(account)
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     debt_adjustment: int256 = 0
     burn_amount: uint256 = 0
@@ -860,7 +797,6 @@ def close_loan(account: address, market: address):
 
     self.redeemed += burn_amount
     self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     if xy[0] > 0:
         STABLECOIN.transferFrom(c.amm, msg.sender, xy[0])
@@ -868,21 +804,29 @@ def close_loan(account: address, market: address):
     if xy[1] > 0:
         self._withdraw_collateral(msg.sender, c.collateral, c.amm, xy[1])
 
-    log CloseLoan(market, account, xy[1], xy[0], burn_amount)
+    self._update_rate(market, c.amm, c.mp_idx)
+
+    log CloseLoan(market, account, msg.sender, xy[1], xy[0], burn_amount)
+
+    return convert(xy[0], int256) - convert(burn_amount, int256), xy[1]
 
 
 @external
 @nonreentrant('lock')
-def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 10**18):
+def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 10**18) -> (int256, uint256):
     """
     @notice Perform a liquidation (or self-liquidation) on an unhealthy account
     @param market Market of the loan being liquidated
     @param target Address of the account to be liquidated
     @param min_x Minimal amount of stablecoin to receive (to avoid liquidators being sandwiched)
     @param frac Fraction to liquidate; 100% = 10**18
+    @return Debt balance change for caller
+             * negative value indicates the amount burned to liquidate
+             * positive value indicates a surplus received from the AMM
+            Collateral balance received from AMM
     """
     assert frac <= 10**18, "DFM:C frac too high"
-    c: MarketContracts = self._get_contracts(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
 
     debt_adjustment: int256 = 0
     debt_amount: uint256 = 0
@@ -905,7 +849,6 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
 
     self.redeemed += debt_amount
     self.total_debt = self._uint_plus_int(self.total_debt, debt_adjustment)
-    self._update_rate(market, c.amm, c.mp_idx)
 
     burn_amm: uint256 = min(xy[0], debt_amount)
     if burn_amm != 0:
@@ -920,7 +863,11 @@ def liquidate(market: address, target: address, min_x: uint256, frac: uint256 = 
     if xy[1] > 0:
         self._withdraw_collateral(msg.sender, c.collateral, c.amm, xy[1])
 
+    self._update_rate(market, c.amm, c.mp_idx)
+
     log LiquidateLoan(market, msg.sender, target, xy[1], xy[0], debt_amount)
+
+    return convert(xy[0], int256) - convert(debt_amount, int256), xy[1]
 
 
 @external
@@ -931,6 +878,8 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     @param market_list List of markets to collect fees from. Can be left empty
                        to only claim already-stored interest fees.
     """
+    self._assert_is_protocol_enabled()
+
     receiver: address = CORE_OWNER.feeReceiver()
 
     debt_increase_total: uint256 = 0
@@ -940,7 +889,7 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
 
     # collect market fees and calculate aggregate debt increase
     for market in market_list:
-        c: MarketContracts = self._get_contracts(market)
+        c: MarketContracts = self._get_market_contracts_or_revert(market)
 
         debt_increase: uint256 = 0
         xy: uint256[2] = empty(uint256[2])
@@ -962,42 +911,53 @@ def collect_fees(market_list: DynArray[address, 255]) -> uint256:
     # update total debt and market rates
     total_debt: uint256 = self.total_debt + debt_increase_total
     self.total_debt = total_debt
-    i = 0
-    for market in market_list:
-        self._update_rate(market, amm_list[i], mp_idx_list[i])
-        i = unsafe_add(i, 1)
 
     mint_total: uint256 = 0
     minted: uint256 = self.minted
     redeemed: uint256 = self.redeemed
-    to_be_redeemed: uint256 = total_debt + redeemed
+    to_be_redeemed: uint256 = total_debt + redeemed - self.total_hook_debt
 
-    # Difference between to_be_redeemed and minted amount is exactly due to interest charged
     if to_be_redeemed > minted:
         self.minted = to_be_redeemed
         mint_total = unsafe_sub(to_be_redeemed, minted)  # Now this is the fees to charge
         STABLECOIN.mint(receiver, mint_total)
+
+    i = 0
+    for market in market_list:
+        self._update_rate(market, amm_list[i], mp_idx_list[i])
+        i = unsafe_add(i, 1)
 
     log CollectFees(minted, redeemed, total_debt, mint_total)
     return mint_total
 
 
 @external
-def increase_total_hook_debt_adjustment(market: address, amount: uint256):
+def increase_hook_debt(market: address, hook: address, amount: uint256):
     """
-    @notice Burn debt to increase the total aggregate hook debt adjustment
-            value for the given market. Used to pre-fund hook debt rebates.
+    @notice Burn debt to increase the available hook debt value for a given
+            market hook. This can be used to pre-fund hook debt rebates.
     """
-    assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+    if market != empty(address):
+        self._assert_market_exists(market)
+
+    num_hooks: uint256 = len(self.market_hooks[market])
+    for i in range(MAX_HOOKS + 1):
+        if i == num_hooks:
+            raise "DFM:C Unknown hook"
+        hookdata: uint256 = self.market_hooks[market][i]
+        if self._get_hook_address(hookdata) == hook:
+            assert self._get_hook_type(hookdata) == HookType.FEE_AND_REBATE, "DFM:C Hook does not track debt"
+            break
 
     STABLECOIN.burn(msg.sender, amount)
-    self.hook_debt_adjustment[market] += amount
+    self.hook_debt[market][hook] += amount
+    self.total_hook_debt += amount
+    self.redeemed += amount
 
 
 # --- owner-only nonpayable functions ---
 
 @external
-@nonreentrant('lock')
 def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, oracle: PriceOracle,
                mp_idx: uint256, loan_discount: uint256, liquidation_discount: uint256,
                debt_ceiling: uint256) -> address[2]:
@@ -1017,7 +977,7 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
     self._assert_only_owner()
     assert fee <= MAX_FEE, "DFM:C Fee too high"
     assert fee >= MIN_FEE, "DFM:C Fee too low"
-    assert admin_fee < MAX_ADMIN_FEE, "DFM:C Admin fee too high"
+    assert admin_fee <= MAX_ADMIN_FEE, "DFM:C Admin fee too high"
     assert liquidation_discount >= MIN_LIQUIDATION_DISCOUNT, "DFM:C liq discount too low"
     assert loan_discount <= MAX_LOAN_DISCOUNT, "DFM:C Loan discount too high"
     assert loan_discount > liquidation_discount, "DFM:C loan discount<liq discount"
@@ -1079,56 +1039,82 @@ def set_implementations(A: uint256, market: address, amm: address):
         assert AMM(amm).A() == A, "DFM:C incorrect amm A"
 
     self.implementations[A] = Implementations({amm: amm, market_operator: market})
-    log SetImplementations(amm, market)
+    log SetImplementations(A, amm, market)
 
 
 @external
-def set_market_hooks(market: address, hookdata_array: DynArray[MarketHookData, MAX_HOOKS]):
+def add_market_hook(market: address, hook: address):
     """
-    @notice Set callback hooks for `market`
-    @dev Existing hooks are replaced with this call, be sure to include
-         previously set hooks if the goal is to add a new one
-    @param market Market to set hooks for. Set as empty(address) for global hooks.
-    @param hookdata_array Dynamic array with hook configuration data
+    @notice Add a new callback hook contract for `market`
+    @dev Hook contracts must adhere to the interface and specification defined
+         at `interfaces/IControllerHooks.sol`
+    @param market Market to add a hook for. Use empty(address) to set a global hook.
+    @param hook Address of the hook contract.
     """
     self._assert_only_owner()
 
-    hookdata_packed_array: DynArray[uint256, MAX_HOOKS] = []
-    for hookdata in hookdata_array:
-        assert hookdata.hooks != empty(address), "DFM:C Empty hooks address"
-        hookdata_packed: uint256 = (convert(hookdata.hooks, uint256) << 96)
+    if market != empty(address):
+        self._assert_market_exists(market)
 
-        for i in range(NUM_HOOK_IDS):
-            if hookdata.active_hooks[i]:
-                hookdata_packed += 1 << i
+    market_hooks: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market]
+    assert len(market_hooks) < MAX_HOOKS, "DFM:C Maximum hook count reached"
+    for hookdata in market_hooks:
+        assert self._get_hook_address(hookdata) != hook, "DFM:C Hook already added"
 
-        assert hookdata_packed % (1 << NUM_HOOK_IDS) != 0, "DFM:C No active hooks"
-        hookdata_packed_array.append(hookdata_packed)
+    config: (uint256, bool[NUM_HOOK_IDS]) = MarketHook(hook).get_configuration()
 
-    if market == empty(address):
-        self.global_hooks = hookdata_packed_array
-    else:
-        self.market_hooks[market] = hookdata_packed_array
+    # add hook type to 3 lowest bits
+    assert config[0] < 3, "DFM:C Invalid hook type"
+    hookdata_packed: uint256 = 1 << config[0]
 
-    log SetMarketHooks(market, hookdata_array)
+    # add hook ids starting from 4th bit
+    for i in range(NUM_HOOK_IDS):
+        if config[1][i]:
+            hookdata_packed += 1 << (i + 3)
+
+    assert (hookdata_packed >> 3) > 0, "DFM:C No active hook points"
+
+    # add address starting from 96th bit
+    hookdata_packed += convert(hook, uint256) << 96
+
+    self.market_hooks[market].append(hookdata_packed)
+
+    log AddMarketHook(market, hook, config[0], config[1])
 
 
 @external
-def set_amm_hook(market: address, hook: address):
+def remove_market_hook(market: address, hook: address):
     """
-    @notice Set callback hooks for `market`'s AMM
-    @dev When an AMM hook is set, the AMM also approves the hook to transfer the collateral token.
-    @param market Market to set the hooks for
-    @param hook Address of the AMM hooks contract. Set to empty(address) to disable.
+    @notice Remove a callback hook contract for `market`
+    @dev If the hook type is `FEE_AND_REBATE` and the current `hook_debt`
+         is non-zero, is balance is creditted to the protocol fees.
+    @param market Market to remove the hooks from. Set as empty(address) to
+                  remove a global hook.
+    @param hook Address of the hook contract.
     """
     self._assert_only_owner()
-    amm: address = self._get_contracts(market).amm
-    amount: uint256 = AMM(amm).collateral_balance()
-    AMM(amm).set_exchange_hook(hook)
-    assert AMM(amm).collateral_balance() == amount, "DFM:C balance changed"
-    self.amm_hooks[amm] = hook
 
-    log SetAmmHooks(market, hook)
+    if market != empty(address):
+        self._assert_market_exists(market)
+
+    num_hooks: uint256 = len(self.market_hooks[market])
+    for i in range(MAX_HOOKS + 1):
+        if i == num_hooks:
+            raise "DFM:C Unknown hook"
+        if self._get_hook_address(self.market_hooks[market][i]) != hook:
+            continue
+
+        last_hookdata: uint256 = self.market_hooks[market].pop()
+        if i < num_hooks - 1:
+            self.market_hooks[market][i] = last_hookdata
+        break
+
+    hook_debt: uint256 = self.hook_debt[market][hook]
+    if hook_debt > 0:
+        self._adjust_hook_debt(market, hook, -convert(hook_debt, int256))
+
+    log RemoveMarketHook(market, hook, hook_debt)
+
 
 
 @external
@@ -1167,7 +1153,9 @@ def change_market_monetary_policy(market: address, mp_idx: uint256):
     @dev Also updates the current market rate
     """
     self._assert_only_owner()
+    self._assert_market_exists(market)
     assert mp_idx < self.n_monetary_policies, "DFM:C invalid mp_idx"
+
     self.market_contracts[market].mp_idx = mp_idx
     self._update_rate(market, self.market_contracts[market].amm, mp_idx)
 
@@ -1201,6 +1189,35 @@ def set_peg_keeper_regulator(regulator: PegKeeperRegulator, with_migration: bool
     log SetPegKeeperRegulator(regulator.address, with_migration)
 
 
+@external
+def set_protocol_enabled(is_enabled: bool):
+    """
+    @notice Enable or disable the protocol in case of an emergency.
+    @dev * While disabled, `close_loan` and `liquidate` are the only callable
+           functions related to loan management.
+         * Only the owner can enable.
+         * The owner and the guardian are both able to disable.
+    """
+    self._assert_owner_or_guardian_toggle(is_enabled)
+    self.is_protocol_enabled = is_enabled
+
+    log SetProtocolEnabled(msg.sender, is_enabled)
+
+
+@external
+def setDelegationEnabled(is_enabled: bool):
+    """
+    @notice Enable or disable all delegated operations within this contract
+    @dev Delegated operations are enabled by default upon deployment.
+         Only the owner can enable. The owner or the guardian can disable.
+    """
+    self._assert_owner_or_guardian_toggle(is_enabled)
+    self.isDelegationEnabled = is_enabled
+
+    log SetDelegationEnabled(msg.sender, is_enabled)
+
+
+
 # --- internal functions ---
 
 @view
@@ -1211,8 +1228,26 @@ def _assert_only_owner():
 
 @view
 @internal
+def _assert_owner_or_guardian_toggle(is_enabled: bool):
+    if msg.sender != CORE_OWNER.owner():
+        if msg.sender == CORE_OWNER.guardian():
+            assert not is_enabled, "DFM:C Guardian can only disable"
+        else:
+            raise "DFM:C Not owner or guardian"
+
+
+@view
+@internal
+def _assert_is_protocol_enabled():
+    assert self.is_protocol_enabled, "DFM:C Protocol pause, close only"
+
+
+
+@view
+@internal
 def _assert_caller_or_approved_delegate(account: address):
     if msg.sender != account:
+        assert self.isDelegationEnabled, "DFM:C Delegation disabled"
         assert self.isApprovedDelegate[account][msg.sender], "DFM:C Delegate not approved"
 
 
@@ -1232,6 +1267,12 @@ def _assert_in_bounds(amount: int256, bounds: int256[2], is_sum: bool):
             raise "DFM:C Hook caused invalid debt"
 
 
+@view
+@internal
+def _assert_market_exists(market: address):
+    assert self.market_contracts[market].collateral != empty(address), "DFM:C Invalid market"
+
+
 @pure
 @internal
 def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
@@ -1246,7 +1287,7 @@ def _uint_plus_int(initial: uint256, adjustment: int256) -> uint256:
 def _adjust_loan_bounds(debt_change: int256) -> int256[2]:
     if debt_change < 0:
         # when reducing debt, hook cannot cause a debt increase
-        return [-2**255, -debt_change]
+        return [min_value(int256), -debt_change]
     if debt_change > 0:
         # when increasing debt, hook cannot cause a debt reduction
         return [-debt_change, max_value(int256)]
@@ -1263,7 +1304,7 @@ def _positive_only_bounds(debt_amount: uint256) -> int256[2]:
 
 @view
 @internal
-def _get_contracts(market: address) -> MarketContracts:
+def _get_market_contracts_or_revert(market: address) -> MarketContracts:
     c: MarketContracts = self.market_contracts[market]
 
     assert c.collateral != empty(address), "DFM:C Invalid market"
@@ -1273,106 +1314,131 @@ def _get_contracts(market: address) -> MarketContracts:
 
 @view
 @internal
-def _limit_debt_adjustment(market: address, debt_adjustment: int256) -> (int256, uint256):
-    total_adjustment: int256 = convert(self.hook_debt_adjustment[market], int256)
-    if debt_adjustment < 0 and abs(debt_adjustment) > total_adjustment:
-        debt_adjustment = -total_adjustment
-    return debt_adjustment, convert(debt_adjustment + total_adjustment, uint256)
+def _get_hook_address(hookdata: uint256) -> address:
+    # hook address is stored in the upper 160 bits
+    return convert(hookdata >> 96, address)
 
 
 @view
 @internal
-def _call_view_hook(
-    hookdata_array: DynArray[uint256, MAX_HOOKS],
-    hook_id: HookId,
-    calldata: Bytes[255],
-    bounds: int256[2]
-) -> int256:
-    if len(hookdata_array) == 0:
-        return 0
+def _get_hook_type(hookdata: uint256) -> HookType:
+    # hook type is indicated in the three lowest bits:
+    # 0b001 == VALIDATION_ONLY (cannot adjust debt)
+    # 0b010 == FEE_ONLY (can only increase debt, adjustment is added to fees)
+    # 0b100 == FEE_AND_REBATE (can increase and decrease debt, aggregate sum tracked in `hook_debt`)
+    return convert(hookdata & 7, HookType)
 
-    total: int256 = 0
-    for hookdata in hookdata_array:
-        if hookdata & convert(hook_id, uint256) == 0:
-            continue
 
-        hook: address = convert(hookdata >> 96, address)
-        response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
-        self._assert_in_bounds(response, bounds, False)
-        total += response
-
-    return total
+@view
+@internal
+def _is_hook_id_active(hookdata: uint256, hook_id: HookId) -> bool:
+    # hook ids are tracked from the 4th bit onward
+    return hookdata & (convert(hook_id, uint256) << 3) != 0
 
 
 @view
 @internal
 def _call_view_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
     debt_adjustment: int256 = 0
+    for market_hooks_key in [market, empty(address)]:
+        hookdata_array: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market_hooks_key]
+        if len(hookdata_array) == 0:
+            continue
 
-    debt_adjustment += self._call_view_hook(self.market_hooks[market], hook_id, calldata, bounds)
-    debt_adjustment += self._call_view_hook(self.global_hooks, hook_id, calldata, bounds)
+        for hookdata in hookdata_array:
+            if not self._is_hook_id_active(hookdata, hook_id):
+                continue
 
-    self._assert_in_bounds(debt_adjustment, bounds, True)
-    return self._limit_debt_adjustment(market, debt_adjustment)[0]
+            hook: address = self._get_hook_address(hookdata)
+            response: int256 = convert(raw_call(hook, calldata, max_outsize=32, is_static_call=True), int256)
+            if response == 0:
+                continue
+
+            hook_type: HookType = self._get_hook_type(hookdata)
+            if hook_type == HookType.VALIDATION_ONLY:
+                raise "DFM:C Hook cannot adjust debt"
+            if hook_type == HookType.FEE_ONLY:
+                self._assert_in_bounds(response, [0, bounds[1]], False)
+            else:
+                self._assert_in_bounds(response, bounds, False)
+                if response < 0:
+                    hook_debt: uint256 = self.hook_debt[market_hooks_key][hook]
+                    assert hook_debt >= convert(-response, uint256), "DFM:C Hook debt underflow"
+
+            debt_adjustment += response
+
+    if debt_adjustment != 0:
+        self._assert_in_bounds(debt_adjustment, bounds, True)
+
+    return debt_adjustment
 
 
 @internal
 def _deposit_collateral(account: address, collateral: address, amm: address, amount: uint256):
     assert ERC20(collateral).transferFrom(account, amm, amount, default_return_value=True)
 
-    hooks: address = self.amm_hooks[amm]
-    if hooks != empty(address):
-        AmmHooks(hooks).after_collateral_in(amount)
-
-
 
 @internal
 def _withdraw_collateral(account: address, collateral: address, amm: address, amount: uint256):
-    hooks: address = self.amm_hooks[amm]
-    if hooks != empty(address):
-        AmmHooks(hooks).before_collateral_out(amount)
-
     assert ERC20(collateral).transferFrom(amm, account, amount, default_return_value=True)
 
 
 @internal
-def _call_hook(
-    hookdata_array: DynArray[uint256, MAX_HOOKS],
+def _call_hooks(
+    market: address,
     hook_id: HookId,
     calldata: Bytes[255],
     bounds: int256[2]
 ) -> int256:
-    if len(hookdata_array) == 0:
-        return 0
-
-    total: int256 = 0
-    for hookdata in hookdata_array:
-        if hookdata & convert(hook_id, uint256) == 0:
+    debt_adjustment: int256 = 0
+    for market_hooks_key in [market, empty(address)]:
+        hookdata_array: DynArray[uint256, MAX_HOOKS] = self.market_hooks[market_hooks_key]
+        if len(hookdata_array) == 0:
             continue
 
-        hook: address = convert(hookdata >> 96, address)
-        response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
-        self._assert_in_bounds(response, bounds, False)
-        total += response
+        for hookdata in hookdata_array:
+            if not self._is_hook_id_active(hookdata, hook_id):
+                continue
 
-    return total
+            hook: address = self._get_hook_address(hookdata)
+            response: int256 = convert(raw_call(hook, calldata, max_outsize=32), int256)
+            if response == 0:
+                continue
 
+            hook_type: HookType = self._get_hook_type(hookdata)
+            if hook_type == HookType.VALIDATION_ONLY:
+                raise "DFM:C Hook cannot adjust debt"
+            if hook_type == HookType.FEE_ONLY:
+                self._assert_in_bounds(response, [0, bounds[1]], False)
+            else:
+                self._assert_in_bounds(response, bounds, False)
+                self._adjust_hook_debt(market_hooks_key, hook, response)
 
-@internal
-def _call_hooks(market: address, hook_id: HookId, calldata: Bytes[255], bounds: int256[2]) -> int256:
-    debt_adjustment: int256 = 0
-
-    debt_adjustment += self._call_hook(self.market_hooks[market], hook_id, calldata, bounds)
-    debt_adjustment += self._call_hook(self.global_hooks, hook_id, calldata, bounds)
+            debt_adjustment += response
 
     if debt_adjustment != 0:
         self._assert_in_bounds(debt_adjustment, bounds, True)
-        debt_adjustment, self.hook_debt_adjustment[market] = self._limit_debt_adjustment(market, debt_adjustment)
 
     return debt_adjustment
 
 
 @internal
+def _adjust_hook_debt(market: address, hook: address, adjustment: int256):
+    hook_debt: uint256 = self.hook_debt[market][hook]
+    if adjustment < 0:
+        assert hook_debt >= convert(-adjustment, uint256), "DFM:C Hook debt underflow"
+
+    hook_debt = self._uint_plus_int(hook_debt, adjustment)
+    total_hook_debt: uint256 = self._uint_plus_int(self.total_hook_debt, adjustment)
+    self.hook_debt[market][hook] = hook_debt
+    self.total_hook_debt = total_hook_debt
+
+    log HookDebtAjustment(market, hook, adjustment, hook_debt, total_hook_debt)
+
+
+@internal
 def _update_rate(market: address, amm: address, mp_idx: uint256):
-    mp_rate: uint256 = self.monetary_policies[mp_idx].rate_write(market)
+    # rate update is always the final action in a function, so that the
+    # monetary policy has an accurate view of the current state
+    mp_rate: uint256 = min(self.monetary_policies[mp_idx].rate_write(market), MAX_RATE)
     AMM(amm).set_rate(mp_rate)

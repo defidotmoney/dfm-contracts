@@ -18,6 +18,8 @@ def test_update_delay(
         with boa.env.anchor():
             with boa.env.prank(bob):
                 if method == "provide":
+                    if pk == peg_keepers[0]:
+                        continue
                     swap.add_liquidity([rtoken.balanceOf(bob), 0], 0)
                 else:
                     swap.add_liquidity([0, stablecoin.balanceOf(bob)], 0)

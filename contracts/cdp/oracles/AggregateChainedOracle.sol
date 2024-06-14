@@ -116,7 +116,6 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
         oracleCallPaths.push();
         OracleCall[] storage storagePath = oracleCallPaths[oracleCallPaths.length - 1];
         for (uint256 i = 0; i < length; i++) {
-            require(path[i].decimals != 0, "DFM: Decimals cannot be 0");
             require(path[i].decimals < 19, "DFM: Maximum 18 decimals");
             storagePath.push(path[i]);
         }

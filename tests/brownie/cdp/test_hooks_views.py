@@ -9,21 +9,20 @@ def setup(hooks, collateral, controller, market, stable, alice, deployer):
         collateral._mint_for_testing(acct, 100 * 10**18)
         collateral.approve(controller, 2**256 - 1, {"from": acct})
 
-    controller.set_market_hooks(
-        ZERO_ADDRESS, [[hooks, [True, True, True, True]]], {"from": deployer}
-    )
+    hooks.set_configuration(2, [True, True, True, True], {"from": deployer})
+    controller.add_market_hook(ZERO_ADDRESS, hooks, {"from": deployer})
 
     # ensure initial hook debt is sufficient for negative adjustments
     stable.mint(deployer, 200 * 10**18, {"from": controller})
-    controller.increase_total_hook_debt_adjustment(market, 200 * 10**18, {"from": deployer})
+    controller.increase_hook_debt(ZERO_ADDRESS, hooks, 200 * 10**18, {"from": deployer})
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
 @pytest.mark.parametrize("num_bands", [5, 33, 50])
-def test_create_loan_adjust(market, amm, controller, alice, hooks, adjustment, num_bands):
+def test_create_loan_adjust(views, market, amm, controller, alice, hooks, adjustment, num_bands):
     hooks.set_response(adjustment, {"from": alice})
 
-    expected = controller.get_pending_market_state_for_account(
+    expected = views.get_pending_market_state_for_account(
         alice, market, 50 * 10**18, 1000 * 10**18, num_bands
     )
 
@@ -35,7 +34,7 @@ def test_create_loan_adjust(market, amm, controller, alice, hooks, adjustment, n
     controller.create_loan(alice, market, 50 * 10**18, 1000 * 10**18, num_bands, {"from": alice})
 
     # (market, account debt, amm coll balance, amm stable balance, health, bands, liquidation range)
-    actual = controller.get_market_states_for_account(alice, [market])[0]
+    actual = views.get_market_states_for_account(alice, [market])[0]
 
     health = market.health(alice, True)
     assert actual[4] == health
@@ -52,12 +51,14 @@ def test_create_loan_adjust(market, amm, controller, alice, hooks, adjustment, n
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
 @pytest.mark.parametrize("num_bands", [0, 5, 10, 100])
-def test_adjust_loan_increase_debt(market, hooks, amm, controller, alice, adjustment, num_bands):
+def test_adjust_loan_increase_debt(
+    views, market, hooks, amm, controller, alice, adjustment, num_bands
+):
     controller.create_loan(alice, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
     hooks.set_response(adjustment, {"from": alice})
 
     # num_bands should be ignored
-    expected = controller.get_pending_market_state_for_account(
+    expected = views.get_pending_market_state_for_account(
         alice, market, 0, 1000 * 10**18, num_bands
     )
 
@@ -69,7 +70,7 @@ def test_adjust_loan_increase_debt(market, hooks, amm, controller, alice, adjust
     controller.adjust_loan(alice, market, 0, 1000 * 10**18, {"from": alice})
 
     # (market, account debt, amm coll balance, amm stable balance, health, bands, liquidation range)
-    actual = controller.get_market_states_for_account(alice, [market])[0]
+    actual = views.get_market_states_for_account(alice, [market])[0]
 
     health = market.health(alice, True)
     assert actual[4] == health
@@ -85,11 +86,11 @@ def test_adjust_loan_increase_debt(market, hooks, amm, controller, alice, adjust
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
-def test_adjust_loan_decrease_debt(market, hooks, amm, controller, alice, adjustment):
+def test_adjust_loan_decrease_debt(views, market, hooks, amm, controller, alice, adjustment):
     controller.create_loan(alice, market, 50 * 10**18, 3000 * 10**18, 5, {"from": alice})
     hooks.set_response(adjustment, {"from": alice})
 
-    expected = controller.get_pending_market_state_for_account(alice, market, 0, -1000 * 10**18)
+    expected = views.get_pending_market_state_for_account(alice, market, 0, -1000 * 10**18)
 
     assert expected["account_debt"] == 2000 * 10**18 + adjustment
     assert expected["amm_coll_balance"] == 50 * 10**18
@@ -99,7 +100,7 @@ def test_adjust_loan_decrease_debt(market, hooks, amm, controller, alice, adjust
     controller.adjust_loan(alice, market, 0, -1000 * 10**18, {"from": alice})
 
     # (market, account debt, amm coll balance, amm stable balance, health, bands, liquidation range)
-    actual = controller.get_market_states_for_account(alice, [market])[0]
+    actual = views.get_market_states_for_account(alice, [market])[0]
 
     health = market.health(alice, True)
     assert actual[4] == health
@@ -115,13 +116,13 @@ def test_adjust_loan_decrease_debt(market, hooks, amm, controller, alice, adjust
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
-def test_close_loan_simple(market, hooks, controller, alice, adjustment):
+def test_close_loan_simple(views, market, hooks, controller, alice, adjustment):
     controller.create_loan(alice, market, 50 * 10**18, 1000 * 10**18, 5, {"from": alice})
     hooks.set_response(adjustment, {"from": alice})
 
-    expected = controller.get_close_loan_amounts(alice, market)
+    expected = views.get_close_loan_amounts(alice, market)
 
-    assert expected["total_debt_repaid"] == 1000 * 10**18 + adjustment
+    assert expected["total_debt_repaid"] == 1000 * 10**18
     assert expected["debt_burned"] == 1000 * 10**18 + adjustment
     assert expected["debt_from_amm"] == 0
     assert expected["coll_withdrawn"] == 50 * 10**18

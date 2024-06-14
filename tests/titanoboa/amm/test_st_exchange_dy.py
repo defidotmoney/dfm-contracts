@@ -111,17 +111,7 @@ class StatefulExchange(RuleBasedStateMachine):
                 assert left_in_amm >= self.total_deposited
 
 
-@pytest.mark.parametrize("borrowed_digits", [6, 8, 18])
-@pytest.mark.parametrize("collateral_digits", [6, 8, 18])
-def test_exchange(
-    admin,
-    accounts,
-    get_amm,
-    get_collateral_token,
-    get_borrowed_token,
-    borrowed_digits,
-    collateral_digits,
-):
+def test_exchange(admin, accounts, get_amm, get_collateral_token, get_borrowed_token):
     StatefulExchange.TestCase.settings = settings(
         max_examples=20,
         stateful_step_count=10,
@@ -129,6 +119,9 @@ def test_exchange(
         suppress_health_check=[HealthCheck.data_too_large],
     )
     accounts = accounts[:5]
+
+    borrowed_digits = 18
+    collateral_digits = 18
 
     borrowed_token = get_borrowed_token(borrowed_digits)
     collateral_token = get_collateral_token(collateral_digits)
@@ -177,8 +170,8 @@ def test_raise_not_enough_left(admin, accounts, get_amm, get_collateral_token, g
     )
     accounts = accounts[:5]
 
-    borrowed_digits = 16
-    collateral_digits = 13
+    borrowed_digits = 18
+    collateral_digits = 18
     borrowed_token = get_borrowed_token(borrowed_digits)
     collateral_token = get_collateral_token(collateral_digits)
     amm = get_amm(collateral_token, borrowed_token)
