@@ -24,6 +24,7 @@ import "../interfaces/IStakerRewardRegulator.sol";
 contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     uint256 public constant maxDeposit = type(uint256).max;
     uint256 public constant maxMint = type(uint256).max;
+    uint256 public constant MAX_COOLDOWN_DURATION = 4 weeks;
 
     IERC20 public immutable asset;
     address public feeAggregator;
@@ -68,10 +69,12 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         IERC20 _stable,
         address _feeAggregator,
         string memory _name,
-        string memory _symbol
+        string memory _symbol,
+        uint32 _cooldownDuration
     ) ERC20(_name, _symbol) CoreOwnable(_core) SystemStart(_core) {
         asset = _stable;
         feeAggregator = _feeAggregator;
+        cooldownDuration = _cooldownDuration;
     }
 
     /**
@@ -192,6 +195,23 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         uint256 newAmount = asset.balanceOf(address(this)) - storedTotalAssets - totalCooldownAssets - residualAmount;
         lastWeeeklyAmountReceived = newAmount;
         _setNewStream(newAmount, residualAmount);
+    }
+
+    function setCooldownDuration(uint32 _cooldownDuration) external onlyOwner {
+        require(_cooldownDuration <= MAX_COOLDOWN_DURATION, "sMONEY: Invalid duration");
+        cooldownDuration = _cooldownDuration;
+    }
+
+    function setFeeAggregator(address _feeAggregator) external onlyOwner {
+        feeAggregator = _feeAggregator;
+    }
+
+    function setRewardRegulator(IStakerRewardRegulator _regulator) external onlyOwner {
+        rewardRegulator = _regulator;
+    }
+
+    function setGovStaker(address _govStaker) external onlyOwner {
+        govStaker = _govStaker;
     }
 
     /** @dev Shared logic for `deposit` and `mint` */
