@@ -3,7 +3,8 @@
 
 pragma solidity 0.8.25;
 
-import "@solmate/tokens/ERC4626.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../base/dependencies/CoreOwnable.sol";
 import "../base/dependencies/SystemStart.sol";
 import "../interfaces/IFeeReceiver.sol";
@@ -17,7 +18,8 @@ import "../interfaces/IFeeReceiver.sol";
 
          Operates on "cycles" which distribute the rewards surplus over the internal balance to users linearly over the remainder of the cycle window.
 */
-contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
+contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
+    IERC20 public immutable asset;
     address public feeAggregator;
 
     uint16 public lastDistributionWeek;
@@ -41,18 +43,98 @@ contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
         uint32 cooldownEnd;
     }
 
+    event Deposit(address indexed caller, address indexed owner, uint256 assets, uint256 shares);
+
+    event Withdraw(
+        address indexed caller,
+        address indexed receiver,
+        address indexed owner,
+        uint256 assets,
+        uint256 shares
+    );
+
     mapping(address => AssetCooldown) public cooldowns;
 
     constructor(
         address _core,
-        ERC20 _stable,
-        address _feeAggregator
-    )
-        ERC4626(_stable, string.concat("Staked ", _stable.name()), string.concat("s", _stable.symbol()))
-        CoreOwnable(_core)
-        SystemStart(_core)
-    {
+        IERC20 _stable,
+        address _feeAggregator,
+        string memory _name,
+        string memory _symbol
+    ) ERC20(_name, _symbol) CoreOwnable(_core) SystemStart(_core) {
+        asset = _stable;
         feeAggregator = _feeAggregator;
+    }
+
+    function deposit(uint256 assets, address receiver) public returns (uint256 shares) {
+        // Check for rounding error since we round down in previewDeposit.
+        require((shares = previewDeposit(assets)) != 0, "ZERO_SHARES");
+
+        // Need to transfer before minting or ERC777s could reenter.
+        asset.transferFrom(msg.sender, address(this), assets);
+
+        _mint(receiver, shares);
+
+        emit Deposit(msg.sender, receiver, assets, shares);
+    }
+
+    function mint(uint256 shares, address receiver) public returns (uint256 assets) {
+        assets = previewMint(shares); // No need to check for rounding error, previewMint rounds up.
+
+        // Need to transfer before minting or ERC777s could reenter.
+        asset.transferFrom(msg.sender, address(this), assets);
+
+        _mint(receiver, shares);
+
+        emit Deposit(msg.sender, receiver, assets, shares);
+    }
+
+    function convertToShares(uint256 assets) public view returns (uint256) {
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+
+        return supply == 0 ? assets : Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Down);
+    }
+
+    function convertToAssets(uint256 shares) public view returns (uint256) {
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+
+        return supply == 0 ? shares : Math.mulDiv(shares, supply, totalAssets(), Math.Rounding.Down);
+    }
+
+    function previewDeposit(uint256 assets) public view returns (uint256) {
+        return convertToShares(assets);
+    }
+
+    function previewMint(uint256 shares) public view returns (uint256) {
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+
+        return supply == 0 ? shares : Math.mulDiv(shares, supply, totalAssets(), Math.Rounding.Up);
+    }
+
+    function previewWithdraw(uint256 assets) public view returns (uint256) {
+        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+
+        return supply == 0 ? assets : Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Up);
+    }
+
+    function previewRedeem(uint256 shares) public view returns (uint256) {
+        return convertToAssets(shares);
+    }
+
+    function maxDeposit(address) public view returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function maxMint(address) public view returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function maxWithdraw(address owner) public view returns (uint256) {
+        return convertToAssets(balanceOf(owner));
+    }
+
+    function maxRedeem(address owner) public view returns (uint256) {
+        return balanceOf(owner);
     }
 
     /// @notice redeem assets and starts a cooldown to claim the converted underlying asset
@@ -106,25 +188,25 @@ contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
 
     /// @notice Compute the amount of tokens available to share holders.
     ///         Increases linearly during a reward distribution period from the sync call, not the cycle start.
-    function totalAssets() public view override returns (uint256) {
-        uint256 updateUntil = min(periodFinish, block.timestamp);
+    function totalAssets() public view returns (uint256) {
+        uint256 updateUntil = Math.min(periodFinish, block.timestamp);
         uint256 duration = updateUntil - lastUpdate;
         return storedTotalAssets + (duration * rewardsPerSecond);
     }
 
     // Update storedTotalAssets on withdraw/redeem
-    function beforeWithdraw(uint256 amount, uint256 shares) internal virtual override {
-        super.beforeWithdraw(amount, shares);
-        _updateDailyStream();
-        storedTotalAssets -= amount;
-    }
+    // function beforeWithdraw(uint256 amount, uint256 shares) internal virtual override {
+    //     super.beforeWithdraw(amount, shares);
+    //     _updateDailyStream();
+    //     storedTotalAssets -= amount;
+    // }
 
-    // Update storedTotalAssets on deposit/mint
-    function afterDeposit(uint256 amount, uint256 shares) internal virtual override {
-        storedTotalAssets += amount;
-        _updateDailyStream();
-        super.afterDeposit(amount, shares);
-    }
+    // // Update storedTotalAssets on deposit/mint
+    // function afterDeposit(uint256 amount, uint256 shares) internal virtual override {
+    //     storedTotalAssets += amount;
+    //     _updateDailyStream();
+    //     super.afterDeposit(amount, shares);
+    // }
 
     /// @notice Distributes rewards to xERC4626 holders.
     /// All surplus `asset` balance of the contract over the internal balance becomes queued for the next cycle.
@@ -153,7 +235,7 @@ contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
     }
 
     function _advanceCurrentStream() internal returns (uint256 updateUntil) {
-        updateUntil = min(periodFinish, block.timestamp);
+        updateUntil = Math.min(periodFinish, block.timestamp);
         uint256 duration = updateUntil - lastUpdate;
         if (duration > 0) {
             storedTotalAssets = storedTotalAssets + (duration * rewardsPerSecond);
@@ -171,9 +253,5 @@ contract StakedMONEY is IFeeReceiver, ERC4626, CoreOwnable, SystemStart {
         lastUpdate = uint32(block.timestamp);
         periodFinish = uint32(block.timestamp + 2 days);
         lastDistributionDay = uint32(getDay());
-    }
-
-    function min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
     }
 }
