@@ -19,6 +19,7 @@ interface CurvePool:
     def get_virtual_price() -> uint256: view
     def balanceOf(arg0: address) -> uint256: view
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
+    def N_COINS() -> uint256: view
 
 interface ERC20:
     def approve(_spender: address, _amount: uint256): nonpayable
@@ -94,19 +95,25 @@ def __init__(
     @param pool Curve StableSwap-ng pool where the peg keeper is active
     @param caller_share Caller's share of profit (with SHARE_PRECISION precision)
     """
+    assert pool.N_COINS() == 2, "DFM:PK Wrong N_COINS"
+
     CORE_OWNER = core
     POOL = pool
     CONTROLLER = controller
     PEGGED = stable
     stable.approve(pool.address, max_value(uint256))
 
+    has_stable: bool = False
     coins: ERC20[2] = [ERC20(pool.coins(0)), ERC20(pool.coins(1))]
     for i in range(2):
         if coins[i] == stable:
             I = i
             IS_INVERSE = (i == 0)
+            has_stable = True
         else:
             PEG_MUL = 10 ** (18 - coins[i].decimals())
+
+    assert has_stable, "DFM:PK Stablecoin not in pool"
 
     self.regulator = regulator
     log SetNewRegulator(regulator.address)
