@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../base/dependencies/CoreOwnable.sol";
 import "../base/dependencies/SystemStart.sol";
 import "../interfaces/IFeeReceiver.sol";
+import "../interfaces/IStakerRewardRegulator.sol";
 
 /**
     @title  StakedMONEY: ERC4626-ish Staking Contract
@@ -26,6 +27,8 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
     IERC20 public immutable asset;
     address public feeAggregator;
+    IStakerRewardRegulator public rewardRegulator;
+    address public govStaker;
 
     uint32 public cooldownDuration;
 
@@ -247,10 +250,17 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
     /** @dev Start a new reward stream period */
     function _setNewStream(uint256 newAmount, uint256 residualAmount) internal {
-        // TODO only retain a portion of newAmount, rest forwards onward
+        uint256 stakerAmount = rewardRegulator.getStakerRewardAmount(newAmount);
+        require(stakerAmount <= newAmount, "sMONEY: Invalid stakerAmount");
 
-        newAmount += residualAmount;
-        rewardsPerSecond = newAmount / 2 days;
+        uint256 govAmount = newAmount - stakerAmount;
+        if (govAmount > 0) {
+            asset.transfer(govStaker, govAmount);
+            // TODO notify?
+        }
+
+        stakerAmount += residualAmount;
+        rewardsPerSecond = stakerAmount / 2 days;
 
         lastUpdate = uint32(block.timestamp);
         periodFinish = uint32(block.timestamp + 2 days);
