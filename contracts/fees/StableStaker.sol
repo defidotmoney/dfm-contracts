@@ -38,13 +38,10 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
     uint32 public lastUpdate;
     uint32 public periodFinish;
-
     uint256 public rewardsPerSecond;
+    uint256 public lastWeeklyAmountReceived;
 
-    /// @notice The amount of `asset` received in the current active reward week
-    uint256 public lastWeeeklyAmountReceived;
-
-    uint256 public storedTotalAssets;
+    uint256 public totalStoredAssets;
     uint256 public totalCooldownAssets;
 
     mapping(address => AssetCooldown) public cooldowns;
@@ -55,14 +52,16 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     }
 
     event Deposit(address indexed caller, address indexed owner, uint256 assets, uint256 shares);
+    event Cooldown(address indexed caller, uint256 assets, uint256 shares, uint256 cooldownEnd);
+    event Unstake(address indexed owner, address indexed receiver, uint256 assets);
 
-    event Withdraw(
-        address indexed caller,
-        address indexed receiver,
-        address indexed owner,
-        uint256 assets,
-        uint256 shares
-    );
+    event WeeklyFeesReceived(uint256 amount);
+    event NewRewardPeriod(uint256 day, uint256 total, uint256 stakerAmount, uint256 govAmount);
+
+    event CooldownDurationUpdated(uint32 cooldownDuration);
+    event FeeAggregatorSet(address feeAggregator);
+    event RewardRegulatorSet(IStakerRewardRegulator regulator);
+    event GovStakerSet(address govStaker);
 
     constructor(
         address _core,
@@ -75,7 +74,12 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         asset = _stable;
         feeAggregator = _feeAggregator;
         cooldownDuration = _cooldownDuration;
+
+        emit FeeAggregatorSet(_feeAggregator);
+        emit CooldownDurationUpdated(_cooldownDuration);
     }
+
+    // --- external view functions ---
 
     /**
         @notice Compute the amount of tokens available to share holders.
@@ -84,7 +88,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     function totalAssets() public view returns (uint256) {
         uint256 updateUntil = Math.min(periodFinish, block.timestamp);
         uint256 duration = updateUntil - lastUpdate;
-        return storedTotalAssets + (duration * rewardsPerSecond);
+        return totalStoredAssets + (duration * rewardsPerSecond);
     }
 
     function convertToShares(uint256 assets) public view returns (uint256) {
@@ -126,6 +130,8 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     function maxRedeem(address owner) public view returns (uint256) {
         return balanceOf(owner);
     }
+
+    // --- unguarded external functions ---
 
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
         // Check for rounding error since we round down in previewDeposit.
@@ -184,42 +190,57 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
         asset.transfer(receiver, amount);
 
-        // TODO event
+        emit Unstake(msg.sender, receiver, amount);
     }
+
+    // --- guarded external functions ---
 
     function notifyWeeklyFees(uint256) external {
         require(msg.sender == feeAggregator);
 
         uint256 updateUntil = _advanceCurrentStream();
         uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
-        uint256 newAmount = asset.balanceOf(address(this)) - storedTotalAssets - totalCooldownAssets - residualAmount;
-        lastWeeeklyAmountReceived = newAmount;
+        uint256 newAmount = asset.balanceOf(address(this)) - totalStoredAssets - totalCooldownAssets - residualAmount;
+        lastWeeklyAmountReceived = newAmount;
+
+        emit WeeklyFeesReceived(newAmount);
+
         _setNewStream(newAmount, residualAmount);
     }
 
     function setCooldownDuration(uint32 _cooldownDuration) external onlyOwner {
         require(_cooldownDuration <= MAX_COOLDOWN_DURATION, "sMONEY: Invalid duration");
         cooldownDuration = _cooldownDuration;
+
+        emit CooldownDurationUpdated(_cooldownDuration);
     }
 
     function setFeeAggregator(address _feeAggregator) external onlyOwner {
         feeAggregator = _feeAggregator;
+
+        emit FeeAggregatorSet(_feeAggregator);
     }
 
     function setRewardRegulator(IStakerRewardRegulator _regulator) external onlyOwner {
         rewardRegulator = _regulator;
+
+        emit RewardRegulatorSet(_regulator);
     }
 
     function setGovStaker(address _govStaker) external onlyOwner {
         govStaker = _govStaker;
+
+        emit GovStakerSet(_govStaker);
     }
+
+    // --- internal functions ---
 
     /** @dev Shared logic for `deposit` and `mint` */
     function _deposit(uint256 assets, uint256 shares, address receiver) internal {
         asset.transferFrom(msg.sender, address(this), assets);
 
         _mint(receiver, shares);
-        storedTotalAssets += assets;
+        totalStoredAssets += assets;
 
         emit Deposit(msg.sender, receiver, assets, shares);
     }
@@ -228,14 +249,17 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     function _cooldown(uint256 assets, uint256 shares) internal {
         require(assets > 0, "sMONEY: zero assets");
 
-        cooldowns[msg.sender].cooldownEnd = uint32(block.timestamp + cooldownDuration);
-        cooldowns[msg.sender].underlyingAmount = uint224(cooldowns[msg.sender].underlyingAmount + assets);
+        uint32 cooldownEnd = uint32(block.timestamp + cooldownDuration);
+        cooldowns[msg.sender] = AssetCooldown({
+            underlyingAmount: uint224(cooldowns[msg.sender].underlyingAmount + assets),
+            cooldownEnd: cooldownEnd
+        });
         totalCooldownAssets = totalCooldownAssets + assets;
-        storedTotalAssets = storedTotalAssets - assets;
+        totalStoredAssets = totalStoredAssets - assets;
 
         _burn(msg.sender, shares);
 
-        // TODO event
+        emit Cooldown(msg.sender, assets, shares, cooldownEnd);
     }
 
     /**
@@ -252,7 +276,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         // only `notifyWeeklyFees` can update us across weeks
         if (getDay() / 7 > lastDistributionWeek) return;
 
-        uint256 newAmount = (lastWeeeklyAmountReceived / 7) * updateDays;
+        uint256 newAmount = (lastWeeklyAmountReceived / 7) * updateDays;
         uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
         _setNewStream(newAmount, residualAmount);
     }
@@ -262,7 +286,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         updateUntil = Math.min(periodFinish, block.timestamp);
         uint256 duration = updateUntil - lastUpdate;
         if (duration > 0) {
-            storedTotalAssets = storedTotalAssets + (duration * rewardsPerSecond);
+            totalStoredAssets = totalStoredAssets + (duration * rewardsPerSecond);
             lastUpdate = uint32(updateUntil);
         }
         return updateUntil;
@@ -285,5 +309,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         lastUpdate = uint32(block.timestamp);
         periodFinish = uint32(block.timestamp + 2 days);
         lastDistributionDay = uint32(getDay());
+
+        emit NewRewardPeriod(getDay(), newAmount, stakerAmount, govAmount);
     }
 }
