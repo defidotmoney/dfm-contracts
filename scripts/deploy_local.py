@@ -1,26 +1,25 @@
-from brownie import ZERO_ADDRESS, accounts
+from brownie import accounts
 from brownie import (
-    AggregateStablePrice2,
-    ConstantMonetaryPolicy,
-    DummyPriceOracle,
+    AggregateStablePrice,
     AMM,
-    MarketOperator,
+    BridgeToken,
+    DFMProtocolCore,
     MainController,
+    MarketOperator,
     PegKeeper,
     PegKeeperRegulator,
-    Stableswap,
-    StableCoin,
-    CoreOwner,
 )
+from brownie import ConstantMonetaryPolicy, DummyPriceOracle, MockLzEndpoint, Stableswap
 from brownie_tokens import ERC20
-from scripts.rate0 import apr_to_rate0
+from scripts.utils.rate0 import apr_to_rate0
 
+
+# deployment constants, these can be modified to suit your needs
 
 GLOBAL_DEBT_CAP = 100_000_000 * 10**18
 MARKET_DEBT_CAP = 10_000_000 * 10**18
 PEGKEEPER_CAP = 1_000_000 * 10**18
 FEE_RECEIVER = "000000000000000000000000000000000000fee5"
-
 
 MARKET_A = 100
 MARKET_FEE = 6 * 10**15  # 0.6%
@@ -30,29 +29,34 @@ MARKET_LIQUIDATION_FEE = 6 * 10**16  # 6%
 MARKET_INTEREST_RATE = 0.1  # 10% APR
 
 
-def deploy_local(acct=None, peg_keeper_count=3, market_count=3):
+def main(acct=None, peg_keeper_count=3, market_count=3):
+    """
+    Deploys core Defi.Money contracts onto a local test network such as hardhat.
+    """
     if acct is None:
         acct = accounts[0]
 
-    # deploy dummy/mock contracts
+    # Deploy dummy/mock contracts
+    endpoint = MockLzEndpoint.deploy({"from": acct})
     oracle = DummyPriceOracle.deploy(3000 * 10**18, {"from": acct})
     policy = ConstantMonetaryPolicy.deploy({"from": acct})
     policy.set_rate(apr_to_rate0(MARKET_INTEREST_RATE), {"from": acct})
 
-    # deploy core protocol
-    core = CoreOwner.deploy(FEE_RECEIVER, {"from": acct})
-    stable = StableCoin.deploy({"from": acct})
+    # Deploy core protocol contracts
+    core = DFMProtocolCore.deploy(acct, FEE_RECEIVER, 0, {"from": acct})
+    stable = BridgeToken.deploy(core, "Stablecoin", "STABLE", endpoint, b"", [], {"from": acct})
     controller = MainController.deploy(core, stable, [policy], GLOBAL_DEBT_CAP, {"from": acct})
-    market_impl = MarketOperator.deploy(core, controller, stable, MARKET_A, {"from": acct})
+    market_impl = MarketOperator.deploy(core, controller, MARKET_A, {"from": acct})
     amm_impl = AMM.deploy(controller, stable, MARKET_A, {"from": acct})
 
-    # setup and config of core contracts
+    # Setup and configure core contracts
     controller.set_implementations(MARKET_A, market_impl, amm_impl, {"from": acct})
     stable.setMinter(controller, True, {"from": acct})
 
-    # optional: deploy peg keepers with test AMMs
+    # OPTIONAL: deploy peg keepers with test AMMs
+    # Not required in local deploy as `ConstantMonetaryPolicy` need `AggregateStablePrice`
     if peg_keeper_count:
-        agg_stable = AggregateStablePrice2.deploy(core, stable, 10**15, {"from": acct})
+        agg_stable = AggregateStablePrice.deploy(core, stable, 10**15, {"from": acct})
         regulator = PegKeeperRegulator.deploy(core, stable, agg_stable, controller, {"from": acct})
 
         controller.set_peg_keeper_regulator(regulator, False, {"from": acct})
@@ -70,7 +74,7 @@ def deploy_local(acct=None, peg_keeper_count=3, market_count=3):
             )
             regulator.add_peg_keeper(peg_keeper, PEGKEEPER_CAP, {"from": acct})
 
-    # deploy markets
+    # Deploy test collaterals and creat markets for them
     for i in range(1, market_count + 1):
         collateral = ERC20(f"Test Token {i}", f"TST{i}", deployer=acct)
         controller.add_market(
