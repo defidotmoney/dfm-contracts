@@ -69,22 +69,24 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     function deposit(uint256 assets, address receiver) public returns (uint256 shares) {
         // Check for rounding error since we round down in previewDeposit.
         require((shares = previewDeposit(assets)) != 0, "ZERO_SHARES");
-
-        // Need to transfer before minting or ERC777s could reenter.
-        asset.transferFrom(msg.sender, address(this), assets);
-
-        _mint(receiver, shares);
-
-        emit Deposit(msg.sender, receiver, assets, shares);
+        _updateDailyStream();
+        _deposit(assets, shares, receiver);
+        return shares;
     }
 
     function mint(uint256 shares, address receiver) public returns (uint256 assets) {
-        assets = previewMint(shares); // No need to check for rounding error, previewMint rounds up.
+        _updateDailyStream();
 
-        // Need to transfer before minting or ERC777s could reenter.
+        assets = previewMint(shares);
+        _deposit(assets, shares, receiver);
+        return assets;
+    }
+
+    function _deposit(uint256 assets, uint256 shares, address receiver) internal {
         asset.transferFrom(msg.sender, address(this), assets);
 
         _mint(receiver, shares);
+        storedTotalAssets += assets;
 
         emit Deposit(msg.sender, receiver, assets, shares);
     }
@@ -193,20 +195,6 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         uint256 duration = updateUntil - lastUpdate;
         return storedTotalAssets + (duration * rewardsPerSecond);
     }
-
-    // Update storedTotalAssets on withdraw/redeem
-    // function beforeWithdraw(uint256 amount, uint256 shares) internal virtual override {
-    //     super.beforeWithdraw(amount, shares);
-    //     _updateDailyStream();
-    //     storedTotalAssets -= amount;
-    // }
-
-    // // Update storedTotalAssets on deposit/mint
-    // function afterDeposit(uint256 amount, uint256 shares) internal virtual override {
-    //     storedTotalAssets += amount;
-    //     _updateDailyStream();
-    //     super.afterDeposit(amount, shares);
-    // }
 
     /// @notice Distributes rewards to xERC4626 holders.
     /// All surplus `asset` balance of the contract over the internal balance becomes queued for the next cycle.
