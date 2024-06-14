@@ -10,18 +10,18 @@ import "../interfaces/IFeeReceiver.sol";
 import "../interfaces/IStakerRewardRegulator.sol";
 
 /**
-    @title  StakedMONEY: ERC4626-ish Staking Contract
+    @title  StableStaker: ERC4626-ish Staking Contract
     @author defidotmoney, with inspiration from:
              * ERC4626 Alliance: xERC4626
              * Ethena Labs: StakedUSDeV2
              * Zefram: xERC20
-    @notice Allows users to stake MONEY to earn a portion of protocol yield.
+    @notice Allows users to stake stablecoins to earn a portion of protocol yield.
     @dev This contract mostly follows the ERC4626 standard, however it breaks
          compatibility by lacking `withdraw` and `redeem` functions. Withdrawals
          are possible by calling `cooldownAssets` or `cooldownShares`, waiting
          for the `cooldownDuration` to pass, and then calling `unstake`.
  */
-contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
+contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     uint256 public constant maxDeposit = type(uint256).max;
     uint256 public constant maxMint = type(uint256).max;
     uint256 public constant MAX_COOLDOWN_DURATION = 4 weeks;
