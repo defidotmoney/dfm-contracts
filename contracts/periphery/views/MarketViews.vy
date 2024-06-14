@@ -2,8 +2,8 @@
 """
 @title CDP Market Views
 @author defidotmoney
-@notice Aggregate view methods intended for off-chain use
 @license MIT
+@notice Aggregate view methods intended for off-chain use
 """
 
 from vyper.interfaces import ERC20

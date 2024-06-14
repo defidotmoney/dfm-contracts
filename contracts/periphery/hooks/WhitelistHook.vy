@@ -1,8 +1,9 @@
 #pragma version 0.3.10
 """
 @title DFM Whitelist Hook
-@dev Restricts creation of new loans to whitelisted addresses
+@author defidotmoney
 @license MIT
+@dev Restricts creation of new loans to whitelisted addresses
 """
 
 is_whitelisted: public(HashMap[address, bool])

@@ -2,7 +2,7 @@
 """
 @title LLAMMA AMM
 @author Curve.Fi (with edits by defidotmoney)
-@license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
+@license Copyright (c) Curve.Fi, 2020-2024 - all rights reserved
 """
 
 # Glossary of variables and terms

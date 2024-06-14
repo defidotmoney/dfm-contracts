@@ -1,8 +1,8 @@
 # @version 0.3.10
 """
 @title PegKeeper
-@license MIT
 @author Curve.Fi (with edits by defidotmoney)
+@license MIT
 @dev For use with StableSwap-ng pools
 """
 

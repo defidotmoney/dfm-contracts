@@ -6,6 +6,7 @@ import { IUptimeOracle } from "../../interfaces/IUptimeOracle.sol";
 
 /**
     @title DFM L2 Sequencer Uptime Hook
+    @author defidotmoney
     @dev Prevents increasing debt and partial withdrawal of collateral while L2
          sequencer is down or has recently restarted.
  */

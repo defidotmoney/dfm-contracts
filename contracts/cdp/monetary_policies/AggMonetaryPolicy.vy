@@ -1,11 +1,11 @@
 # @version 0.3.10
 """
 @title AggMonetaryPolicy
+@author Curve.Fi (with edits by defidotmoney)
+@license Copyright (c) Curve.Fi, 2020-2024 - all rights reserved
 @notice Monetary policy based on aggregated prices for the protocol stablecoin
 @dev To simulate how the interest rate is affected by the different parameters
      within this contract: https://crvusd-rate.0xreviews.xyz/
-@author Curve.Fi  (with edits by defidotmoney)
-@license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 """
 
 interface PriceOracle:

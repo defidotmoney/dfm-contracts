@@ -2,8 +2,8 @@
 """
 @title Peg Keeper Regulator
 @author Curve.Fi (with edits by defidotmoney)
-@notice Regulations for Peg Keeper
 @license MIT
+@notice Regulations for Peg Keeper
 """
 
 interface ERC20:

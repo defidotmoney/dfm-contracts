@@ -1,10 +1,10 @@
 # @version 0.3.10
 """
 @title AggregatorStablePrice
-@dev Returns price of stablecoin in "dollars" based on multiple AMM prices
-     Version 3 - for use with StableSwap-ng pools
 @author Curve.Fi
 @license Copyright (c) Curve.Fi, 2020-2024 - all rights reserved
+@dev Returns price of stablecoin in "dollars" based on multiple AMM prices
+     Version 3 - for use with StableSwap-ng pools
 """
 
 
