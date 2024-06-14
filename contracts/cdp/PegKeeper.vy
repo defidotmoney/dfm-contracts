@@ -1,8 +1,8 @@
 # @version 0.3.10
 """
 @title PegKeeper
-@license MIT
 @author Curve.Fi (with edits by defidotmoney)
+@license MIT
 @dev For use with StableSwap-ng pools
 """
 
@@ -58,22 +58,22 @@ event RecallDebt:
 ACTION_DELAY: constant(uint256) = 15 * 60
 
 PRECISION: constant(uint256) = 10 ** 18
+SHARE_PRECISION: constant(uint256) = 10 ** 5
 
 CORE_OWNER: public(immutable(CoreOwner))
 CONTROLLER: public(immutable(address))
 POOL: public(immutable(CurvePool))
-I: immutable(uint256)  # index of pegged in pool
-PEGGED: public(immutable(ERC20))
-IS_INVERSE: public(immutable(bool))
-PEG_MUL: immutable(uint256)
-
+STABLECOIN: public(immutable(ERC20))
 regulator: public(Regulator)
+
+IS_INVERSE: public(immutable(bool))
+I: immutable(uint256)  # index of pegged in pool
+PEG_MUL: immutable(uint256)
 
 last_change: public(uint256)
 debt: public(uint256)
 owed_debt: public(uint256)
 
-SHARE_PRECISION: constant(uint256) = 10 ** 5
 caller_share: public(uint256)
 
 
@@ -100,7 +100,7 @@ def __init__(
     CORE_OWNER = core
     POOL = pool
     CONTROLLER = controller
-    PEGGED = stable
+    STABLECOIN = stable
     stable.approve(pool.address, max_value(uint256))
 
     has_stable: bool = False
@@ -272,15 +272,15 @@ def recall_debt(amount: uint256) -> uint256:
     if amount == 0:
         return 0
 
-    debt: uint256 = PEGGED.balanceOf(self)
+    debt: uint256 = STABLECOIN.balanceOf(self)
     burned: uint256 = 0
     owed: uint256 = 0
     if debt >= amount:
-        PEGGED.burn(self, amount)
+        STABLECOIN.burn(self, amount)
         burned = amount
     else:
         if debt > 0:
-            PEGGED.burn(self, debt)
+            STABLECOIN.burn(self, debt)
             burned = debt
         owed = self.owed_debt + amount - burned
         self.owed_debt = owed
@@ -333,7 +333,7 @@ def _calc_call_profit(_amount: uint256, _is_deposit: bool) -> uint256:
 
     amount: uint256 = _amount
     if _is_deposit:
-        amount = min(_amount, PEGGED.balanceOf(self))
+        amount = min(_amount, STABLECOIN.balanceOf(self))
     else:
         amount = min(_amount, debt)
 
@@ -358,9 +358,9 @@ def _calc_call_profit(_amount: uint256, _is_deposit: bool) -> uint256:
 def _burn_owed_debt():
     owed_debt: uint256 = self.owed_debt
     if owed_debt > 0:
-        debt_reduce: uint256 = min(owed_debt, PEGGED.balanceOf(self))
+        debt_reduce: uint256 = min(owed_debt, STABLECOIN.balanceOf(self))
         if debt_reduce > 0:
-            PEGGED.burn(self, debt_reduce)
+            STABLECOIN.burn(self, debt_reduce)
             owed_debt -= debt_reduce
             self.owed_debt = owed_debt
             log RecallDebt(0, debt_reduce, owed_debt)
@@ -377,7 +377,7 @@ def _provide(_amount: uint256) -> int256:
 
     self._burn_owed_debt()
 
-    amount: uint256 = min(_amount, PEGGED.balanceOf(self))
+    amount: uint256 = min(_amount, STABLECOIN.balanceOf(self))
 
     amounts: DynArray[uint256, 2] = [0, 0]
     amounts[I] = amount

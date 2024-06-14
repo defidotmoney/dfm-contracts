@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import "../../interfaces/IProtocolCore.sol";
+import { IProtocolCore } from "../../interfaces/IProtocolCore.sol";
 
 /**
     @title Core Ownable

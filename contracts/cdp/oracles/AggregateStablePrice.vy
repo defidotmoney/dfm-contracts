@@ -1,10 +1,10 @@
 # @version 0.3.10
 """
 @title AggregatorStablePrice
-@dev Returns price of stablecoin in "dollars" based on multiple AMM prices
-     Version 3 - for use with StableSwap-ng pools
 @author Curve.Fi
 @license Copyright (c) Curve.Fi, 2020-2024 - all rights reserved
+@dev Returns price of stablecoin in "dollars" based on multiple AMM prices
+     Version 3 - for use with StableSwap-ng pools
 """
 
 
@@ -41,16 +41,17 @@ event MovePricePair:
 
 MAX_PAIRS: constant(uint256) = 20
 MIN_LIQUIDITY: constant(uint256) = 100_000 * 10**18  # Only take into account pools with enough liquidity
+TVL_MA_TIME: public(constant(uint256)) = 50000  # s
 
 CORE_OWNER: public(immutable(CoreOwner))
 STABLECOIN: public(immutable(address))
 SIGMA: public(immutable(uint256))
+
 price_pairs: public(PricePair[MAX_PAIRS])
 n_price_pairs: uint256
 
 last_timestamp: public(uint256)
 last_tvl: public(uint256[MAX_PAIRS])
-TVL_MA_TIME: public(constant(uint256)) = 50000  # s
 last_price: public(uint256)
 
 
@@ -69,6 +70,40 @@ def __init__(core: CoreOwner, stable: address, sigma: uint256):
     self.last_price = 10**18
     self.last_timestamp = block.timestamp
 
+
+# --- external view functions ---
+
+@view
+@external
+def ema_tvl() -> DynArray[uint256, MAX_PAIRS]:
+    return self._ema_tvl()
+
+
+@view
+@external
+def price() -> uint256:
+    return self._price(self._ema_tvl())
+
+
+# --- external unguarded functions ---
+
+@external
+def price_w() -> uint256:
+    if self.last_timestamp == block.timestamp:
+        return self.last_price
+    else:
+        ema_tvl: DynArray[uint256, MAX_PAIRS] = self._ema_tvl()
+        self.last_timestamp = block.timestamp
+        for i in range(MAX_PAIRS):
+            if i == len(ema_tvl):
+                break
+            self.last_tvl[i] = ema_tvl[i]
+        p: uint256 = self._price(ema_tvl)
+        self.last_price = p
+        return p
+
+
+# --- external owner-only functions ---
 
 @external
 def add_price_pair(_pool: Stableswap):
@@ -116,6 +151,8 @@ def remove_price_pair(n: uint256):
     self.n_price_pairs = n_max
     log RemovePricePair(n)
 
+
+# --- internal functions ---
 
 @view
 @internal
@@ -178,12 +215,6 @@ def _ema_tvl() -> DynArray[uint256, MAX_PAIRS]:
 
 
 @view
-@external
-def ema_tvl() -> DynArray[uint256, MAX_PAIRS]:
-    return self._ema_tvl()
-
-
-@view
 @internal
 def _price(tvls: DynArray[uint256, MAX_PAIRS]) -> uint256:
     n: uint256 = self.n_price_pairs
@@ -228,25 +259,3 @@ def _price(tvls: DynArray[uint256, MAX_PAIRS]) -> uint256:
         w_sum += w
         wp_sum += w * prices[i]
     return wp_sum / w_sum
-
-
-@view
-@external
-def price() -> uint256:
-    return self._price(self._ema_tvl())
-
-
-@external
-def price_w() -> uint256:
-    if self.last_timestamp == block.timestamp:
-        return self.last_price
-    else:
-        ema_tvl: DynArray[uint256, MAX_PAIRS] = self._ema_tvl()
-        self.last_timestamp = block.timestamp
-        for i in range(MAX_PAIRS):
-            if i == len(ema_tvl):
-                break
-            self.last_tvl[i] = ema_tvl[i]
-        p: uint256 = self._price(ema_tvl)
-        self.last_price = p
-        return p

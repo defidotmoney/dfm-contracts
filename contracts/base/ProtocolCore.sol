@@ -2,8 +2,8 @@
 
 pragma solidity 0.8.25;
 
-import "./dependencies/Addresses.sol";
-import "../interfaces/IProtocolCore.sol";
+import { Addresses } from "./dependencies/Addresses.sol";
+import { IProtocolCore } from "../interfaces/IProtocolCore.sol";
 
 /**
     @title Defi.money Protocol Core

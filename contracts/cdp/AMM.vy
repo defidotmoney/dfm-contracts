@@ -2,7 +2,7 @@
 """
 @title LLAMMA AMM
 @author Curve.Fi (with edits by defidotmoney)
-@license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
+@license Copyright (c) Curve.Fi, 2020-2024 - all rights reserved
 """
 
 # Glossary of variables and terms
@@ -93,8 +93,8 @@ struct DetailedTrade:
     admin_fee: uint256
 
 
-BORROWED_TOKEN: immutable(ERC20)    # x
-COLLATERAL_TOKEN: ERC20  # y
+STABLECOIN: immutable(ERC20) # x
+COLLATERAL_TOKEN: ERC20      # y
 CONTROLLER: immutable(address)
 MARKET_OPERATOR: public(address)
 ORACLE: public(PriceOracle)
@@ -146,7 +146,7 @@ def __init__(controller: address, stablecoin: ERC20, _A: uint256):
     @param _A amplification coefficient. The size of one band is 1/A.
     """
     CONTROLLER = controller
-    BORROWED_TOKEN = stablecoin
+    STABLECOIN = stablecoin
     A = _A
 
     Aminus1 = unsafe_sub(A, 1)
@@ -218,7 +218,7 @@ def initialize(
 
     self.rate_mul = 10**18
 
-    for token in [BORROWED_TOKEN, collateral]:
+    for token in [STABLECOIN, collateral]:
         self._approve_token(token, CONTROLLER, max_value(uint256))
 
 
@@ -228,7 +228,7 @@ def initialize(
 @external
 def coins(i: uint256) -> ERC20:
     if i == 0:
-        return BORROWED_TOKEN
+        return STABLECOIN
     if i == 1:
         return self.COLLATERAL_TOKEN
     raise
@@ -1747,7 +1747,7 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
     lm: LMGauge = self.lm_hook
     collateral_shares: DynArray[uint256, MAX_TICKS_UINT] = []
 
-    in_coin: ERC20 = BORROWED_TOKEN
+    in_coin: ERC20 = STABLECOIN
     out_coin: ERC20 = self.COLLATERAL_TOKEN
     in_precision: uint256 = 1
     out_precision: uint256 = self.COLLATERAL_PRECISION
@@ -1755,7 +1755,7 @@ def _exchange(i: uint256, j: uint256, amount: uint256, minmax_amount: uint256, _
         in_precision = out_precision
         in_coin = out_coin
         out_precision = 1
-        out_coin = BORROWED_TOKEN
+        out_coin = STABLECOIN
 
     out: DetailedTrade = empty(DetailedTrade)
     if use_in_amount:
