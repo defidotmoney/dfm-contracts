@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Rewards logic inspired by xERC20 (https://github.com/ZeframLou/playpen/blob/main/src/xERC20.sol)
 
 pragma solidity 0.8.25;
 
@@ -10,33 +9,41 @@ import "../base/dependencies/SystemStart.sol";
 import "../interfaces/IFeeReceiver.sol";
 
 /**
- @title  An xERC4626 Single Staking Contract
- @notice This contract allows users to autocompound rewards denominated in an underlying reward token.
-         It is fully compatible with [ERC4626](https://eips.ethereum.org/EIPS/eip-4626) allowing for DeFi composability.
-         It maintains balances using internal accounting to prevent instantaneous changes in the exchange rate.
-         NOTE: an exception is at contract creation, when a reward cycle begins before the first deposit. After the first deposit, exchange rate updates smoothly.
-
-         Operates on "cycles" which distribute the rewards surplus over the internal balance to users linearly over the remainder of the cycle window.
-*/
+    @title  StakedMONEY: ERC4626-ish Staking Contract
+    @author defidotmoney, with inspiration from:
+             * ERC4626 Alliance: xERC4626
+             * Ethena Labs: StakedUSDeV2
+             * Zefram: xERC20
+    @notice Allows users to stake MONEY to earn a portion of protocol yield.
+    @dev This contract mostly follows the ERC4626 standard, however it breaks
+         compatibility by lacking `withdraw` and `redeem` functions. Withdrawals
+         are possible by calling `cooldownAssets` or `cooldownShares`, waiting
+         for the `cooldownDuration` to pass, and then calling `unstake`.
+ */
 contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
+    uint256 public constant maxDeposit = type(uint256).max;
+    uint256 public constant maxMint = type(uint256).max;
+
     IERC20 public immutable asset;
     address public feeAggregator;
+
+    uint32 public cooldownDuration;
 
     uint16 public lastDistributionWeek;
     uint32 public lastDistributionDay;
 
-    uint32 lastUpdate;
-    uint32 periodFinish;
+    uint32 public lastUpdate;
+    uint32 public periodFinish;
 
-    uint256 rewardsPerSecond;
+    uint256 public rewardsPerSecond;
 
-    /// @notice the amount of rewards distributed in a the most recent cycle.
+    /// @notice The amount of `asset` received in the current active reward week
     uint256 public lastWeeeklyAmountReceived;
 
-    uint256 internal storedTotalAssets;
-    uint256 internal totalCooldownAssets;
+    uint256 public storedTotalAssets;
+    uint256 public totalCooldownAssets;
 
-    uint32 public cooldownDuration;
+    mapping(address => AssetCooldown) public cooldowns;
 
     struct AssetCooldown {
         uint224 underlyingAmount;
@@ -53,8 +60,6 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         uint256 shares
     );
 
-    mapping(address => AssetCooldown) public cooldowns;
-
     constructor(
         address _core,
         IERC20 _stable,
@@ -66,39 +71,24 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         feeAggregator = _feeAggregator;
     }
 
-    function deposit(uint256 assets, address receiver) public returns (uint256 shares) {
-        // Check for rounding error since we round down in previewDeposit.
-        require((shares = previewDeposit(assets)) != 0, "ZERO_SHARES");
-        _updateDailyStream();
-        _deposit(assets, shares, receiver);
-        return shares;
-    }
-
-    function mint(uint256 shares, address receiver) public returns (uint256 assets) {
-        _updateDailyStream();
-
-        assets = previewMint(shares);
-        _deposit(assets, shares, receiver);
-        return assets;
-    }
-
-    function _deposit(uint256 assets, uint256 shares, address receiver) internal {
-        asset.transferFrom(msg.sender, address(this), assets);
-
-        _mint(receiver, shares);
-        storedTotalAssets += assets;
-
-        emit Deposit(msg.sender, receiver, assets, shares);
+    /**
+        @notice Compute the amount of tokens available to share holders.
+        @dev Increases linearly during an active reward distribution period.
+     */
+    function totalAssets() public view returns (uint256) {
+        uint256 updateUntil = Math.min(periodFinish, block.timestamp);
+        uint256 duration = updateUntil - lastUpdate;
+        return storedTotalAssets + (duration * rewardsPerSecond);
     }
 
     function convertToShares(uint256 assets) public view returns (uint256) {
-        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply();
 
         return supply == 0 ? assets : Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Down);
     }
 
     function convertToAssets(uint256 shares) public view returns (uint256) {
-        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply();
 
         return supply == 0 ? shares : Math.mulDiv(shares, supply, totalAssets(), Math.Rounding.Down);
     }
@@ -108,27 +98,19 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     }
 
     function previewMint(uint256 shares) public view returns (uint256) {
-        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply();
 
         return supply == 0 ? shares : Math.mulDiv(shares, supply, totalAssets(), Math.Rounding.Up);
     }
 
     function previewWithdraw(uint256 assets) public view returns (uint256) {
-        uint256 supply = totalSupply(); // Saves an extra SLOAD if totalSupply is non-zero.
+        uint256 supply = totalSupply();
 
         return supply == 0 ? assets : Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Up);
     }
 
     function previewRedeem(uint256 shares) public view returns (uint256) {
         return convertToAssets(shares);
-    }
-
-    function maxDeposit(address) public view returns (uint256) {
-        return type(uint256).max;
-    }
-
-    function maxMint(address) public view returns (uint256) {
-        return type(uint256).max;
     }
 
     function maxWithdraw(address owner) public view returns (uint256) {
@@ -139,8 +121,26 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         return balanceOf(owner);
     }
 
-    /// @notice redeem assets and starts a cooldown to claim the converted underlying asset
-    /// @param assets assets to redeem
+    function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
+        // Check for rounding error since we round down in previewDeposit.
+        require((shares = previewDeposit(assets)) != 0, "ZERO_SHARES");
+        _updateDailyStream();
+        _deposit(assets, shares, receiver);
+        return shares;
+    }
+
+    function mint(uint256 shares, address receiver) external returns (uint256 assets) {
+        _updateDailyStream();
+
+        assets = previewMint(shares);
+        _deposit(assets, shares, receiver);
+        return assets;
+    }
+
+    /**
+        @notice Redeem assets and start a cooldown to claim the underlying asset.
+        @param assets Amount of assets to redeem.
+     */
     function cooldownAssets(uint256 assets) external returns (uint256 shares) {
         _updateDailyStream();
         require(assets <= maxWithdraw(msg.sender), "sMONEY: insufficient assets");
@@ -150,8 +150,10 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         return shares;
     }
 
-    /// @notice redeem shares into assets and starts a cooldown to claim the converted underlying asset
-    /// @param shares shares to redeem
+    /**
+        @notice Redeem shares into assets, and start a cooldown to claim the underlying asset.
+        @param shares Amount of shares to redeem.
+     */
     function cooldownShares(uint256 shares) external returns (uint256 assets) {
         _updateDailyStream();
         require(shares <= maxRedeem(msg.sender), "sMONEY: insufficient shares");
@@ -161,19 +163,10 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         return assets;
     }
 
-    function _cooldown(uint256 assets, uint256 shares) internal {
-        require(assets > 0, "sMONEY: zero assets");
-
-        cooldowns[msg.sender].cooldownEnd = uint32(block.timestamp + cooldownDuration);
-        cooldowns[msg.sender].underlyingAmount = uint224(cooldowns[msg.sender].underlyingAmount + assets);
-        totalCooldownAssets = totalCooldownAssets + assets;
-        storedTotalAssets = storedTotalAssets - assets;
-
-        _burn(msg.sender, shares);
-
-        // TODO event
-    }
-
+    /**
+        @notice Claim the staked amount once the cooldown period has finished.
+        @param receiver Address to send the claimed assets to.
+     */
     function unstake(address receiver) external {
         AssetCooldown memory ac = cooldowns[msg.sender];
         uint256 amount = ac.underlyingAmount;
@@ -188,17 +181,7 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         // TODO event
     }
 
-    /// @notice Compute the amount of tokens available to share holders.
-    ///         Increases linearly during a reward distribution period from the sync call, not the cycle start.
-    function totalAssets() public view returns (uint256) {
-        uint256 updateUntil = Math.min(periodFinish, block.timestamp);
-        uint256 duration = updateUntil - lastUpdate;
-        return storedTotalAssets + (duration * rewardsPerSecond);
-    }
-
-    /// @notice Distributes rewards to xERC4626 holders.
-    /// All surplus `asset` balance of the contract over the internal balance becomes queued for the next cycle.
-    function notifyWeeklyFees(uint256) public virtual {
+    function notifyWeeklyFees(uint256) external {
         require(msg.sender == feeAggregator);
 
         uint256 updateUntil = _advanceCurrentStream();
@@ -208,6 +191,35 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         _setNewStream(newAmount, residualAmount);
     }
 
+    /** @dev Shared logic for `deposit` and `mint` */
+    function _deposit(uint256 assets, uint256 shares, address receiver) internal {
+        asset.transferFrom(msg.sender, address(this), assets);
+
+        _mint(receiver, shares);
+        storedTotalAssets += assets;
+
+        emit Deposit(msg.sender, receiver, assets, shares);
+    }
+
+    /** @dev Shared logic for `cooldownAssets` and `cooldownShares` */
+    function _cooldown(uint256 assets, uint256 shares) internal {
+        require(assets > 0, "sMONEY: zero assets");
+
+        cooldowns[msg.sender].cooldownEnd = uint32(block.timestamp + cooldownDuration);
+        cooldowns[msg.sender].underlyingAmount = uint224(cooldowns[msg.sender].underlyingAmount + assets);
+        totalCooldownAssets = totalCooldownAssets + assets;
+        storedTotalAssets = storedTotalAssets - assets;
+
+        _burn(msg.sender, shares);
+
+        // TODO event
+    }
+
+    /**
+        @dev Advance the current reward stream, and optionally update the stream
+             within the current week. If a new week has started, the stream can
+             only be updated through a call to `notifyWeeklyFees`.
+    */
     function _updateDailyStream() internal {
         uint256 updateUntil = _advanceCurrentStream();
 
@@ -222,6 +234,7 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         _setNewStream(newAmount, residualAmount);
     }
 
+    /** @dev Advance the current reward stream */
     function _advanceCurrentStream() internal returns (uint256 updateUntil) {
         updateUntil = Math.min(periodFinish, block.timestamp);
         uint256 duration = updateUntil - lastUpdate;
@@ -232,6 +245,7 @@ contract StakedMONEY is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         return updateUntil;
     }
 
+    /** @dev Start a new reward stream period */
     function _setNewStream(uint256 newAmount, uint256 residualAmount) internal {
         // TODO only retain a portion of newAmount, rest forwards onward
 
