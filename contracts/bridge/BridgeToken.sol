@@ -8,6 +8,7 @@ import { OFT } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
 import { OAppCore } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppCore.sol";
 import { IOAppMsgInspector } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/interfaces/IOAppMsgInspector.sol";
 import { ERC20FlashMint } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
+import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IProtocolCore } from "../interfaces/IProtocolCore.sol";
 import { IBridgeToken } from "../interfaces/IBridgeToken.sol";
@@ -18,7 +19,7 @@ import { Peer } from "./dependencies/DataStructures.sol";
     @author defidotmoney
     @notice OFT-enabled ERC20 for use in defi.money
  */
-contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
+contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint, ERC20Permit {
     using EnumerableSet for EnumerableSet.UintSet;
 
     IProtocolCore public immutable CORE_OWNER;
@@ -62,7 +63,7 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint {
         address _lzEndpoint,
         bytes memory _defaultOptions,
         Peer[] memory _tokenPeers
-    ) OFT(_name, _symbol, _lzEndpoint, address(this)) {
+    ) OFT(_name, _symbol, _lzEndpoint, address(this)) ERC20Permit(_name) {
         CORE_OWNER = _core;
         thisId = endpoint.eid();
         _setDefaultOptions(_defaultOptions);
