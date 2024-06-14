@@ -7,7 +7,7 @@ ADMIN_ACTIONS_DEADLINE = 3 * 86400
 
 def test_parameters(peg_keepers, swaps, stablecoin, core, receiver, pk_regulator):
     for peg_keeper, swap in zip(peg_keepers, swaps):
-        assert peg_keeper.PEGGED() == stablecoin.address
+        assert peg_keeper.STABLECOIN() == stablecoin.address
         assert peg_keeper.POOL() == swap.address
 
         assert peg_keeper.caller_share() == 2 * 10**4
