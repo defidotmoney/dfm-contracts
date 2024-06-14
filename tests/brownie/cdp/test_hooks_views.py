@@ -44,9 +44,9 @@ def test_create_loan_adjust(views, market, amm, controller, alice, hooks, adjust
     assert actual[5] == bands
     assert expected["bands"] == bands
 
-    liquidation_range = market.user_prices(alice)
-    assert actual[6] == liquidation_range
-    assert expected["liquidation_range"] == liquidation_range
+    coll_conversion_range = market.user_prices(alice)
+    assert actual[6] == coll_conversion_range
+    assert expected["coll_conversion_range"] == coll_conversion_range
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
@@ -80,9 +80,9 @@ def test_adjust_loan_increase_debt(
     assert actual[5] == bands
     assert expected["bands"] == bands
 
-    liquidation_range = market.user_prices(alice)
-    assert actual[6] == liquidation_range
-    assert expected["liquidation_range"] == liquidation_range
+    coll_conversion_range = market.user_prices(alice)
+    assert actual[6] == coll_conversion_range
+    assert expected["coll_conversion_range"] == coll_conversion_range
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
@@ -110,9 +110,9 @@ def test_adjust_loan_decrease_debt(views, market, hooks, amm, controller, alice,
     assert actual[5] == bands
     assert expected["bands"] == bands
 
-    liquidation_range = market.user_prices(alice)
-    assert actual[6] == liquidation_range
-    assert expected["liquidation_range"] == liquidation_range
+    coll_conversion_range = market.user_prices(alice)
+    assert actual[6] == coll_conversion_range
+    assert expected["coll_conversion_range"] == coll_conversion_range
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])

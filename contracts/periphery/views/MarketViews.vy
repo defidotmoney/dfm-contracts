@@ -113,7 +113,7 @@ struct AccountState:
     amm_stable_balance: uint256
     health: int256
     bands: int256[2]
-    liquidation_range: uint256[2]
+    coll_conversion_range: uint256[2]
 
 struct PendingAccountState:
     account_debt: uint256
@@ -121,7 +121,7 @@ struct PendingAccountState:
     amm_stable_balance: uint256
     health: int256
     bands: int256[2]
-    liquidation_range: uint256[2]
+    coll_conversion_range: uint256[2]
     hook_debt_adjustment: int256
 
 struct CloseLoanState:
@@ -264,7 +264,7 @@ def get_market_states_for_account(
                 state.amm_stable_balance, state.amm_coll_balance = amm.get_sum_xy(account)
                 state.health = market.health(account, True)
                 state.bands = amm.read_user_tick_numbers(account)
-                state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
+                state.coll_conversion_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
                 account_states.append(state)
 
     return account_states
@@ -327,7 +327,7 @@ def get_pending_market_state_for_account(
         state.bands
     ) = MarketOperator(market).pending_account_state_calculator(account, coll_change, debt_final, num_bands)
     amm: AMM = AMM(c.amm)
-    state.liquidation_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
+    state.coll_conversion_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
 
     return state
 
