@@ -34,20 +34,20 @@ event SetTargetDebtFraction:
     target_debt_fraction: uint256
 
 
-rate0: public(uint256)
-sigma: public(int256)  # 2 * 10**16 for example
-target_debt_fraction: public(uint256)
-
-PRICE_ORACLE: public(immutable(PriceOracle))
-CONTROLLER: public(immutable(Controller))
-CORE_OWNER: public(immutable(CoreOwner))
-
 MAX_TARGET_DEBT_FRACTION: constant(uint256) = 10**18
 MAX_SIGMA: constant(uint256) = 10**18
 MIN_SIGMA: constant(uint256) = 10**14
 MAX_EXP: constant(uint256) = 1000 * 10**18
 MAX_RATE: constant(uint256) = 43959106799  # 300% APY
 TARGET_REMAINDER: constant(uint256) = 10**17  # rate is scaled by factor of 1.9 at 90% utilization
+
+CORE_OWNER: public(immutable(CoreOwner))
+CONTROLLER: public(immutable(Controller))
+STABLECOIN_ORACLE: public(immutable(PriceOracle))
+
+rate0: public(uint256)
+sigma: public(int256)  # 2 * 10**16 for example
+target_debt_fraction: public(uint256)
 
 
 @external
@@ -70,7 +70,7 @@ def __init__(
     @param target_debt_fraction Ideal peg keeper debt fraction.
     """
     CORE_OWNER = core
-    PRICE_ORACLE = price_oracle
+    STABLECOIN_ORACLE = price_oracle
     CONTROLLER = controller
 
     assert sigma >= MIN_SIGMA
@@ -92,14 +92,14 @@ def owner() -> address:
 @view
 @external
 def rate(market: address) -> uint256:
-    return self.calculate_rate(market, PRICE_ORACLE.price())
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price())
 
 
 @external
 def rate_write(market: address) -> uint256:
     # Not needed here but useful for more automated policies
     # which change rate0 - for example rate0 targeting some fraction pl_debt/total_debt
-    return self.calculate_rate(market, PRICE_ORACLE.price_w())
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price_w())
 
 
 @external
