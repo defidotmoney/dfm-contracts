@@ -501,7 +501,7 @@ def pending_account_state_calculator(
         n1 = self._calculate_debt_n1(amm, convert(collateral, uint256), convert(debt, uint256), n_bands, price)
         collateral *= convert(self.COLLATERAL_PRECISION, int256)  # now has 18 decimals
     else:
-        assert debt_change < 0 and coll_change == 0, "DFM:M Unhealthy loan, repay only"
+        assert debt_change <= 0 and coll_change == 0, "DFM:M Unhealthy loan, repay only"
         n1 = ns[0]
         x_eff = convert(amm.get_x_down(account) * 10**18, int256)
 
