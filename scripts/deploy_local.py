@@ -11,7 +11,7 @@ from brownie import (
 )
 from brownie import ConstantMonetaryPolicy, DummyPriceOracle, MockLzEndpoint, Stableswap
 from brownie_tokens import ERC20
-from scripts.utils.rate0 import apr_to_rate0
+from scripts.utils.rate0 import apy_to_rate0
 
 
 # deployment constants, these can be modified to suit your needs
@@ -26,7 +26,7 @@ MARKET_FEE = 6 * 10**15  # 0.6%
 MARKET_ADMIN_FEE = 0
 MARKET_LOAN_DISCOUNT = 9 * 10**16  # 9%; +2% from 4x 1% bands = 100% - 11% = 89% LTV
 MARKET_LIQUIDATION_FEE = 6 * 10**16  # 6%
-MARKET_INTEREST_RATE = 0.1  # 10% APR
+MARKET_INTEREST_RATE = 0.1  # 10% APY
 
 
 def main(acct=None, peg_keeper_count=3, market_count=3):
@@ -40,7 +40,7 @@ def main(acct=None, peg_keeper_count=3, market_count=3):
     endpoint = MockLzEndpoint.deploy({"from": acct})
     oracle = DummyPriceOracle.deploy(3000 * 10**18, {"from": acct})
     policy = ConstantMonetaryPolicy.deploy({"from": acct})
-    policy.set_rate(apr_to_rate0(MARKET_INTEREST_RATE), {"from": acct})
+    policy.set_rate(apy_to_rate0(MARKET_INTEREST_RATE), {"from": acct})
 
     # Deploy core protocol contracts
     core = DFMProtocolCore.deploy(acct, FEE_RECEIVER, 0, {"from": acct})
