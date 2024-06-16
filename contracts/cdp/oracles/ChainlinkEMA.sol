@@ -40,6 +40,44 @@ contract ChainlinkEMA is IPriceOracle {
         storedObservationTimestamp = _getCurrentObservationTimestamp();
     }
 
+    /**
+        @notice Returns the current oracle price, normalized to 1e18 precision
+        @dev Read-only version used within view methods. Should always return
+             the same value as `price_w`
+     */
+    function price() external view returns (uint256 currentPrice) {
+        uint256 currentObservation = _getCurrentObservationTimestamp();
+        uint256 storedObservation = storedObservationTimestamp;
+        if (currentObservation == storedObservation) return storedPrice;
+        if (storedObservation + LOOKBACK * FREQUENCY > currentObservation) {
+            (currentPrice, ) = _getEmaFromPrevious();
+        } else {
+            (currentPrice, ) = _getEmaWithoutPreviousData();
+        }
+        return currentPrice;
+    }
+
+    /**
+        @notice Returns the current oracle price, normalized to 1e18 precision
+        @dev Called by all state-changing market / amm operations with the exception
+             of `MainController.close_loan`
+     */
+    function price_w() external returns (uint256 currentPrice) {
+        uint256 currentObservation = _getCurrentObservationTimestamp();
+        uint256 storedObservation = storedObservationTimestamp;
+        if (currentObservation == storedObservation) return storedPrice;
+        ChainlinkResponse memory response;
+        if (storedObservation + LOOKBACK * FREQUENCY > currentObservation) {
+            (currentPrice, response) = _getEmaFromPrevious();
+        } else {
+            (currentPrice, response) = _getEmaWithoutPreviousData();
+        }
+        storedObservationTimestamp = currentObservation;
+        storedPrice = currentPrice;
+        storedResponse = response;
+        return currentPrice;
+    }
+
     function _getCurrentObservationTimestamp() internal view returns (uint256) {
         return (block.timestamp / FREQUENCY) * FREQUENCY;
     }
@@ -65,7 +103,7 @@ contract ChainlinkEMA is IPriceOracle {
     {
         uint256 currentObservation = _getCurrentObservationTimestamp();
         uint256 storedObservation = storedObservationTimestamp;
-        uint256 currentPrice = storedPrice;
+        currentPrice = storedPrice;
         if (currentObservation == storedObservation) return (currentPrice, latestResponse);
 
         bool isLatestResponse;
@@ -118,18 +156,4 @@ contract ChainlinkEMA is IPriceOracle {
         }
         return (currentPrice, latestResponse);
     }
-
-    /**
-        @notice Returns the current oracle price, normalized to 1e18 precision
-        @dev Called by all state-changing market / amm operations with the exception
-             of `MainController.close_loan`
-     */
-    function price_w() external returns (uint256) {}
-
-    /**
-        @notice Returns the current oracle price, normalized to 1e18 precision
-        @dev Read-only version used within view methods. Should always return
-             the same value as `price_w`
-     */
-    function price() external view returns (uint256) {}
 }
