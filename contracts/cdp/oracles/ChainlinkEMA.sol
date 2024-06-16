@@ -54,6 +54,47 @@ contract ChainlinkEMA is IPriceOracle {
         return response;
     }
 
+    function _calculateEma(uint256 newPrice, uint256 lastPrice) internal view returns (uint256) {
+        return (newPrice * SMOOTHING_FACTOR) + (lastPrice * (1e18 - SMOOTHING_FACTOR)) / 1e18;
+    }
+
+    function _getEmaFromPrevious()
+        internal
+        view
+        returns (uint256 currentPrice, ChainlinkResponse memory latestResponse)
+    {
+        uint256 currentObservation = _getCurrentObservationTimestamp();
+        uint256 storedObservation = storedObservationTimestamp;
+        uint256 currentPrice = storedPrice;
+        if (currentObservation == storedObservation) return (currentPrice, latestResponse);
+
+        bool isLatestResponse;
+        latestResponse = _getLatestRoundData();
+        ChainlinkResponse memory response = storedResponse;
+        ChainlinkResponse memory nextResponse;
+        if (latestResponse.roundId > response.roundId + 1) {
+            nextResponse = _getRoundData(response.roundId + 1);
+        } else {
+            nextResponse = latestResponse;
+            isLatestResponse = true;
+        }
+
+        while (storedObservation <= currentObservation) {
+            storedObservation += FREQUENCY;
+            while (!isLatestResponse && nextResponse.updatedAt < storedObservation) {
+                response = nextResponse;
+                if (nextResponse.roundId == latestResponse.roundId) {
+                    isLatestResponse = true;
+                } else {
+                    nextResponse = _getRoundData(nextResponse.roundId + 1);
+                }
+            }
+            currentPrice = _calculateEma(uint256(response.answer), currentPrice);
+        }
+
+        return (currentPrice, latestResponse);
+    }
+
     function _getEmaWithoutPreviousData()
         internal
         view
@@ -73,7 +114,7 @@ contract ChainlinkEMA is IPriceOracle {
         }
         currentPrice = oracleResponses[0];
         for (uint256 i = 1; i < LOOKBACK; i++) {
-            currentPrice = (oracleResponses[i] * SMOOTHING_FACTOR) + (currentPrice * (1e18 - SMOOTHING_FACTOR)) / 1e18;
+            currentPrice = _calculateEma(oracleResponses[i], currentPrice);
         }
         return (currentPrice, latestResponse);
     }
