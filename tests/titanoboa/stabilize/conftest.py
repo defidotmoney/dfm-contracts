@@ -145,25 +145,6 @@ def crypto_agg(dummy_tricrypto, agg, stableswap_a, admin):
 
 
 @pytest.fixture(scope="module")
-def crypto_agg_with_external_oracle(
-    dummy_tricrypto, agg, stableswap_a, chainlink_price_oracle, admin
-):
-    with boa.env.prank(admin):
-        crypto_agg = boa.load(
-            "contracts/testing/CryptoWithStablePriceAndChainlink.vy",
-            dummy_tricrypto.address,
-            0,
-            stableswap_a,
-            agg,
-            chainlink_price_oracle.address,
-            5000,
-            1,
-        )
-        crypto_agg.price_w()
-        return crypto_agg
-
-
-@pytest.fixture(scope="module")
 def pk_regulator(admin, core, stablecoin, mock_peg_keepers, agg, controller):
     with boa.env.prank(admin):
         regulator = boa.load(
@@ -401,8 +382,3 @@ def mint_alice(alice, stablecoin, redeemable_tokens, swaps, initial_amounts, _mi
         with boa.env.prank(alice):
             rtoken.approve(swap, 2**256 - 1)
             stablecoin.approve(swap, 2**256 - 1)
-
-
-@pytest.fixture(scope="module")
-def chainlink_price_oracle(admin):
-    return boa.load("contracts/testing/ChainlinkAggregatorMock.vy", 8, 1000)
