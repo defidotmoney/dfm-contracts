@@ -36,8 +36,9 @@ contract ChainlinkEMA is IPriceOracle {
         LOOKBACK = _observations * 2;
         SMOOTHING_FACTOR = 2e18 / (_observations + 1);
 
-        (storedPrice, storedResponse) = _getEmaWithoutPreviousData();
-        storedObservationTimestamp = _getCurrentObservationTimestamp();
+        uint256 currentObservation = _getCurrentObservationTimestamp();
+        (storedPrice, storedResponse) = _calculateNewEMA(currentObservation);
+        storedObservationTimestamp = currentObservation;
     }
 
     /**
@@ -49,10 +50,11 @@ contract ChainlinkEMA is IPriceOracle {
         uint256 currentObservation = _getCurrentObservationTimestamp();
         uint256 storedObservation = storedObservationTimestamp;
         if (currentObservation == storedObservation) return storedPrice;
+
         if (storedObservation + LOOKBACK * FREQUENCY > currentObservation) {
-            (currentPrice, ) = _getEmaFromPrevious();
+            (currentPrice, , ) = _calculateLatestEMA(currentObservation, storedObservation);
         } else {
-            (currentPrice, ) = _getEmaWithoutPreviousData();
+            (currentPrice, ) = _calculateNewEMA(currentObservation);
         }
         return currentPrice;
     }
@@ -66,15 +68,17 @@ contract ChainlinkEMA is IPriceOracle {
         uint256 currentObservation = _getCurrentObservationTimestamp();
         uint256 storedObservation = storedObservationTimestamp;
         if (currentObservation == storedObservation) return storedPrice;
-        ChainlinkResponse memory response;
+
         if (storedObservation + LOOKBACK * FREQUENCY > currentObservation) {
-            (currentPrice, response) = _getEmaFromPrevious();
+            bool isNewResponse;
+            ChainlinkResponse memory response;
+            (currentPrice, response, isNewResponse) = _calculateLatestEMA(currentObservation, storedObservation);
+            if (isNewResponse) storedResponse = response;
         } else {
-            (currentPrice, response) = _getEmaWithoutPreviousData();
+            (currentPrice, storedResponse) = _calculateNewEMA(currentObservation);
         }
         storedObservationTimestamp = currentObservation;
         storedPrice = currentPrice;
-        storedResponse = response;
         return currentPrice;
     }
 
@@ -92,23 +96,29 @@ contract ChainlinkEMA is IPriceOracle {
         return response;
     }
 
-    function _calculateEma(uint256 newPrice, uint256 lastPrice) internal view returns (uint256) {
+    function _getNextEMA(uint256 newPrice, uint256 lastPrice) internal view returns (uint256) {
         return (newPrice * SMOOTHING_FACTOR) + (lastPrice * (1e18 - SMOOTHING_FACTOR)) / 1e18;
     }
 
-    function _getEmaFromPrevious()
-        internal
-        view
-        returns (uint256 currentPrice, ChainlinkResponse memory latestResponse)
-    {
-        uint256 currentObservation = _getCurrentObservationTimestamp();
-        uint256 storedObservation = storedObservationTimestamp;
+    function _calculateLatestEMA(
+        uint256 currentObservation,
+        uint256 storedObservation
+    ) internal view returns (uint256 currentPrice, ChainlinkResponse memory latestResponse, bool isNewResponse) {
         currentPrice = storedPrice;
-        if (currentObservation == storedObservation) return (currentPrice, latestResponse);
-
-        bool isLatestResponse;
         latestResponse = _getLatestRoundData();
         ChainlinkResponse memory response = storedResponse;
+
+        // special case, latest round is the same as stored round
+        if (latestResponse.roundId == response.roundId) {
+            uint256 answer = uint256(response.answer);
+            while (storedObservation <= currentObservation) {
+                storedObservation += FREQUENCY;
+                currentPrice = _getNextEMA(answer, currentPrice);
+            }
+            return (currentPrice, latestResponse, false);
+        }
+
+        bool isLatestResponse;
         ChainlinkResponse memory nextResponse;
         if (latestResponse.roundId > response.roundId + 1) {
             nextResponse = _getRoundData(response.roundId + 1);
@@ -127,22 +137,19 @@ contract ChainlinkEMA is IPriceOracle {
                     nextResponse = _getRoundData(nextResponse.roundId + 1);
                 }
             }
-            currentPrice = _calculateEma(uint256(response.answer), currentPrice);
+            currentPrice = _getNextEMA(uint256(response.answer), currentPrice);
         }
 
-        return (currentPrice, latestResponse);
+        return (currentPrice, latestResponse, true);
     }
 
-    function _getEmaWithoutPreviousData()
-        internal
-        view
-        returns (uint256 currentPrice, ChainlinkResponse memory latestResponse)
-    {
+    function _calculateNewEMA(
+        uint256 observationTimestamp
+    ) internal view returns (uint256 currentPrice, ChainlinkResponse memory latestResponse) {
         latestResponse = _getLatestRoundData();
         ChainlinkResponse memory response = latestResponse;
 
         uint256[] memory oracleResponses = new uint256[](LOOKBACK);
-        uint256 observationTimestamp = _getCurrentObservationTimestamp();
         for (uint256 i = LOOKBACK - 1; i != 0; i--) {
             while (response.updatedAt > observationTimestamp) {
                 response = _getRoundData(response.roundId - 1);
@@ -152,7 +159,7 @@ contract ChainlinkEMA is IPriceOracle {
         }
         currentPrice = oracleResponses[0];
         for (uint256 i = 1; i < LOOKBACK; i++) {
-            currentPrice = _calculateEma(oracleResponses[i], currentPrice);
+            currentPrice = _getNextEMA(oracleResponses[i], currentPrice);
         }
         return (currentPrice, latestResponse);
     }
