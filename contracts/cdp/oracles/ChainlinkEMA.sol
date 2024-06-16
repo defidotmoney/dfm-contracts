@@ -82,24 +82,11 @@ contract ChainlinkEMA is IPriceOracle {
         return currentPrice;
     }
 
-    function _getCurrentObservationTimestamp() internal view returns (uint256) {
-        return (block.timestamp / FREQUENCY) * FREQUENCY;
-    }
-
-    function _getLatestRoundData() internal view returns (ChainlinkResponse memory response) {
-        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.latestRoundData();
-        return response;
-    }
-
-    function _getRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory response) {
-        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.getRoundData(roundId);
-        return response;
-    }
-
-    function _getNextEMA(uint256 newPrice, uint256 lastPrice) internal view returns (uint256) {
-        return (newPrice * SMOOTHING_FACTOR) + (lastPrice * (1e18 - SMOOTHING_FACTOR)) / 1e18;
-    }
-
+    /**
+        @dev Calculates the latest EMA price by performing observations at all observation
+             intervals since the last stored one. Used when the number of new observations
+             required is less than `2 * OBSERVATIONS`.
+     */
     function _calculateLatestEMA(
         uint256 currentObservation,
         uint256 storedObservation
@@ -143,6 +130,10 @@ contract ChainlinkEMA is IPriceOracle {
         return (currentPrice, latestResponse, true);
     }
 
+    /**
+        @dev Calculates an EMA price without relying on the last stored observation.
+             Used when the number of new observations required is at least `2 * OBSERVATIONS`.
+     */
     function _calculateNewEMA(
         uint256 observationTimestamp
     ) internal view returns (uint256 currentPrice, ChainlinkResponse memory latestResponse) {
@@ -162,5 +153,25 @@ contract ChainlinkEMA is IPriceOracle {
             currentPrice = _getNextEMA(oracleResponses[i], currentPrice);
         }
         return (currentPrice, latestResponse);
+    }
+
+    /** @dev Given the latest price and the last EMA, returns the new EMA */
+    function _getNextEMA(uint256 newPrice, uint256 lastEMA) internal view returns (uint256) {
+        return (newPrice * SMOOTHING_FACTOR) + (lastEMA * (1e18 - SMOOTHING_FACTOR)) / 1e18;
+    }
+
+    /** @dev The timestamp of the latest oracle observation */
+    function _getCurrentObservationTimestamp() internal view returns (uint256) {
+        return (block.timestamp / FREQUENCY) * FREQUENCY;
+    }
+
+    function _getLatestRoundData() internal view returns (ChainlinkResponse memory response) {
+        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.latestRoundData();
+        return response;
+    }
+
+    function _getRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory response) {
+        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.getRoundData(roundId);
+        return response;
     }
 }
