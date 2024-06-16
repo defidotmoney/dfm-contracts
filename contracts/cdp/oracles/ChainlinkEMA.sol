@@ -108,7 +108,7 @@ contract ChainlinkEMA is IPriceOracle {
         bool isLatestResponse;
         ChainlinkResponse memory nextResponse;
         if (latestResponse.roundId > response.roundId + 1) {
-            nextResponse = _getRoundData(response.roundId + 1);
+            nextResponse = _getNextRoundData(response.roundId);
         } else {
             nextResponse = latestResponse;
             isLatestResponse = true;
@@ -121,7 +121,7 @@ contract ChainlinkEMA is IPriceOracle {
                 if (nextResponse.roundId == latestResponse.roundId) {
                     isLatestResponse = true;
                 } else {
-                    nextResponse = _getRoundData(nextResponse.roundId + 1);
+                    nextResponse = _getNextRoundData(nextResponse.roundId);
                 }
             }
             currentPrice = _getNextEMA(uint256(response.answer), currentPrice);
@@ -140,8 +140,12 @@ contract ChainlinkEMA is IPriceOracle {
         latestResponse = _getLatestRoundData();
         ChainlinkResponse memory response = latestResponse;
 
-        uint256[] memory oracleResponses = new uint256[](LOOKBACK);
-        for (uint256 i = LOOKBACK - 1; i != 0; i--) {
+        // limit the number observations by the rounds in the current phase
+        uint256 length = (response.roundId % 2 ** 64);
+        if (length > LOOKBACK) length = LOOKBACK;
+
+        uint256[] memory oracleResponses = new uint256[](length);
+        for (uint256 i = length - 1; i != 0; i--) {
             while (response.updatedAt > observationTimestamp) {
                 response = _getRoundData(response.roundId - 1);
             }
@@ -149,7 +153,7 @@ contract ChainlinkEMA is IPriceOracle {
             observationTimestamp -= FREQUENCY;
         }
         currentPrice = oracleResponses[0];
-        for (uint256 i = 1; i < LOOKBACK; i++) {
+        for (uint256 i = 1; i < length; i++) {
             currentPrice = _getNextEMA(oracleResponses[i], currentPrice);
         }
         return (currentPrice, latestResponse);
@@ -173,5 +177,20 @@ contract ChainlinkEMA is IPriceOracle {
     function _getRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory response) {
         (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.getRoundData(roundId);
         return response;
+    }
+
+    /**
+        @dev Given a `roundId`, gets the response data for the next round. This method is preferred
+             over calling `_getRoundData(roundId + 1)` because it handles a case where the oracle
+             phase has increased: https://docs.chain.link/data-feeds/historical-data#roundid-in-proxy
+     */
+    function _getNextRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory) {
+        try chainlinkFeed.getRoundData(roundId + 1) returns (uint80 round, int answer, uint, uint updatedAt, uint80) {
+            return ChainlinkResponse({ roundId: round, answer: answer, updatedAt: updatedAt });
+        } catch {
+            // handle case where chainlink phase has increased
+            uint80 nextRoundId = ((roundId >> 64) + 1) << 64;
+            return _getRoundData(nextRoundId);
+        }
     }
 }
