@@ -25,8 +25,8 @@ contract ChainlinkEMA is IPriceOracle {
 
     struct ChainlinkResponse {
         uint80 roundId;
-        int256 answer;
-        uint256 updatedAt;
+        uint128 updatedAt;
+        uint256 answer;
     }
 
     constructor(IChainlinkAggregator _chainlink, uint256 _observations, uint256 _frequency) {
@@ -97,7 +97,7 @@ contract ChainlinkEMA is IPriceOracle {
 
         // special case, latest round is the same as stored round
         if (latestResponse.roundId == response.roundId) {
-            uint256 answer = uint256(response.answer);
+            uint256 answer = response.answer;
             while (storedObservation <= currentObservation) {
                 storedObservation += FREQUENCY;
                 currentPrice = _getNextEMA(answer, currentPrice);
@@ -124,7 +124,7 @@ contract ChainlinkEMA is IPriceOracle {
                     nextResponse = _getNextRoundData(nextResponse.roundId);
                 }
             }
-            currentPrice = _getNextEMA(uint256(response.answer), currentPrice);
+            currentPrice = _getNextEMA(response.answer, currentPrice);
         }
 
         return (currentPrice, latestResponse, true);
@@ -149,7 +149,7 @@ contract ChainlinkEMA is IPriceOracle {
             while (response.updatedAt > observationTimestamp) {
                 response = _getRoundData(response.roundId - 1);
             }
-            oracleResponses[i] = uint256(response.answer);
+            oracleResponses[i] = response.answer;
             observationTimestamp -= FREQUENCY;
         }
         currentPrice = oracleResponses[0];
@@ -169,14 +169,14 @@ contract ChainlinkEMA is IPriceOracle {
         return (block.timestamp / FREQUENCY) * FREQUENCY;
     }
 
-    function _getLatestRoundData() internal view returns (ChainlinkResponse memory response) {
-        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.latestRoundData();
-        return response;
+    function _getLatestRoundData() internal view returns (ChainlinkResponse memory) {
+        (uint80 roundId, int256 answer, , uint256 updatedAt, ) = chainlinkFeed.latestRoundData();
+        return _validateAndFormatResponse(roundId, answer, updatedAt);
     }
 
-    function _getRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory response) {
-        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.getRoundData(roundId);
-        return response;
+    function _getRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory) {
+        (uint80 roundId, int256 answer, , uint256 updatedAt, ) = chainlinkFeed.getRoundData(roundId);
+        return _validateAndFormatResponse(roundId, answer, updatedAt);
     }
 
     /**
@@ -186,11 +186,20 @@ contract ChainlinkEMA is IPriceOracle {
      */
     function _getNextRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory) {
         try chainlinkFeed.getRoundData(roundId + 1) returns (uint80 round, int answer, uint, uint updatedAt, uint80) {
-            return ChainlinkResponse({ roundId: round, answer: answer, updatedAt: updatedAt });
+            return _validateAndFormatResponse(round, answer, updatedAt);
         } catch {
             // handle case where chainlink phase has increased
             uint80 nextRoundId = ((roundId >> 64) + 1) << 64;
             return _getRoundData(nextRoundId);
         }
+    }
+
+    function _validateAndFormatResponse(
+        uint80 roundId,
+        int256 answer,
+        uint256 updatedAt
+    ) internal pure returns (ChainlinkResponse memory) {
+        require(answer > 0, "DFM: Chainlink answer too low");
+        return ChainlinkResponse({ roundId: roundId, updatedAt: uint128(updatedAt), answer: uint256(answer) });
     }
 }
