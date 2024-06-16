@@ -35,6 +35,13 @@ contract ChainlinkEMA is IPriceOracle {
         FREQUENCY = _frequency;
         LOOKBACK = _observations * 2;
         SMOOTHING_FACTOR = 2e18 / (_observations + 1);
+
+        (storedPrice, storedResponse) = _getEmaWithoutPreviousData();
+        storedObservationTimestamp = _getCurrentObservationTimestamp();
+    }
+
+    function _getCurrentObservationTimestamp() internal view returns (uint256) {
+        return (block.timestamp / FREQUENCY) * FREQUENCY;
     }
 
     function _getLatestRoundData() internal view returns (ChainlinkResponse memory response) {
@@ -45,6 +52,30 @@ contract ChainlinkEMA is IPriceOracle {
     function _getRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory response) {
         (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.getRoundData(roundId);
         return response;
+    }
+
+    function _getEmaWithoutPreviousData()
+        internal
+        view
+        returns (uint256 currentPrice, ChainlinkResponse memory latestResponse)
+    {
+        latestResponse = _getLatestRoundData();
+        ChainlinkResponse memory response = latestResponse;
+
+        uint256[] memory oracleResponses = new uint256[](LOOKBACK);
+        uint256 observationTimestamp = _getCurrentObservationTimestamp();
+        for (uint256 i = LOOKBACK - 1; i != 0; i--) {
+            while (response.updatedAt > observationTimestamp) {
+                response = _getRoundData(response.roundId - 1);
+            }
+            oracleResponses[i] = uint256(response.answer);
+            observationTimestamp -= FREQUENCY;
+        }
+        currentPrice = oracleResponses[0];
+        for (uint256 i = 1; i < LOOKBACK; i++) {
+            currentPrice = (oracleResponses[i] * SMOOTHING_FACTOR) + (currentPrice * (1e18 - SMOOTHING_FACTOR)) / 1e18;
+        }
+        return (currentPrice, latestResponse);
     }
 
     /**
