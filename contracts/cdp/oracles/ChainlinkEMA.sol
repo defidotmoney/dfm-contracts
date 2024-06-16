@@ -37,6 +37,16 @@ contract ChainlinkEMA is IPriceOracle {
         SMOOTHING_FACTOR = 2e18 / (_observations + 1);
     }
 
+    function _getLatestRoundData() internal view returns (ChainlinkResponse memory response) {
+        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.latestRoundData();
+        return response;
+    }
+
+    function _getRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory response) {
+        (response.roundId, response.answer, , response.updatedAt, ) = chainlinkFeed.getRoundData(roundId);
+        return response;
+    }
+
     /**
         @notice Returns the current oracle price, normalized to 1e18 precision
         @dev Called by all state-changing market / amm operations with the exception
