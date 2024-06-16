@@ -10,7 +10,7 @@ import { IPriceOracle } from "../../interfaces/IPriceOracle.sol";
     @author defidotmoney
     @dev Calculated an exponential moving average from a Chainlink Feed
  */
-contract ChainlinkEMA is IPriceOracle {
+contract ChainlinkEMA {
     IChainlinkAggregator public immutable chainlinkFeed;
 
     uint256 public immutable OBSERVATIONS;
@@ -140,28 +140,49 @@ contract ChainlinkEMA is IPriceOracle {
         latestResponse = _getLatestRoundData();
         ChainlinkResponse memory response = latestResponse;
 
-        // limit the number observations by the rounds in the current phase
-        uint256 length = (response.roundId % 2 ** 64);
-        if (length > LOOKBACK) length = LOOKBACK;
+        uint256[] memory oracleResponses = new uint256[](LOOKBACK);
 
-        uint256[] memory oracleResponses = new uint256[](length);
-        for (uint256 i = length - 1; i != 0; i--) {
+        // in the following while loops, we manually decrement and then increment
+        // idx so we know where the first non-zero value is within oracleResponses
+        uint256 idx = LOOKBACK;
+
+        // iterate backward to get oracle responses for each observation time
+        while (true) {
             while (response.updatedAt > observationTimestamp) {
+                if (response.roundId & type(uint64).max == 0) {
+                    // first roundId for this aggregator, cannot look back further
+                    break;
+                }
                 response = _getRoundData(response.roundId - 1);
             }
-            oracleResponses[i] = response.answer;
+            if (response.updatedAt > observationTimestamp) {
+                if (idx == LOOKBACK) {
+                    // edge case, if the first round is more recent than our latest
+                    // observation time we can only return the first round's response
+                    return (response.answer, latestResponse);
+                }
+                break;
+            }
+            idx--;
+            oracleResponses[idx] = response.answer;
+            if (idx == 0) break;
             observationTimestamp -= FREQUENCY;
         }
-        currentPrice = oracleResponses[0];
-        for (uint256 i = 1; i < length; i++) {
-            currentPrice = _getNextEMA(oracleResponses[i], currentPrice);
+
+        // now iterate forward to calculate EMA based on the observed oracle responses
+        currentPrice = oracleResponses[idx];
+        idx++;
+        while (idx < LOOKBACK) {
+            currentPrice = _getNextEMA(oracleResponses[idx], currentPrice);
+            idx++;
         }
+
         return (currentPrice, latestResponse);
     }
 
     /** @dev Given the latest price and the last EMA, returns the new EMA */
     function _getNextEMA(uint256 newPrice, uint256 lastEMA) internal view returns (uint256) {
-        return (newPrice * SMOOTHING_FACTOR) + (lastEMA * (1e18 - SMOOTHING_FACTOR)) / 1e18;
+        return ((newPrice * SMOOTHING_FACTOR) + (lastEMA * (1e18 - SMOOTHING_FACTOR))) / 1e18;
     }
 
     /** @dev The timestamp of the latest oracle observation */
