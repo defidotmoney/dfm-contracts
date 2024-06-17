@@ -2,10 +2,10 @@
 
 pragma solidity 0.8.25;
 
-import "@openzeppelin/contracts/utils/Address.sol";
-import "../../base/dependencies/CoreOwnable.sol";
-import "../../interfaces/IPriceOracle.sol";
-import "../../interfaces/IUptimeOracle.sol";
+import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { CoreOwnable } from "../../base/dependencies/CoreOwnable.sol";
+import { IPriceOracle } from "../../interfaces/IPriceOracle.sol";
+import { IUptimeOracle } from "../../interfaces/IUptimeOracle.sol";
 
 /**
     @title Aggregate Chained Oracle
@@ -24,8 +24,11 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
         // If `true`, the new price is calculated from the answer as `result * answer / 1e18`
         // If `false, the calculation is `result * 1e18 / answer`
         bool isMultiplied;
-        // calldata input passsed to `target` to get the oracle response.
-        bytes input;
+        // Calldata input passsed to `target` to get the oracle response in a staticcall context.
+        bytes inputView;
+        // Calldata input passsed to `target` to get the oracle response in a write context.
+        // In some cases this might be the same value as `inputView`.
+        bytes inputWrite;
     }
 
     OracleCall[][] private oracleCallPaths;
@@ -45,8 +48,12 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
      */
     function price() external view returns (uint256) {
         uint256 result = _maybeGetStoredPrice();
-        if (result == 0) return _fetchAggregateResult();
-        return result;
+        if (result != 0) return result;
+        uint256 length = oracleCallPaths.length;
+        for (uint256 i = 0; i < length; i++) {
+            result += _fetchCallPathResultView(oracleCallPaths[i]);
+        }
+        return result / length;
     }
 
     /**
@@ -56,10 +63,15 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
      */
     function price_w() external returns (uint256) {
         uint256 result = _maybeGetStoredPrice();
-        if (result == 0) {
-            result = _fetchAggregateResult();
-            storedPrice = result;
+        if (result != 0) return result;
+
+        uint256 length = oracleCallPaths.length;
+        for (uint256 i = 0; i < length; i++) {
+            result += _fetchCallPathResultWrite(oracleCallPaths[i]);
         }
+        result = result / length;
+        storedPrice = result;
+
         return result;
     }
 
@@ -84,12 +96,23 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
     }
 
     /**
-        @notice Fetches the current response for a single oracle call path
+        @notice Fetches the current view response for a single oracle call path
         @param idx Index of the oracle call path to query
-        @return response Oracle call path response
+        @return response Oracle call path view response
      */
     function getCallPathResult(uint256 idx) external view returns (uint256 response) {
-        return _fetchCallPathResult(oracleCallPaths[idx]);
+        return _fetchCallPathResultView(oracleCallPaths[idx]);
+    }
+
+    // --- unguarded external functions ---
+
+    /**
+        @notice Fetches the current write response for a single oracle call path
+        @param idx Index of the oracle call path to query
+        @return response Oracle call path write response
+     */
+    function getCallPathResultWrite(uint256 idx) external returns (uint256 response) {
+        return _fetchCallPathResultWrite(oracleCallPaths[idx]);
     }
 
     // --- owner-only guarded external functions ---
@@ -119,7 +142,10 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
             require(path[i].decimals < 19, "DFM: Maximum 18 decimals");
             storagePath.push(path[i]);
         }
-        _fetchCallPathResult(path);
+
+        uint256 resultView = _fetchCallPathResultView(path);
+        uint256 resultWrite = _fetchCallPathResultWrite(path);
+        require(resultView == resultWrite, "DFM: view != write");
     }
 
     /**
@@ -152,19 +178,24 @@ contract AggregateChainedOracle is IPriceOracle, CoreOwnable {
         return 0;
     }
 
-    function _fetchAggregateResult() internal view returns (uint256 result) {
-        uint256 length = oracleCallPaths.length;
-        for (uint256 i = 0; i < length; i++) {
-            result += _fetchCallPathResult(oracleCallPaths[i]);
-        }
-        return result / length;
-    }
-
-    function _fetchCallPathResult(OracleCall[] memory path) internal view returns (uint256 result) {
+    function _fetchCallPathResultView(OracleCall[] memory path) internal view returns (uint256 result) {
         result = 1e18;
         uint256 length = path.length;
         for (uint256 i = 0; i < length; i++) {
-            uint256 answer = uint256(bytes32(path[i].target.functionStaticCall(path[i].input)));
+            uint256 answer = uint256(bytes32(path[i].target.functionStaticCall(path[i].inputView)));
+            require(answer != 0, "DFM: Oracle returned 0");
+            answer *= 10 ** (18 - path[i].decimals);
+            if (path[i].isMultiplied) result = (result * answer) / 1e18;
+            else result = (result * 1e18) / answer;
+        }
+        return result;
+    }
+
+    function _fetchCallPathResultWrite(OracleCall[] memory path) internal returns (uint256 result) {
+        result = 1e18;
+        uint256 length = path.length;
+        for (uint256 i = 0; i < length; i++) {
+            uint256 answer = uint256(bytes32(path[i].target.functionCall(path[i].inputWrite)));
             require(answer != 0, "DFM: Oracle returned 0");
             answer *= 10 ** (18 - path[i].decimals);
             if (path[i].isMultiplied) result = (result * answer) / 1e18;

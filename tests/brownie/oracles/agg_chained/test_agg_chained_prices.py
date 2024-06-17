@@ -8,9 +8,8 @@ from brownie import chain, ZERO_ADDRESS
 @pytest.mark.parametrize("price", [10**18, 10**20, 1234567890])
 def test_simple_multiplication(chained_oracle, curve, deployer, price):
     curve.set_price(0, price, {"from": deployer})
-    chained_oracle.addCallPath(
-        [(curve, 18, True, curve.price_oracle.encode_input(0))], {"from": deployer}
-    )
+    calldata = curve.price_oracle.encode_input(0)
+    chained_oracle.addCallPath([(curve, 18, True, calldata, calldata)], {"from": deployer})
 
     assert chained_oracle.price() == price
 
@@ -18,30 +17,27 @@ def test_simple_multiplication(chained_oracle, curve, deployer, price):
 @pytest.mark.parametrize("price", [10**18, 10**20, 1234567890])
 def test_simple_division(chained_oracle, curve, price, deployer):
     curve.set_price(0, price, {"from": deployer})
-    chained_oracle.addCallPath(
-        [(curve, 18, False, curve.price_oracle.encode_input(0))], {"from": deployer}
-    )
+    calldata = curve.price_oracle.encode_input(0)
+    chained_oracle.addCallPath([(curve, 18, False, calldata, calldata)], {"from": deployer})
 
     assert chained_oracle.price() == 10**36 // price
 
 
 def test_decimals(chained_oracle, curve, deployer):
     curve.set_price(0, 10**6, {"from": deployer})
-    chained_oracle.addCallPath(
-        [(curve, 11, True, curve.price_oracle.encode_input(0))], {"from": deployer}
-    )
+    calldata = curve.price_oracle.encode_input(0)
+    chained_oracle.addCallPath([(curve, 11, True, calldata, calldata)], {"from": deployer})
 
     assert chained_oracle.price() == 10 ** (6 + 18 - 11)
 
 
 def test_multiple_paths(chained_oracle, curve, curve2, curve3, deployer):
     prices = [3000 * 10**18, 6 * 10**17, 69420 * 10**18]
+    calldata = curve.price_oracle.encode_input(0)
 
     for c, price in zip([curve, curve2, curve3], prices):
         c.set_price(0, price, {"from": deployer})
-        chained_oracle.addCallPath(
-            [(c, 18, True, curve.price_oracle.encode_input(0))], {"from": deployer}
-        )
+        chained_oracle.addCallPath([(c, 18, True, calldata, calldata)], {"from": deployer})
 
     assert chained_oracle.price() == sum(prices) // 3
 
@@ -56,15 +52,13 @@ def test_chained_call_path(
     curve.set_price(0, price, {"from": deployer})
     uniswap.set_price(alice, bob, price2, {"from": deployer})
 
+    calldata_curve = curve.price_oracle.encode_input(0)
+    calldata_uni = uniswap.quoteAllAvailablePoolsWithTimePeriod.encode_input(10**18, alice, bob, 30)
+
     chained_oracle.addCallPath(
         [
-            (curve, 18, first_op, curve.price_oracle.encode_input(0)),
-            (
-                uniswap,
-                18,
-                second_op,
-                uniswap.quoteAllAvailablePoolsWithTimePeriod.encode_input(10**18, alice, bob, 30),
-            ),
+            (curve, 18, first_op, calldata_curve, calldata_curve),
+            (uniswap, 18, second_op, calldata_uni, calldata_uni),
         ]
     )
 
