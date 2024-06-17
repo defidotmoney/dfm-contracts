@@ -1,4 +1,4 @@
-# @version 0.3.10
+#pragma version 0.3.10
 """
 @title CDP Market Operator
 @author Curve.Fi (with edits by defidotmoney)

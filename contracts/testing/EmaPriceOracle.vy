@@ -1,4 +1,4 @@
-# @version 0.3.10
+#pragma version 0.3.10
 """
 @title EMAPriceOracle - wrapper which adds EMA to a price source for crvUSD
 @dev For testing purposes only - NOT TO BE USED IN PRODUCTION

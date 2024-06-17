@@ -1,4 +1,4 @@
-# @version 0.3.10
+#pragma version 0.3.10
 """
 Mock version of DFMProtocolCore for titanoboa tests
 """
