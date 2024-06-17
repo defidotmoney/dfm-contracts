@@ -21,6 +21,7 @@ contract ChainlinkEMA {
     uint256 public immutable SMOOTHING_FACTOR;
 
     uint256 private immutable MAX_LOOKBACK;
+    uint256 private immutable PRECISION_MUL;
 
     uint256 public storedPrice;
     uint256 public storedObservationTimestamp;
@@ -29,7 +30,7 @@ contract ChainlinkEMA {
     struct ChainlinkResponse {
         uint80 roundId;
         uint128 updatedAt;
-        uint256 answer;
+        uint256 answer; // normalized to 1e18
     }
 
     constructor(IChainlinkAggregator _chainlink, uint256 _observations, uint256 _interval) {
@@ -38,6 +39,7 @@ contract ChainlinkEMA {
         INTERVAL = _interval;
         SMOOTHING_FACTOR = 2e18 / (_observations + 1);
         MAX_LOOKBACK = _observations * 2;
+        PRECISION_MUL = 10 ** (18 - _chainlink.decimals());
 
         uint256 currentObservation = _getCurrentObservationTimestamp();
         (storedPrice, storedResponse) = _calculateNewEMA(currentObservation);
@@ -219,8 +221,13 @@ contract ChainlinkEMA {
         uint80 roundId,
         int256 answer,
         uint256 updatedAt
-    ) internal pure returns (ChainlinkResponse memory) {
+    ) internal view returns (ChainlinkResponse memory) {
         require(answer > 0, "DFM: Chainlink answer too low");
-        return ChainlinkResponse({ roundId: roundId, updatedAt: uint128(updatedAt), answer: uint256(answer) });
+        return
+            ChainlinkResponse({
+                roundId: roundId,
+                updatedAt: uint128(updatedAt),
+                answer: uint256(answer) * PRECISION_MUL
+            });
     }
 }
