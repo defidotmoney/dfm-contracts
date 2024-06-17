@@ -2,10 +2,10 @@
 
 pragma solidity 0.8.25;
 
-import "@openzeppelin/contracts/utils/Address.sol";
-import "../../base/dependencies/CoreOwnable.sol";
-import "../../interfaces/IPriceOracle.sol";
-import "../../interfaces/IUptimeOracle.sol";
+import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { CoreOwnable } from "../../base/dependencies/CoreOwnable.sol";
+import { IPriceOracle } from "../../interfaces/IPriceOracle.sol";
+import { IUptimeOracle } from "../../interfaces/IUptimeOracle.sol";
 
 /**
     @title Aggregate Chained Oracle
