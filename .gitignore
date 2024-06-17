@@ -8,3 +8,4 @@ reports/
 venv/
 node_modules
 hardhat.config.js
+deployments/logs/*-fork.yaml
