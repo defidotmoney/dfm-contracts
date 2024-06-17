@@ -8,20 +8,23 @@ import { IPriceOracle } from "../../interfaces/IPriceOracle.sol";
 /**
     @title Chainlink EMA Oracle
     @author defidotmoney
-    @dev Calculated an exponential moving average from a Chainlink Feed
+    @dev Calculates an exponential moving average from a Chainlink feed
  */
 contract ChainlinkEMA {
     IChainlinkAggregator public immutable chainlinkFeed;
 
+    /// @notice The number of observations used in calculating the EMA.
     uint256 public immutable OBSERVATIONS;
-    uint256 public immutable FREQUENCY;
+    /// @notice The number of seconds between price observations when calculating the EMA.
+    uint256 public immutable INTERVAL;
+    /// @dev `2 / (OBSERVATIONS - 1)` stored with 1e18 precision
+    uint256 public immutable SMOOTHING_FACTOR;
 
-    uint256 private immutable LOOKBACK;
-    uint256 private immutable SMOOTHING_FACTOR;
+    uint256 private immutable MAX_LOOKBACK;
 
+    uint256 public storedPrice;
     uint256 public storedObservationTimestamp;
     ChainlinkResponse public storedResponse;
-    uint256 public storedPrice;
 
     struct ChainlinkResponse {
         uint80 roundId;
@@ -29,12 +32,12 @@ contract ChainlinkEMA {
         uint256 answer;
     }
 
-    constructor(IChainlinkAggregator _chainlink, uint256 _observations, uint256 _frequency) {
+    constructor(IChainlinkAggregator _chainlink, uint256 _observations, uint256 _interval) {
         chainlinkFeed = _chainlink;
         OBSERVATIONS = _observations;
-        FREQUENCY = _frequency;
-        LOOKBACK = _observations * 2;
+        INTERVAL = _interval;
         SMOOTHING_FACTOR = 2e18 / (_observations + 1);
+        MAX_LOOKBACK = _observations * 2;
 
         uint256 currentObservation = _getCurrentObservationTimestamp();
         (storedPrice, storedResponse) = _calculateNewEMA(currentObservation);
@@ -42,16 +45,15 @@ contract ChainlinkEMA {
     }
 
     /**
-        @notice Returns the current oracle price, normalized to 1e18 precision
-        @dev Read-only version used within view methods. Should always return
-             the same value as `price_w`
+        @notice Returns the current oracle price, normalized to 1e18 precision.
+        @dev Read-only version used in view methods. Returns the same value as `price_w`.
      */
     function price() external view returns (uint256 currentPrice) {
         uint256 currentObservation = _getCurrentObservationTimestamp();
         uint256 storedObservation = storedObservationTimestamp;
         if (currentObservation == storedObservation) return storedPrice;
 
-        if (storedObservation + LOOKBACK * FREQUENCY > currentObservation) {
+        if (storedObservation + MAX_LOOKBACK * INTERVAL > currentObservation) {
             (currentPrice, , ) = _calculateLatestEMA(currentObservation, storedObservation);
         } else {
             (currentPrice, ) = _calculateNewEMA(currentObservation);
@@ -60,16 +62,15 @@ contract ChainlinkEMA {
     }
 
     /**
-        @notice Returns the current oracle price, normalized to 1e18 precision
-        @dev Called by all state-changing market / amm operations with the exception
-             of `MainController.close_loan`
+        @notice Returns the current oracle price, normalized to 1e18 precision.
+        @dev It is preferred to call this method during on-chain interactions if possible.
      */
     function price_w() external returns (uint256 currentPrice) {
         uint256 currentObservation = _getCurrentObservationTimestamp();
         uint256 storedObservation = storedObservationTimestamp;
         if (currentObservation == storedObservation) return storedPrice;
 
-        if (storedObservation + LOOKBACK * FREQUENCY > currentObservation) {
+        if (storedObservation + MAX_LOOKBACK * INTERVAL > currentObservation) {
             bool isNewResponse;
             ChainlinkResponse memory response;
             (currentPrice, response, isNewResponse) = _calculateLatestEMA(currentObservation, storedObservation);
@@ -99,7 +100,7 @@ contract ChainlinkEMA {
         if (latestResponse.roundId == response.roundId) {
             uint256 answer = response.answer;
             while (storedObservation < currentObservation) {
-                storedObservation += FREQUENCY;
+                storedObservation += INTERVAL;
                 currentPrice = _getNextEMA(answer, currentPrice);
             }
             return (currentPrice, latestResponse, false);
@@ -114,7 +115,7 @@ contract ChainlinkEMA {
         }
 
         while (storedObservation < currentObservation) {
-            storedObservation += FREQUENCY;
+            storedObservation += INTERVAL;
             while (!isLatestResponse && nextResponse.updatedAt < storedObservation) {
                 response = nextResponse;
                 if (nextResponse.roundId == latestResponse.roundId) {
@@ -139,11 +140,11 @@ contract ChainlinkEMA {
         latestResponse = _getLatestRoundData();
         ChainlinkResponse memory response = latestResponse;
 
-        uint256[] memory oracleResponses = new uint256[](LOOKBACK);
+        uint256[] memory oracleResponses = new uint256[](MAX_LOOKBACK);
 
         // in the following while loops, we manually decrement and then increment
         // idx so we know where the first non-zero value is within oracleResponses
-        uint256 idx = LOOKBACK;
+        uint256 idx = MAX_LOOKBACK;
 
         // iterate backward to get oracle responses for each observation time
         while (true) {
@@ -155,7 +156,7 @@ contract ChainlinkEMA {
                 response = _getRoundData(response.roundId - 1);
             }
             if (response.updatedAt > observationTimestamp) {
-                if (idx == LOOKBACK) {
+                if (idx == MAX_LOOKBACK) {
                     // edge case, if the first round is more recent than our latest
                     // observation time we can only return the first round's response
                     return (response.answer, latestResponse);
@@ -165,13 +166,13 @@ contract ChainlinkEMA {
             idx--;
             oracleResponses[idx] = response.answer;
             if (idx == 0) break;
-            observationTimestamp -= FREQUENCY;
+            observationTimestamp -= INTERVAL;
         }
 
         // now iterate forward to calculate EMA based on the observed oracle responses
         currentPrice = oracleResponses[idx];
         idx++;
-        while (idx < LOOKBACK) {
+        while (idx < MAX_LOOKBACK) {
             currentPrice = _getNextEMA(oracleResponses[idx], currentPrice);
             idx++;
         }
@@ -186,7 +187,7 @@ contract ChainlinkEMA {
 
     /** @dev The timestamp of the latest oracle observation */
     function _getCurrentObservationTimestamp() internal view returns (uint256) {
-        return (block.timestamp / FREQUENCY) * FREQUENCY;
+        return (block.timestamp / INTERVAL) * INTERVAL;
     }
 
     function _getLatestRoundData() internal view returns (ChainlinkResponse memory) {
