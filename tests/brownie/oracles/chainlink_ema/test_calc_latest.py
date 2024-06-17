@@ -2,9 +2,9 @@ from brownie import chain
 import pytest
 
 
-def test_initial_ema(oracle, decimals):
-    assert oracle.price() == 3000 * 10**decimals
-    assert oracle.price_w.call() == 3000 * 10**decimals
+def test_initial_ema(oracle):
+    assert oracle.price() == 3000 * 10**18
+    assert oracle.price_w.call() == 3000 * 10**18
 
 
 def test_calc_latest_new_round(oracle, chainlink, ema_calc, deployer):
@@ -66,22 +66,18 @@ def test_calc_latest_multiple_obs_latest_round_with_write(oracle, chainlink, ema
     assert oracle.price() == ema_calc([3600, 3600, 3600], 3000)
 
 
-def test_max_lookback(
-    oracle, chainlink, ema_calc, observations, decimals, sleep_max_lookback, deployer
-):
+def test_max_lookback(oracle, chainlink, ema_calc, observations, sleep_max_lookback, deployer):
     stored = oracle.storedObservationTimestamp()
     chain.mine(timestamp=stored + 50)
     chainlink.add_round(4100, {"from": deployer})
     sleep_max_lookback(-50)
-    # chain.mine(timestamp=stored + (100 * observations * 2) - 50)
 
     # last stored observation was LOOKBACK - 1 periods ago, the oracle is still advancing the EMA
     assert oracle.price() == ema_calc([4100] * (observations * 2 - 1), 3000)
 
     # last stored observation is now LOOKBACK periods ago, oracle calculates a new EMA
     sleep_max_lookback()
-    # chain.mine(timedelta=100)
-    assert oracle.price() == 4100 * 10**decimals
+    assert oracle.price() == 4100 * 10**18
 
 
 @pytest.mark.parametrize("new_phase", [True, False])

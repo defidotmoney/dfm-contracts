@@ -3,16 +3,16 @@ import pytest
 
 
 @pytest.fixture(scope="module")
-def ema_calc(observations, decimals):
-    smoothing = 2 / (observations + 1)
+def ema_calc(observations):
+    smoothing = 2 * 10**18 // (observations + 1)
 
     def func(new_observations, last):
-        last *= 10**decimals
+        last *= 10**18
         if not isinstance(new_observations, list):
             new_observations = [new_observations]
         for value in new_observations:
-            value *= 10**decimals
-            last = int((value * smoothing) + (last * (1 - smoothing)))
+            value *= 10**18
+            last = int((value * smoothing) + (last * (10**18 - smoothing))) // 10**18
 
         return last
 
@@ -24,7 +24,7 @@ def observations(request):
     return request.param
 
 
-@pytest.fixture(scope="module", params=[8, 10])
+@pytest.fixture(scope="module", params=[8, 18])
 def decimals(request):
     return request.param
 
