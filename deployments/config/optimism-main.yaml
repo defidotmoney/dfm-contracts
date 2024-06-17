@@ -1,0 +1,45 @@
+peg_keepers:
+  paired_assets:
+    - "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"  # USDT
+    - "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"  # USDC
+
+markets:
+  # WETH
+  - collateral: "0x4200000000000000000000000000000000000006"
+    oracle:
+      type: "chainlink"
+      address: "0x13e3Ee699D1909E989722E753853AE30b17e08c5"
+    base_apy: 0.12
+    A: 72
+    amm_fee: 0.002
+    amm_admin_fee: 0.5
+    loan_discount: 0.07
+    liquidation_discount: 0.04
+    debt_ceiling: 6_000_000
+  # wBTC
+  - collateral: "0x68f180fcCe6836688e9084f035309E29Bf0A2095"
+    oracle:
+      type: "chainlink"
+      address: "0x718A5788b89454aAE3A028AE9c111A29Be6c2a6F"
+    base_apy: 0.12
+    A: 89
+    amm_fee: 0.002
+    amm_admin_fee: 0.5
+    loan_discount: 0.07
+    liquidation_discount: 0.04
+    debt_ceiling: 775_000
+  # wstETH
+  - collateral: "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb"
+    oracle:
+      type: "chainlink"
+      address: "0x698B585CbC4407e2D54aa898B2600B53C68958f7"
+    base_apy: 0.15
+    A: 72
+    amm_fee: 0.002
+    amm_admin_fee: 0.5
+    loan_discount: 0.07
+    liquidation_discount: 0.04
+    debt_ceiling: 1_000_000
+
+chainlink:
+  sequencer_uptime: "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389"

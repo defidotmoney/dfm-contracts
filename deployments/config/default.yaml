@@ -1,0 +1,39 @@
+stablecoin:
+  name: "Defi.Money"
+  symbol: "MONEY"
+  default_options: "0x0003010011010000000000000000000000000000ea60"
+
+main_controller:
+  global_debt_ceiling: 100_000_000
+
+peg_keepers:
+  debt_ceiling: 10_000_000
+  caller_profit_fraction: 0.2
+  pool_config:
+    A: 100
+    fee: 0.0004
+    offpeg_fee_mul: 2
+    ma_seconds: 600
+  paired_assets: null
+
+stable_oracle:
+  sigma: 0.001
+
+monetary_policy:
+  sigma: 0.007
+  target_debt_fraction: 0.1
+
+core_owner:
+  fee_receiver: "000000000000000000000000000000000000fee5"  # TODO
+  start_offset: 302400
+
+curve:
+  address_provider: "0x5ffe7FB82894076ECB99A30D6A32e969e6e35E98"
+
+layerzero:
+  endpoint: "0x1a44076050125825900e736c501f859c50fE728c"
+  primary_eid: 30111
+  primary_network: "optimism-main"
+
+chainlink:
+  sequencer_uptime: null

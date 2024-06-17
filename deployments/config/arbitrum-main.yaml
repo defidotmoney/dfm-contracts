@@ -1,0 +1,45 @@
+peg_keepers:
+  paired_assets:
+    - "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"  # USDT
+    - "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"  # USDC
+
+markets:
+  # WETH
+  - collateral: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    oracle:
+      type: "chainlink"
+      address: "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612"
+    base_apy: 0.12
+    A: 72
+    amm_fee: 0.002
+    amm_admin_fee: 0.5
+    loan_discount: 0.07
+    liquidation_discount: 0.04
+    debt_ceiling: 30_000_000
+  # wBTC
+  - collateral: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f"
+    oracle:
+      type: "chainlink"
+      address: "0xd0C7101eACbB49F3deCcCc166d238410D6D46d57"
+    base_apy: 0.12
+    A: 89
+    amm_fee: 0.002
+    amm_admin_fee: 0.5
+    loan_discount: 0.07
+    liquidation_discount: 0.04
+    debt_ceiling: 5_000_000
+  # ARB
+  - collateral: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f"
+    oracle:
+      type: "chainlink"
+      address: "0xb2A824043730FE05F3DA2efaFa1CBbe83fa548D6"
+    base_apy: 0.15
+    A: 30
+    amm_fee: 0.0015
+    amm_admin_fee: 0.5
+    loan_discount: 0.12
+    liquidation_discount: 0.09
+    debt_ceiling: 2_000_000
+
+chainlink:
+  sequencer_uptime: "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"
