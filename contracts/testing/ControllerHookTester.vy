@@ -1,4 +1,4 @@
-# @version 0.3.10
+#pragma version 0.3.10
 
 response: public(int256)
 is_reverting: public(bool)

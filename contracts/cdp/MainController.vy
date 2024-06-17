@@ -1,4 +1,4 @@
-# @version 0.3.10
+#pragma version 0.3.10
 """
 @title CDP Main Controller
 @author Curve.Fi (with edits by defidotmoney)

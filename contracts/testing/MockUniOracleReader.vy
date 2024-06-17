@@ -1,4 +1,4 @@
-# @version 0.3.10
+#pragma version 0.3.10
 """
 @title Mock version of Uniswap V3 Oracle Reader
 @notice https://github.com/Balmy-protocol/uniswap-v3-oracle
