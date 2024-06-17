@@ -260,3 +260,20 @@ def test_set_impl_wrong_A_market(MarketOperator, AMM, core, stable, controller, 
 
     with brownie.reverts("DFM:C incorrect market A"):
         controller.set_implementations(100, market_impl, amm_impl, {"from": deployer})
+
+
+def test_add_multiple_markets_same_token(controller, collateral, oracle, deployer):
+    # validates that our create2 salt is working
+    for _ in range(3):
+        controller.add_market(
+            collateral,
+            market_A,
+            market_fee,
+            market_admin_fee,
+            oracle,
+            0,
+            market_loan_discount,
+            market_liquidation_discount,
+            market_debt_cap,
+            {"from": deployer},
+        )

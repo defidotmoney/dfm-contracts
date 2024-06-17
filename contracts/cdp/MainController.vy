@@ -989,8 +989,12 @@ def add_market(token: address, A: uint256, fee: uint256, admin_fee: uint256, ora
 
     impl: Implementations = self.implementations[A]
     assert impl.amm != empty(address), "DFM:C No implementation for A"
-    market: address = create_minimal_proxy_to(impl.market_operator)
-    amm: address = create_minimal_proxy_to(impl.amm)
+
+    # deploy with `CREATE2` and include `chain.id` in the salt to ensure unique `MarketOperator`
+    # and `AMM` addresses, even if the controller is deployed at the same address on each chain
+    salt_num: uint256 = (chain.id << 176) + (convert(token, uint256) << 16) + len(self.collateral_markets[token])
+    market: address = create_minimal_proxy_to(impl.market_operator, salt=keccak256(convert(salt_num, bytes32)))
+    amm: address = create_minimal_proxy_to(impl.amm, salt= keccak256(convert(salt_num << 8, bytes32)))
 
     MarketOperator(market).initialize(amm, token, debt_ceiling, loan_discount, liquidation_discount)
     AMM(amm).initialize(market, oracle, token, p, fee, admin_fee)
