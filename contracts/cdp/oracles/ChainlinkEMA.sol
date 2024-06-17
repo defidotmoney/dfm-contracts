@@ -98,7 +98,7 @@ contract ChainlinkEMA {
         // special case, latest round is the same as stored round
         if (latestResponse.roundId == response.roundId) {
             uint256 answer = response.answer;
-            while (storedObservation <= currentObservation) {
+            while (storedObservation < currentObservation) {
                 storedObservation += FREQUENCY;
                 currentPrice = _getNextEMA(answer, currentPrice);
             }
@@ -111,10 +111,9 @@ contract ChainlinkEMA {
             nextResponse = _getNextRoundData(response.roundId);
         } else {
             nextResponse = latestResponse;
-            isLatestResponse = true;
         }
 
-        while (storedObservation <= currentObservation) {
+        while (storedObservation < currentObservation) {
             storedObservation += FREQUENCY;
             while (!isLatestResponse && nextResponse.updatedAt < storedObservation) {
                 response = nextResponse;
