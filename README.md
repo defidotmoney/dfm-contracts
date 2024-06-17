@@ -6,20 +6,33 @@ Core protocol based on Curve Finance's [crvUSD](https://github.com/curvefi/curve
 
 ## Organization
 
+### Smart Contracts
 * [`contracts/base/`](contracts/base): Shared libraries and abstract bases, and the core protocol ownership logic.
 * [`contracts/bridge/`](contracts/bridge): Contracts related to cross-chain functionality (powered by LayerZero).
 * [`contracts/cdp/`](contracts/cdp): Core protocol functionality, based on Curve Finance's crvUSD.
 * [`contracts/periphery/`](contracts/periphery): Periphery contracts such as hooks, zaps and combined views.
 * [`contracts/testing/`](contracts/testing): Contracts used for unit testing. Not a part of the protocol.
 
+### Deployment
+* [`deployments/config`](deployments/config): Configuration files for deploying to different networks.
+* [`deployments/logs`](deployments/logs): Log files containing addresses of completed deployments.
+
+### Scripts
+* [`scripts/deploy_local.py`](scripts/deploy_local.py): Script for deploying on a local hardhat network.
+* [`scripts/deploy_mainnet.py`](scripts/deploy_mainnet.py): Script for deploying to a production network (or forked environment).
+
+### Tests
+* [`tests/brownie`](tests/brownie): Brownie test suite.
+* [`tests/titanoboa`](tests/titanoboa): Titanoboa test suite.
+
 ## Setup
 
-#### Requirements
+### Requirements
 
 - python version 3.10 or later, `python3-venv`, `python3-dev`
 - npm version 7 or later
 
-#### Installation
+### Installation
 
 1. Install the node.js dependencies ( Hardhat and LayerZero contracts ). This should be done in the `dfm-contracts` root directory.
 
@@ -41,7 +54,9 @@ Core protocol based on Curve Finance's [crvUSD](https://github.com/curvefi/curve
    source venv/bin/activate
    ```
 
-## Deploying to a Local Network
+## Deployment
+
+### To a Local Network
 
 To run [`scripts/deploy_local.py`](scripts/deploy_local.py) and deploy all contracts on a local hardhat network:
 
@@ -50,6 +65,25 @@ brownie run deploy_local -i
 ```
 
 The brownie console will open once deployment has finished. The hardhat session will persist as long as brownie remains open.
+
+### To Mainnet
+
+Mainnet deployment configurations are handled by YAML files within [`deployments/config`](deployments/config). Common settings are first loaded from [`default.yaml`](deployments/config/default.yaml), and then network-specific settings are loaded over top. Each network's configuration filename is the same as it's brownie network name, e.g. for Fantom the filename would be `ftm-main.yaml`.
+
+Before the actual deployment it is recommended to do a test run on a forked mainnet. If you deploy to a network ending in `-fork`, the related mainnet deploy config is used.
+
+To run [`scripts/deploy_mainnet.py`](scripts/deploy_mainnet.py):
+
+
+```bash
+brownie run deploy_mainnet --network [network name] -i
+```
+
+The brownie console will open once deployment has finished.
+
+Addresses of the core smart contracts will be written to a YAML file within [`deployments/logs`](deployments/logs). If this is the final deployment, remember to commit this log file to git.
+
+Note that the script does not verify source codes with Etherscan (API source verification is not supported for Vyper). You must manually verify once deployment is finished.
 
 ## Tests
 
