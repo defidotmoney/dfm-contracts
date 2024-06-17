@@ -10,7 +10,7 @@ event PriceWrite:
 
 
 price: public(uint256)
-
+_price_w: uint256
 
 @external
 def __init__(price: uint256):
@@ -21,9 +21,20 @@ def __init__(price: uint256):
 def price_w() -> uint256:
     # State-changing price oracle in case we want to include EMA
     log PriceWrite()
-    return self.price
+    price: uint256 = self._price_w
+    if price == 0:
+        price = self.price
+    return price
 
 
 @external
 def set_price(price: uint256):
     self.price = price
+
+
+@external
+def set_price_w(price_w: uint256):
+    """
+    @dev Set a distinct response for `price_w()`. If unset, returns the same value as `price()`.
+    """
+    self._price_w = price_w

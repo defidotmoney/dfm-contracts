@@ -10,10 +10,9 @@ def test_set_uptime_oracle_acl(chained_oracle, alice):
 
 
 def test_add_path_acl(chained_oracle, curve, alice):
+    calldata = curve.price_oracle.encode_input(0)
     with brownie.reverts("DFM: Only owner"):
-        chained_oracle.addCallPath(
-            [(curve, 18, False, curve.price_oracle.encode_input(0))], {"from": alice}
-        )
+        chained_oracle.addCallPath([(curve, 18, False, calldata, calldata)], {"from": alice})
 
 
 def test_remove_path_acl(chained_oracle, alice):
@@ -28,22 +27,19 @@ def test_reverts_before_setting_path(chained_oracle, deployer):
 
 def test_reverts_decimals(chained_oracle, curve, deployer):
     curve.set_price(0, 10**18, {"from": deployer})
+    calldata = curve.price_oracle.encode_input(0)
+
     with brownie.reverts("DFM: Maximum 18 decimals"):
-        chained_oracle.addCallPath(
-            [(curve, 19, False, curve.price_oracle.encode_input(0))], {"from": deployer}
-        )
+        chained_oracle.addCallPath([(curve, 19, False, calldata, calldata)], {"from": deployer})
 
 
 def test_reverts_oracle_returns_zero(chained_oracle, curve, deployer):
+    calldata = curve.price_oracle.encode_input(0)
     with brownie.reverts("DFM: Oracle returned 0"):
-        chained_oracle.addCallPath(
-            [(curve, 18, False, curve.price_oracle.encode_input(0))], {"from": deployer}
-        )
+        chained_oracle.addCallPath([(curve, 18, False, calldata, calldata)], {"from": deployer})
 
     curve.set_price(0, 10**18, {"from": deployer})
-    chained_oracle.addCallPath(
-        [(curve, 18, False, curve.price_oracle.encode_input(0))], {"from": deployer}
-    )
+    chained_oracle.addCallPath([(curve, 18, False, calldata, calldata)], {"from": deployer})
     curve.set_price(0, 0, {"from": deployer})
 
     with brownie.reverts("DFM: Oracle returned 0"):
@@ -52,9 +48,8 @@ def test_reverts_oracle_returns_zero(chained_oracle, curve, deployer):
 
 def test_reverts_remove_final_call_path(chained_oracle, curve, deployer):
     curve.set_price(0, 10**18, {"from": deployer})
-    chained_oracle.addCallPath(
-        [(curve, 18, False, curve.price_oracle.encode_input(0))], {"from": deployer}
-    )
+    calldata = curve.price_oracle.encode_input(0)
+    chained_oracle.addCallPath([(curve, 18, False, calldata, calldata)], {"from": deployer})
     with brownie.reverts("DFM: Cannot remove only path"):
         chained_oracle.removeCallPath(0, {"from": deployer})
 
@@ -64,9 +59,8 @@ def test_reverts_remove_call_path_invalid_index(chained_oracle, curve, deployer)
         chained_oracle.removeCallPath(0, {"from": deployer})
 
     curve.set_price(0, 10**18, {"from": deployer})
-    chained_oracle.addCallPath(
-        [(curve, 18, False, curve.price_oracle.encode_input(0))], {"from": deployer}
-    )
+    calldata = curve.price_oracle.encode_input(0)
+    chained_oracle.addCallPath([(curve, 18, False, calldata, calldata)], {"from": deployer})
 
     with brownie.reverts("DFM: Invalid path index"):
         chained_oracle.removeCallPath(1, {"from": deployer})
@@ -75,12 +69,11 @@ def test_reverts_remove_call_path_invalid_index(chained_oracle, curve, deployer)
 @pytest.mark.parametrize("idx", range(3))
 def test_remove_path(chained_oracle, curve, curve2, curve3, deployer, idx):
     prices = [3000 * 10**18, 6 * 10**17, 69420 * 10**18]
+    calldata = curve.price_oracle.encode_input(0)
 
     for c, price in zip([curve, curve2, curve3], prices):
         c.set_price(0, price, {"from": deployer})
-        chained_oracle.addCallPath(
-            [(c, 18, True, curve.price_oracle.encode_input(0))], {"from": deployer}
-        )
+        chained_oracle.addCallPath([(c, 18, True, calldata, calldata)], {"from": deployer})
 
     chained_oracle.removeCallPath(idx, {"from": deployer})
     del prices[idx]
@@ -105,12 +98,11 @@ def test_set_uptime_oracle_bad_status(chained_oracle, uptime_cl, uptime_oracle, 
 def test_uptime_use_stored_price(chained_oracle, curve, uptime_cl, uptime_oracle, deployer):
     old_price = 10**20
     new_price = 5 * 10**17
+    calldata = curve.price_oracle.encode_input(0)
 
     chained_oracle.setUptimeOracle(uptime_oracle, {"from": deployer})
     curve.set_price(0, old_price, {"from": deployer})
-    chained_oracle.addCallPath(
-        [(curve, 18, True, curve.price_oracle.encode_input(0))], {"from": deployer}
-    )
+    chained_oracle.addCallPath([(curve, 18, True, calldata, calldata)], {"from": deployer})
 
     # query the price as a write action to update stored price
     chained_oracle.price_w({"from": deployer})
