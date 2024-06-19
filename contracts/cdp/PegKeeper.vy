@@ -54,9 +54,6 @@ event RecallDebt:
     owing: uint256
 
 
-# Time between providing/withdrawing coins
-ACTION_DELAY: constant(uint256) = 15 * 60
-
 PRECISION: constant(uint256) = 10 ** 18
 SHARE_PRECISION: constant(uint256) = 10 ** 5
 
@@ -149,9 +146,6 @@ def estimate_caller_profit() -> uint256:
     @dev This method is not precise, real profit is always more because of increasing virtual price
     @return Expected amount of profit going to beneficiary
     """
-    if self.last_change + ACTION_DELAY > block.timestamp:
-        return 0
-
     balance_pegged: uint256 = POOL.balances(I)
     balance_peg: uint256 = POOL.balances(1 - I) * PEG_MUL
 
@@ -227,8 +221,6 @@ def update(_beneficiary: address) -> (int256, uint256):
     @return (change in peg keeper's debt, profit received by beneficiary)
     """
     self._assert_only_regulator()
-    if self.last_change + ACTION_DELAY > block.timestamp:
-        return 0, 0
 
     balance_pegged: uint256 = POOL.balances(I)
     balance_peg: uint256 = POOL.balances(1 - I) * PEG_MUL

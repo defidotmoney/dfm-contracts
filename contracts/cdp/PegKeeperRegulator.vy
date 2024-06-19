@@ -47,6 +47,9 @@ event WorstPriceThreshold:
 event PriceDeviation:
     price_deviation: uint256
 
+event ActionDelay:
+    action_delay: uint256
+
 event DebtParameters:
     alpha: uint256
     beta: uint256
@@ -61,6 +64,7 @@ struct PegKeeperInfo:
     pool: StableSwapNG
     is_inverse: bool
     debt_ceiling: uint256
+    last_change: uint256
 
 
 enum Killed:
@@ -84,6 +88,7 @@ active_debt: public(uint256)
 
 worst_price_threshold: public(uint256)
 price_deviation: public(uint256)
+action_delay: public(uint256)
 alpha: public(uint256)  # Initial boundary
 beta: public(uint256)  # Each PegKeeper's impact
 
@@ -234,11 +239,17 @@ def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
     @param beneficiary Address to send earned profits to
     @return Amount of profit received by beneficiary
     """
-    assert self.peg_keeper_i[pk] != 0, "DFM:R Unknown PegKeeper"
+    i: uint256 = self.peg_keeper_i[pk]
+    assert i != 0, "DFM:R Unknown PegKeeper"
+    assert self.peg_keepers[i - 1].last_change + self.action_delay < block.timestamp, "DFM:R Action delay still active"
+
     debt_adjustment: int256 = 0
     caller_profit: uint256 = 0
     (debt_adjustment, caller_profit) = pk.update(beneficiary)
-    self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
+    if debt_adjustment != 0:
+        self.peg_keepers[i - 1].last_change = block.timestamp
+        self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
+
     return caller_profit
 
 
@@ -259,7 +270,8 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
         peg_keeper: pk,
         pool: pk.POOL(),
         is_inverse: pk.IS_INVERSE(),
-        debt_ceiling: debt_ceiling
+        debt_ceiling: debt_ceiling,
+        last_change: 0,
     })
     self.peg_keepers.append(info)  # dev: too many pairs
     self.peg_keeper_i[pk] = len(self.peg_keepers)
@@ -328,6 +340,20 @@ def remove_peg_keeper(pk: PegKeeper):
     self.peg_keeper_i[pk] = empty(uint256)
 
     log RemovePegKeeper(pk)
+
+
+@external
+def set_action_delay(action_delay: uint256):
+    """
+    @notice Set minimum time between PegKeeper updates
+    @dev Action delay is applied per-PegKeeper. Time passed must be greater than
+         the given duration. If set to zero, updates are limited to once per block.
+    @param action_delay PegKeeper action delay in seconds.
+    """
+    self._assert_only_owner()
+    assert action_delay <= 900  # 15 minutes
+    self.action_delay = action_delay
+    log ActionDelay(action_delay)
 
 
 @external
@@ -408,7 +434,8 @@ def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_cei
             peg_keeper: pk,
             pool: pk.POOL(),
             is_inverse: pk.IS_INVERSE(),
-            debt_ceiling: debt_ceilings[i]
+            debt_ceiling: debt_ceilings[i],
+            last_change: block.timestamp,
         })
         self.peg_keepers.append(info)  # dev: too many pairs
         self.peg_keeper_i[pk] = len(self.peg_keepers)
