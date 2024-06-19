@@ -22,6 +22,7 @@ interface PegKeeper:
     def debt() -> uint256: view
     def owed_debt() -> uint256: view
     def IS_INVERSE() -> bool: view
+    def estimate_caller_profit() -> uint256: view
     def recall_debt(amount: uint256) -> uint256: nonpayable
     def update(_beneficiary: address) -> (int256, uint256): nonpayable
 
@@ -159,6 +160,23 @@ def get_peg_keepers_with_debt_ceilings() -> (DynArray[address, MAX_LEN], DynArra
         debt_ceilings.append(info.debt_ceiling)
 
     return peg_keepers, debt_ceilings
+
+
+@view
+@external
+def estimate_caller_profit(pk: PegKeeper) -> uint256:
+    """
+    @notice Estimate profit for the caller
+    @dev Estimate the profit that the caller will receive when calling `update` function.
+         The result is not precise, real profit is always more because of increasing virtual price.
+    @param pk Address of the peg keeper to estimate profit for
+    @return Estimated profit for the caller
+    """
+    i: uint256 = self.peg_keeper_i[pk]
+    if i > 0 and self.peg_keepers[i - 1].last_change + self.action_delay < block.timestamp:
+        return pk.estimate_caller_profit()
+
+    return 0
 
 
 @view

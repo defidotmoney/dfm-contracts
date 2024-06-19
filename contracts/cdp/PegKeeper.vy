@@ -143,7 +143,8 @@ def calc_profit() -> uint256:
 def estimate_caller_profit() -> uint256:
     """
     @notice Estimate profit from calling update()
-    @dev This method is not precise, real profit is always more because of increasing virtual price
+    @dev Users should instead call `PegKeeperRegulator.estimate_caller_profit`
+         which returns the same value but with additional checks.
     @return Expected amount of profit going to beneficiary
     """
     balance_pegged: uint256 = POOL.balances(I)
