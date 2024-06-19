@@ -57,7 +57,9 @@ def main(acct=None, peg_keeper_count=3, market_count=3):
     # Not required in local deploy as `ConstantMonetaryPolicy` need `AggregateStablePrice`
     if peg_keeper_count:
         agg_stable = AggregateStablePrice.deploy(core, stable, 10**15, {"from": acct})
-        regulator = PegKeeperRegulator.deploy(core, stable, agg_stable, controller, {"from": acct})
+        regulator = PegKeeperRegulator.deploy(
+            core, controller, stable, agg_stable, 10**15, 100, 0, {"from": acct}
+        )
 
         controller.set_peg_keeper_regulator(regulator, False, {"from": acct})
         stable.setMinter(regulator, True, {"from": acct})

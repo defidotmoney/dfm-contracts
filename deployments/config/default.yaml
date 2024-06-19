@@ -7,6 +7,9 @@ main_controller:
   global_debt_ceiling: 100_000_000
 
 peg_keepers:
+  worst_price_threshold: 0.001
+  price_deviation: 100
+  action_delay: 0
   debt_ceiling: 10_000_000
   caller_profit_fraction: 0.2
   pool_config:

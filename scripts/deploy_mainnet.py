@@ -132,7 +132,14 @@ def main():
         core, stable, config["stable_oracle"]["sigma"] * 1e18, {"from": deployer}
     )
     regulator = PegKeeperRegulator.deploy(
-        core, stable, stable_oracle, controller, {"from": deployer}
+        core,
+        controller,
+        stable,
+        stable_oracle,
+        config["peg_keepers"]["worst_price_threshold"] * 1e18,
+        config["peg_keepers"]["price_deviation"] * 1e18,
+        config["peg_keepers"]["action_delay"],
+        {"from": deployer},
     )
 
     # Deploy periphery contracts
