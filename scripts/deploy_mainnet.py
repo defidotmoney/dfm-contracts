@@ -41,10 +41,11 @@ from scripts.utils.createx import deploy_deterministic
 from scripts.utils.rate0 import apy_to_rate0
 
 
-# TODO
-CORE_DEPLOY_SALT = "0x01"
-STABLECOIN_DEPLOY_SALT = "0x02"
-CONTROLLER_DEPLOY_SALT = "0x03"
+TEAM_MULTISIG = "0x222d2B30EcD382a058618d9F1ee01F147666E48b"
+
+CORE_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da00fd7df6d5c020290265c131"
+STABLECOIN_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da008c17e7bcb0ca2203ff159b"
+CONTROLLER_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da006a506030994eee0392f93b"
 
 
 def _recursive_merge(base_dict, new_dict):
@@ -60,9 +61,11 @@ def main():
     Deploys core Defi.Money contracts to mainnet.
     """
 
-    # TODO
+    # TODO set the actual `account` objects here
+    # deterministic deployer must be consistent between chains
     deterministic_deployer = "0xDeF1c4aD4a9C6bcd718C91e6AB79958217FA27DA"
-    deployer = accounts[0]
+    # normal deployer should be unique per-chain to avoid overlap in non-deterministic addresses
+    deployer = "0xbADbABEFA66BfA6e01C4918229ea65e20BbC79e2"
 
     network_name = network.show_active()
     deploy_log = Path(f"./deployments/logs/{network_name}.yaml")
@@ -189,12 +192,12 @@ def main():
     for token in config["peg_keepers"]["paired_assets"]:
         # Deploy AMM for pegkeeper
         token = Contract(token)
-        name = f"{config['stablecoin']['symbol']}/{token.symbol()} Curve LP"
-        symbol = f"{config['stablecoin']['symbol']}{token.symbol()}"
+        name = f"{token.symbol()}/{config['stablecoin']['symbol']} Curve LP"
+        symbol = f"dfm{token.symbol()}"
         curve_factory.deploy_plain_pool(
             name,
             symbol,
-            [stable, token],
+            [token, stable],
             pool_conf["A"],
             pool_conf["fee"] * 1e10,
             pool_conf["offpeg_fee_mul"] * 1e10,
