@@ -86,8 +86,8 @@ peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
 max_debt: public(uint256)
 active_debt: public(uint256)
 
-worst_price_threshold: public(uint256)
-price_deviation: public(uint256)
+worst_price_threshold: public(uint256)  # 3 * 10 ** 14  # 0.0003
+price_deviation: public(uint256)        # 5 * 10 ** 14 # 0.0005 = 0.05%
 action_delay: public(uint256)
 alpha: public(uint256)  # Initial boundary
 beta: public(uint256)  # Each PegKeeper's impact
@@ -96,27 +96,45 @@ is_killed: public(Killed)
 
 
 @external
-def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: PriceOracle, controller: address):
+def __init__(
+    core: CoreOwner,
+    controller: address,
+    stablecoin: ERC20,
+    stable_oracle: PriceOracle,
+    worst_price_threshold: uint256,
+    price_deviation: uint256,
+    action_delay: uint256,
+):
     """
     @notice Contract constructor
     @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
-    @param _stablecoin Address of the protocol stablecoin. This contract must be given
+    @param stablecoin Address of the protocol stablecoin. This contract must be given
                   minter privileges within the stablecoin.
-    @param _agg `AggregatorStablePrice` address. Used to determine the stablecoin price.
+    @param stable_oracle `AggregatorStablePrice` address. Used to determine the stablecoin price.
     @param controller `MainController` address. After deployment, this address must be
                       set within the controller using `set_peg_keeper_regulator`.
+    @param worst_price_threshold Price threshold with 1e18 precision.
+    @param price_deviation Acceptable price deviation with 1e18 precision.
+    @param action_delay Minimum time between PegKeeper updates.
     """
     CORE_OWNER = core
-    STABLECOIN = _stablecoin
     CONTROLLER = controller
-    STABLECOIN_ORACLE = _agg
+    STABLECOIN = stablecoin
+    STABLECOIN_ORACLE = stable_oracle
 
-    self.worst_price_threshold = 3 * 10 ** (18 - 4)  # 0.0003
-    self.price_deviation = 5 * 10 ** (18 - 4) # 0.0005 = 0.05%
+    assert action_delay <= 900  # 15 minutes
+    assert worst_price_threshold <= 10 ** 16  # 0.01
+    assert price_deviation <= 10 ** 20
+
+    self.worst_price_threshold = worst_price_threshold
+    self.price_deviation = price_deviation
+    self.action_delay = action_delay
     self.alpha = ONE / 2 # 1/2
     self.beta = ONE / 4  # 1/4
-    log WorstPriceThreshold(self.worst_price_threshold)
-    log PriceDeviation(self.price_deviation)
+
+    log WorstPriceThreshold(worst_price_threshold)
+    log PriceDeviation(price_deviation)
+    log ActionDelay(action_delay)
     log DebtParameters(self.alpha, self.beta)
 
 
@@ -374,6 +392,7 @@ def set_worst_price_threshold(_threshold: uint256):
 def set_price_deviation(_deviation: uint256):
     """
     @notice Set acceptable deviation of current price from oracle's
+    @dev Setting to 10**20 effectively disables this check
     @param _deviation Deviation of price with base 10 ** 18 (1.0 = 10 ** 18)
     """
     self._assert_only_owner()
