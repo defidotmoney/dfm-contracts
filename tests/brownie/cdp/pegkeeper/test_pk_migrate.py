@@ -8,7 +8,9 @@ MAX_PK_DEBT = 100_000 * 10**18
 
 @pytest.fixture(scope="module")
 def regulator2(PegKeeperRegulator, core, stable, agg_stable, controller, deployer):
-    contract = PegKeeperRegulator.deploy(core, stable, agg_stable, controller, {"from": deployer})
+    contract = PegKeeperRegulator.deploy(
+        core, controller, stable, agg_stable, 3 * 10**14, 5 * 10**14, 0, {"from": deployer}
+    )
     stable.setMinter(contract, True, {"from": deployer})
 
     return contract
@@ -49,7 +51,7 @@ def test_migrate_pk_regulator(
     assert peg_keepers[0].owed_debt() > 0
     assert peg_keepers[2].debt() > 0
 
-    controller.set_peg_keeper_regulator(regulator2, True, {"from": deployer})
+    tx = controller.set_peg_keeper_regulator(regulator2, True, {"from": deployer})
 
     assert (
         regulator.get_peg_keepers_with_debt_ceilings()
@@ -61,6 +63,9 @@ def test_migrate_pk_regulator(
 
     for pk in peg_keepers:
         assert pk.regulator() == regulator2
+
+    for i in range(len(peg_keepers)):
+        assert regulator2.peg_keepers(i)["last_change"] == tx.timestamp
 
     with brownie.reverts("DFM:PK Only regulator"):
         regulator.adjust_peg_keeper_debt_ceiling(

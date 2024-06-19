@@ -22,8 +22,10 @@ interface PegKeeper:
     def debt() -> uint256: view
     def owed_debt() -> uint256: view
     def IS_INVERSE() -> bool: view
+    def estimate_caller_profit() -> uint256: view
     def recall_debt(amount: uint256) -> uint256: nonpayable
     def update(_beneficiary: address) -> (int256, uint256): nonpayable
+    def withdraw_profit(): nonpayable
 
 interface PriceOracle:
     def price() -> uint256: view
@@ -47,6 +49,9 @@ event WorstPriceThreshold:
 event PriceDeviation:
     price_deviation: uint256
 
+event ActionDelay:
+    action_delay: uint256
+
 event DebtParameters:
     alpha: uint256
     beta: uint256
@@ -61,6 +66,7 @@ struct PegKeeperInfo:
     pool: StableSwapNG
     is_inverse: bool
     debt_ceiling: uint256
+    last_change: uint256
 
 
 enum Killed:
@@ -82,8 +88,9 @@ peg_keeper_i: HashMap[PegKeeper,  uint256]  # 1 + index of peg keeper in a list
 max_debt: public(uint256)
 active_debt: public(uint256)
 
-worst_price_threshold: public(uint256)
-price_deviation: public(uint256)
+worst_price_threshold: public(uint256)  # 3 * 10 ** 14  # 0.0003
+price_deviation: public(uint256)        # 5 * 10 ** 14 # 0.0005 = 0.05%
+action_delay: public(uint256)
 alpha: public(uint256)  # Initial boundary
 beta: public(uint256)  # Each PegKeeper's impact
 
@@ -91,27 +98,45 @@ is_killed: public(Killed)
 
 
 @external
-def __init__(core: CoreOwner, _stablecoin: ERC20, _agg: PriceOracle, controller: address):
+def __init__(
+    core: CoreOwner,
+    controller: address,
+    stablecoin: ERC20,
+    stable_oracle: PriceOracle,
+    worst_price_threshold: uint256,
+    price_deviation: uint256,
+    action_delay: uint256,
+):
     """
     @notice Contract constructor
     @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
-    @param _stablecoin Address of the protocol stablecoin. This contract must be given
+    @param stablecoin Address of the protocol stablecoin. This contract must be given
                   minter privileges within the stablecoin.
-    @param _agg `AggregatorStablePrice` address. Used to determine the stablecoin price.
+    @param stable_oracle `AggregatorStablePrice` address. Used to determine the stablecoin price.
     @param controller `MainController` address. After deployment, this address must be
                       set within the controller using `set_peg_keeper_regulator`.
+    @param worst_price_threshold Price threshold with 1e18 precision.
+    @param price_deviation Acceptable price deviation with 1e18 precision.
+    @param action_delay Minimum time between PegKeeper updates.
     """
     CORE_OWNER = core
-    STABLECOIN = _stablecoin
     CONTROLLER = controller
-    STABLECOIN_ORACLE = _agg
+    STABLECOIN = stablecoin
+    STABLECOIN_ORACLE = stable_oracle
 
-    self.worst_price_threshold = 3 * 10 ** (18 - 4)  # 0.0003
-    self.price_deviation = 5 * 10 ** (18 - 4) # 0.0005 = 0.05%
+    assert action_delay <= 900  # 15 minutes
+    assert worst_price_threshold <= 10 ** 16  # 0.01
+    assert price_deviation <= 10 ** 20
+
+    self.worst_price_threshold = worst_price_threshold
+    self.price_deviation = price_deviation
+    self.action_delay = action_delay
     self.alpha = ONE / 2 # 1/2
     self.beta = ONE / 4  # 1/4
-    log WorstPriceThreshold(self.worst_price_threshold)
-    log PriceDeviation(self.price_deviation)
+
+    log WorstPriceThreshold(worst_price_threshold)
+    log PriceDeviation(price_deviation)
+    log ActionDelay(action_delay)
     log DebtParameters(self.alpha, self.beta)
 
 
@@ -136,6 +161,23 @@ def get_peg_keepers_with_debt_ceilings() -> (DynArray[address, MAX_LEN], DynArra
         debt_ceilings.append(info.debt_ceiling)
 
     return peg_keepers, debt_ceilings
+
+
+@view
+@external
+def estimate_caller_profit(pk: PegKeeper) -> uint256:
+    """
+    @notice Estimate profit for the caller
+    @dev Estimate the profit that the caller will receive when calling `update` function.
+         The result is not precise, real profit is always more because of increasing virtual price.
+    @param pk Address of the peg keeper to estimate profit for
+    @return Estimated profit for the caller
+    """
+    i: uint256 = self.peg_keeper_i[pk]
+    if i > 0 and self.peg_keepers[i - 1].last_change + self.action_delay < block.timestamp:
+        return pk.estimate_caller_profit()
+
+    return 0
 
 
 @view
@@ -234,12 +276,27 @@ def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
     @param beneficiary Address to send earned profits to
     @return Amount of profit received by beneficiary
     """
-    assert self.peg_keeper_i[pk] != 0, "DFM:R Unknown PegKeeper"
+    i: uint256 = self.peg_keeper_i[pk]
+    assert i != 0, "DFM:R Unknown PegKeeper"
+    assert self.peg_keepers[i - 1].last_change + self.action_delay < block.timestamp, "DFM:R Action delay still active"
+
     debt_adjustment: int256 = 0
     caller_profit: uint256 = 0
     (debt_adjustment, caller_profit) = pk.update(beneficiary)
-    self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
+    if debt_adjustment != 0:
+        self.peg_keepers[i - 1].last_change = block.timestamp
+        self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
+
     return caller_profit
+
+
+@external
+def withdraw_profit():
+    """
+    @notice Withdraw profit from all peg keepers
+    """
+    for info in self.peg_keepers:
+        info.peg_keeper.withdraw_profit()
 
 
 # --- owner-only nonpayable functions ---
@@ -259,7 +316,8 @@ def add_peg_keeper(pk: PegKeeper, debt_ceiling: uint256):
         peg_keeper: pk,
         pool: pk.POOL(),
         is_inverse: pk.IS_INVERSE(),
-        debt_ceiling: debt_ceiling
+        debt_ceiling: debt_ceiling,
+        last_change: 0,
     })
     self.peg_keepers.append(info)  # dev: too many pairs
     self.peg_keeper_i[pk] = len(self.peg_keepers)
@@ -331,6 +389,20 @@ def remove_peg_keeper(pk: PegKeeper):
 
 
 @external
+def set_action_delay(action_delay: uint256):
+    """
+    @notice Set minimum time between PegKeeper updates
+    @dev Action delay is applied per-PegKeeper. Time passed must be greater than
+         the given duration. If set to zero, updates are limited to once per block.
+    @param action_delay PegKeeper action delay in seconds.
+    """
+    self._assert_only_owner()
+    assert action_delay <= 900  # 15 minutes
+    self.action_delay = action_delay
+    log ActionDelay(action_delay)
+
+
+@external
 def set_worst_price_threshold(_threshold: uint256):
     """
     @notice Set threshold for the worst price that is still accepted
@@ -348,6 +420,7 @@ def set_worst_price_threshold(_threshold: uint256):
 def set_price_deviation(_deviation: uint256):
     """
     @notice Set acceptable deviation of current price from oracle's
+    @dev Setting to 10**20 effectively disables this check
     @param _deviation Deviation of price with base 10 ** 18 (1.0 = 10 ** 18)
     """
     self._assert_only_owner()
@@ -408,7 +481,8 @@ def init_migrate_peg_keepers(peg_keepers: DynArray[PegKeeper, MAX_LEN], debt_cei
             peg_keeper: pk,
             pool: pk.POOL(),
             is_inverse: pk.IS_INVERSE(),
-            debt_ceiling: debt_ceilings[i]
+            debt_ceiling: debt_ceilings[i],
+            last_change: block.timestamp,
         })
         self.peg_keepers.append(info)  # dev: too many pairs
         self.peg_keeper_i[pk] = len(self.peg_keepers)
