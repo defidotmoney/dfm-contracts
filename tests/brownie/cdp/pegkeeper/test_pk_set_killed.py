@@ -5,16 +5,6 @@ from brownie import chain
 MAX_PK_DEBT = 100_000 * 10**18
 
 
-@pytest.fixture(scope="module")
-def swap(pk_swaps):
-    return pk_swaps[0]
-
-
-@pytest.fixture(scope="module")
-def coin(pk_swapcoins):
-    return pk_swapcoins[0]
-
-
 @pytest.fixture(scope="module", autouse=True)
 def setup(regulator, peg_keepers, pk_swaps, pk_swapcoins, stable, alice, deployer):
     regulator.set_price_deviation(10**20, {"from": deployer})

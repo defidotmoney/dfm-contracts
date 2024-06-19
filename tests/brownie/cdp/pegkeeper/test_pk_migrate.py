@@ -8,7 +8,9 @@ MAX_PK_DEBT = 100_000 * 10**18
 
 @pytest.fixture(scope="module")
 def regulator2(PegKeeperRegulator, core, stable, agg_stable, controller, deployer):
-    contract = PegKeeperRegulator.deploy(core, stable, agg_stable, controller, {"from": deployer})
+    contract = PegKeeperRegulator.deploy(
+        core, stable, agg_stable, controller, 3 * 10**14, 5 * 10**14, 0, {"from": deployer}
+    )
     stable.setMinter(contract, True, {"from": deployer})
 
     return contract
