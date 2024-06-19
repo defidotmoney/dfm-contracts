@@ -25,6 +25,7 @@ interface PegKeeper:
     def estimate_caller_profit() -> uint256: view
     def recall_debt(amount: uint256) -> uint256: nonpayable
     def update(_beneficiary: address) -> (int256, uint256): nonpayable
+    def withdraw_profit(): nonpayable
 
 interface PriceOracle:
     def price() -> uint256: view
@@ -287,6 +288,15 @@ def update(pk: PegKeeper, beneficiary: address = msg.sender) -> uint256:
         self.active_debt = self._uint_plus_int(self.active_debt, debt_adjustment)
 
     return caller_profit
+
+
+@external
+def withdraw_profit():
+    """
+    @notice Withdraw profit from all peg keepers
+    """
+    for info in self.peg_keepers:
+        info.peg_keeper.withdraw_profit()
 
 
 # --- owner-only nonpayable functions ---
