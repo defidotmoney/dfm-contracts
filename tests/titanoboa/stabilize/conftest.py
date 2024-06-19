@@ -148,11 +148,17 @@ def crypto_agg(dummy_tricrypto, agg, stableswap_a, admin):
 def pk_regulator(admin, core, stablecoin, mock_peg_keepers, agg, controller):
     with boa.env.prank(admin):
         regulator = boa.load(
-            "contracts/cdp/PegKeeperRegulator.vy", core, stablecoin, agg, controller
+            "contracts/cdp/PegKeeperRegulator.vy",
+            core,
+            controller,
+            stablecoin,
+            agg,
+            3 * 10**14,
+            10**20,
+            900,
         )
         stablecoin.setMinter(regulator, True)
         controller.set_peg_keeper_regulator(regulator, False)
-        regulator.set_price_deviation(10**20)
         regulator.set_debt_parameters(10**18, 10**18)
         for pk in mock_peg_keepers:
             regulator.add_peg_keeper(pk, 0)

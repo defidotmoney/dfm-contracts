@@ -45,6 +45,6 @@ def test_update_no_delay(
 
             t0 = pk.last_change()
             boa.env.vm.patch.timestamp = t0 + ACTION_DELAY - 30
-            with boa.env.prank(peg_keeper_updater):
-                pk_regulator.update(pk)
-            assert pk.last_change() == t0
+            with boa.reverts("DFM:R Action delay still active"):
+                with boa.env.prank(peg_keeper_updater):
+                    pk_regulator.update(pk)

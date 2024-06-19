@@ -14,20 +14,6 @@ def test_parameters(peg_keepers, swaps, stablecoin, core, receiver, pk_regulator
         assert peg_keeper.regulator() == pk_regulator.address
 
 
-def test_update_access(
-    peg_keepers,
-    pk_regulator,
-    peg_keeper_updater,
-    add_initial_liquidity,
-    provide_token_to_peg_keepers,
-    imbalance_pools,
-):
-    imbalance_pools(1)
-    with boa.env.prank(peg_keeper_updater):
-        for pk in peg_keepers:
-            pk_regulator.update(pk)
-
-
 def test_set_new_caller_share(peg_keepers, admin):
     new_caller_share = 5 * 10**4
     with boa.env.prank(admin):

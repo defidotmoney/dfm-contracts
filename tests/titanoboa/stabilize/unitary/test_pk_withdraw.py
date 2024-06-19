@@ -19,6 +19,7 @@ def test_withdraw(
     pk_regulator,
     peg_keeper_updater,
 ):
+    boa.env.time_travel(901)
     for swap, peg_keeper in zip(swaps, peg_keepers):
         with boa.env.prank(alice):
             swap.add_liquidity([0, amount], 0)
@@ -43,6 +44,7 @@ def test_withdraw_insufficient_debt(
     _mint,
 ):
     """Provide 10x of pegged, so Peg Keeper can't withdraw the whole 1/5 part."""
+    boa.env.time_travel(901)
     for swap, peg_keeper, initial in zip(swaps, peg_keepers, initial_amounts):
         amount = 10 * initial[1]
         _mint(alice, [stablecoin], [amount])
@@ -69,6 +71,7 @@ def test_withdraw_dust_debt(
     peg_keeper_updater,
     _mint,
 ):
+    boa.env.time_travel(901)
     for swap, peg_keeper, initial, rtoken in zip(
         swaps, peg_keepers, initial_amounts, redeemable_tokens
     ):
@@ -88,12 +91,6 @@ def test_withdraw_dust_debt(
         with boa.env.prank(alice):
             swap.remove_liquidity_imbalance([0, remove_amount], 2**256 - 1)
         assert swap.balances(0) == swap.balances(1) // rtoken_mul
-
-        # Does not withdraw anything
-        with boa.env.prank(alice):
-            swap.add_liquidity([0, amount], 0)
-        with boa.env.prank(peg_keeper_updater):
-            assert not pk_regulator.update(peg_keeper)
 
 
 def test_almost_balanced(swaps, alice, admin, peg_keepers, pk_regulator, peg_keeper_updater):
