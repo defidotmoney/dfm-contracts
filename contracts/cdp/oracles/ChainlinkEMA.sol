@@ -8,7 +8,9 @@ import { IPriceOracle } from "../../interfaces/IPriceOracle.sol";
 /**
     @title Chainlink EMA Oracle
     @author defidotmoney
-    @dev Calculates an exponential moving average from a Chainlink feed
+    @notice Calculates an exponential moving average from a Chainlink feed
+    @dev This contract is designed for use in L2/sidechain environments where
+         gas costs are negligible. It is not recommended for use on Ethereum mainnet.
  */
 contract ChainlinkEMA {
     IChainlinkAggregator public immutable chainlinkFeed;
