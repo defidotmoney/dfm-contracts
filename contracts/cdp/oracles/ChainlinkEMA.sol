@@ -150,14 +150,14 @@ contract ChainlinkEMA {
 
         // iterate backward to get oracle responses for each observation time
         while (true) {
-            while (response.updatedAt > observationTimestamp) {
+            while (response.updatedAt >= observationTimestamp) {
                 if (response.roundId & type(uint64).max == 1) {
                     // first roundId for this aggregator, cannot look back further
                     break;
                 }
                 response = _getRoundData(response.roundId - 1);
             }
-            if (response.updatedAt > observationTimestamp) {
+            if (response.updatedAt >= observationTimestamp) {
                 if (idx == MAX_LOOKBACK) {
                     // edge case, if the first round is more recent than our latest
                     // observation time we can only return the first round's response
