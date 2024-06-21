@@ -151,7 +151,7 @@ contract ChainlinkEMA {
         // iterate backward to get oracle responses for each observation time
         while (true) {
             while (response.updatedAt > observationTimestamp) {
-                if (response.roundId & type(uint64).max == 0) {
+                if (response.roundId & type(uint64).max == 1) {
                     // first roundId for this aggregator, cannot look back further
                     break;
                 }
@@ -212,7 +212,7 @@ contract ChainlinkEMA {
             // depending on the direction the wind blows, an invalid roundId can revert or return zeros
             if (updatedAt > 0) return _validateAndFormatResponse(round, answer, updatedAt);
         } catch {}
-        uint80 nextRoundId = (((roundId >> 64) + 1) << 64);
+        uint80 nextRoundId = (((roundId >> 64) + 1) << 64) + 1;
         return _getRoundData(nextRoundId);
     }
 
