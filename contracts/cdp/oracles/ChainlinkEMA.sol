@@ -209,12 +209,11 @@ contract ChainlinkEMA {
      */
     function _getNextRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory) {
         try chainlinkFeed.getRoundData(roundId + 1) returns (uint80 round, int answer, uint, uint updatedAt, uint80) {
-            return _validateAndFormatResponse(round, answer, updatedAt);
-        } catch {
-            // handle case where chainlink phase has increased
-            uint80 nextRoundId = ((roundId >> 64) + 1) << 64;
-            return _getRoundData(nextRoundId);
-        }
+            // depending on the direction the wind blows, an invalid roundId can revert or return zeros
+            if (updatedAt > 0) return _validateAndFormatResponse(round, answer, updatedAt);
+        } catch {}
+        uint80 nextRoundId = (((roundId >> 64) + 1) << 64);
+        return _getRoundData(nextRoundId);
     }
 
     function _validateAndFormatResponse(
