@@ -8,6 +8,8 @@ latestRound: public(uint80)
 
 round_data: HashMap[uint80, RoundData]
 
+revert_on_invalid_round: public(bool)
+
 
 struct RoundData:
     round_id: uint80
@@ -57,10 +59,17 @@ def getRoundData(round_id: uint80) -> RoundData:
     """
     @dev Only returns rounds that were previously set with `batch_setRoundData`
     """
+    # this ALWAYS reverts!
     assert round_id >= 1 << 64, "ChainlinkMock: Invalid round_id"
+
     r: RoundData = self.round_data[round_id]
     if r.round_id == 0:
-        raise "ChainlinkMock: Unknown Round"
+        if self.revert_on_invalid_round:
+            raise "ChainlinkMock: Unknown round"
+
+        r.round_id = round_id
+        r.answered_in_round = round_id
+
     return r
 
 
@@ -81,20 +90,25 @@ def set_updated_at(updated_at: uint256):
 
 
 @external
+def set_revert_on_invalid_round(revert_on_invalid_round: bool):
+    self.revert_on_invalid_round = revert_on_invalid_round
+
+
+@external
 def batch_add_rounds(round_data: DynArray[SetRoundData, 1024]):
     """
     @dev All round answers are adjusted by 10**decimals
     """
     round_id: uint80 = self.latestRound
     if round_id == 0:
-        round_id = (1 << 64) - 1
+        round_id = (1 << 64)
 
     for r in round_data:
         updated_at: uint256 = block.timestamp - r.seconds_ago
         assert self.round_data[round_id].updated_at < updated_at, "ChainlinkMock: bad seconds_ago"
 
         if r.is_new_phase:
-            round_id = convert(((convert(round_id, uint256) >> 64) + 1) << 64, uint80)
+            round_id = self._new_phase_id_first_round(round_id)
         else:
             round_id += 1
 
@@ -117,9 +131,9 @@ def add_round(answer: int256, is_new_phase: bool = False):
     """
     round_id: uint80 = self.latestRound + 1
     if round_id == 1:
-        round_id = 1 << 64
+        round_id = (1 << 64) + 1
     elif is_new_phase:
-        round_id = convert(((convert(round_id, uint256) >> 64) + 1) << 64, uint80)
+        round_id = self._new_phase_id_first_round(round_id)
 
     self.round_data[round_id] = RoundData({
         round_id: round_id,
@@ -130,3 +144,13 @@ def add_round(answer: int256, is_new_phase: bool = False):
     })
 
     self.latestRound = round_id
+
+
+@view
+@internal
+def _new_phase_id_first_round(round_id: uint80) -> uint80:
+    """
+    @dev Returns the first round_id of the next phase
+    """
+    phase_id: uint256 = convert(round_id, uint256) >> 64
+    return convert((phase_id + 1) << 64, uint80) + 1
