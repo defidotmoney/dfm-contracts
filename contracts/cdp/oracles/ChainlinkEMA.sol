@@ -8,7 +8,9 @@ import { IPriceOracle } from "../../interfaces/IPriceOracle.sol";
 /**
     @title Chainlink EMA Oracle
     @author defidotmoney
-    @dev Calculates an exponential moving average from a Chainlink feed
+    @notice Calculates an exponential moving average from a Chainlink feed
+    @dev This contract is designed for use in L2/sidechain environments where
+         gas costs are negligible. It is not recommended for use on Ethereum mainnet.
  */
 contract ChainlinkEMA {
     IChainlinkAggregator public immutable chainlinkFeed;
@@ -150,14 +152,14 @@ contract ChainlinkEMA {
 
         // iterate backward to get oracle responses for each observation time
         while (true) {
-            while (response.updatedAt > observationTimestamp) {
-                if (response.roundId & type(uint64).max == 0) {
+            while (response.updatedAt >= observationTimestamp) {
+                if (response.roundId & type(uint64).max == 1) {
                     // first roundId for this aggregator, cannot look back further
                     break;
                 }
                 response = _getRoundData(response.roundId - 1);
             }
-            if (response.updatedAt > observationTimestamp) {
+            if (response.updatedAt >= observationTimestamp) {
                 if (idx == MAX_LOOKBACK) {
                     // edge case, if the first round is more recent than our latest
                     // observation time we can only return the first round's response
@@ -209,12 +211,11 @@ contract ChainlinkEMA {
      */
     function _getNextRoundData(uint80 roundId) internal view returns (ChainlinkResponse memory) {
         try chainlinkFeed.getRoundData(roundId + 1) returns (uint80 round, int answer, uint, uint updatedAt, uint80) {
-            return _validateAndFormatResponse(round, answer, updatedAt);
-        } catch {
-            // handle case where chainlink phase has increased
-            uint80 nextRoundId = ((roundId >> 64) + 1) << 64;
-            return _getRoundData(nextRoundId);
-        }
+            // depending on the direction the wind blows, an invalid roundId can revert or return zeros
+            if (updatedAt > 0) return _validateAndFormatResponse(round, answer, updatedAt);
+        } catch {}
+        uint80 nextRoundId = (((roundId >> 64) + 1) << 64) + 1;
+        return _getRoundData(nextRoundId);
     }
 
     function _validateAndFormatResponse(

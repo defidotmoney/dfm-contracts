@@ -44,9 +44,11 @@ def sleep_max_lookback(oracle, observations):
     return func
 
 
-@pytest.fixture(scope="module")
-def chainlink(ChainlinkAggregatorMock, decimals, deployer):
-    return ChainlinkAggregatorMock.deploy(decimals, 0, {"from": deployer})
+@pytest.fixture(scope="module", params=[True, False])
+def chainlink(ChainlinkAggregatorMock, decimals, deployer, request):
+    contract = ChainlinkAggregatorMock.deploy(decimals, 0, {"from": deployer})
+    contract.set_revert_on_invalid_round(request.param, {"from": deployer})
+    return contract
 
 
 @pytest.fixture(scope="module")
