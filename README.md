@@ -105,7 +105,11 @@ Note that `brownie` and `titanoboa` do not play nicely together - attempting to 
 
 ## Audits
 
-Components of this codebase have undergone multiple audits by different firms. Audit reports are published on [Github](https://github.com/defidotmoney/audits) as they are completed.
+Components of this codebase have undergone multiple audits by different firms. Audit reports are published on our [Github audit repo](https://github.com/defidotmoney/audits) as they are completed.
+
+* `contracts/cdp/` : audited by [ChainSecurity](https://chainsecurity.com/), June 2024 - [view report](https://github.com/defidotmoney/audits/blob/main/audits/Core%20Protocol%20-%20ChainSecurity%20-%20June%202024.pdf)
+* `contracts/cdp/` : audited by [MixBytes](https://mixbytes.io/), June 2024 - [view report](https://github.com/defidotmoney/audits/blob/main/audits/Core%20Protocol%20-%20MixBytes%20-%20June%202024.pdf)
+* `contracts/cdp/oracles/ChainlinkEMA.sol` : audited by [Bail Security](https://bailsec.io/), June 2024 - [view report](https://github.com/defidotmoney/audits/blob/main/audits/ChainlinkEMA%20-%20BailSec%20-%20June%202024.pdf)
 
 ## License
 
