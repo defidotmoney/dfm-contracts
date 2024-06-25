@@ -40,3 +40,5 @@ layerzero:
 
 chainlink:
   sequencer_uptime: null
+
+whitelist: true

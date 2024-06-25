@@ -29,6 +29,7 @@ from brownie import (
 # hooks
 from brownie import (
     L2SequencerUptimeHook,
+    WhitelistHook,
 )
 
 # periphery
@@ -237,6 +238,10 @@ def main():
         hook = L2SequencerUptimeHook.deploy(uptime_oracle, {"from": deployer})
         controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
 
+    if config["whitelist"]:
+        hook = WhitelistHook.deploy(deployer, {"from": deployer})
+        controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
+
     # Add individual markets
     for market_conf in config["markets"]:
         collateral = Contract(market_conf["collateral"])
@@ -290,6 +295,10 @@ def main():
     print("Deployment complete!")
     print(f" * Core deployment addresses saved at {deploy_log.as_posix()}")
     print(" * Remember to verify source code!")
+    if config["whitelist"]:
+        print(" * Remember to add approved accounts to the whitelist!")
+    else:
+        print(" * NOTE: No whitelist active, any account can interact with the system.")
     if stable_peers:
         print(" * Remember to add the stablecoin as a peer on existing deployments:")
         print(f'     setPeer({lz_endpoint.eid()}, "0x{to_bytes(stable.address).hex()}")')
