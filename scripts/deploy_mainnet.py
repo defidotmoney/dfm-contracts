@@ -38,6 +38,7 @@ from brownie import (
 
 from scripts.utils.connection import ConnectionManager
 from scripts.utils.createx import deploy_deterministic
+from scripts.utils.float2int import to_int
 from scripts.utils.rate0 import apy_to_rate0
 
 
@@ -128,19 +129,19 @@ def main():
         core,
         stable,
         [],
-        config["main_controller"]["global_debt_ceiling"] * 1e18,
+        to_int(config["main_controller"]["global_debt_ceiling"]),
     )
 
     stable_oracle = AggregateStablePrice.deploy(
-        core, stable, config["stable_oracle"]["sigma"] * 1e18, {"from": deployer}
+        core, stable, to_int(config["stable_oracle"]["sigma"]), {"from": deployer}
     )
     regulator = PegKeeperRegulator.deploy(
         core,
         controller,
         stable,
         stable_oracle,
-        config["peg_keepers"]["worst_price_threshold"] * 1e18,
-        config["peg_keepers"]["price_deviation"] * 1e18,
+        to_int(config["peg_keepers"]["worst_price_threshold"]),
+        to_int(config["peg_keepers"]["price_deviation"]),
         config["peg_keepers"]["action_delay"],
         {"from": deployer},
     )
@@ -174,8 +175,8 @@ def main():
             stable_oracle,
             controller,
             apy_to_rate0(base_apy),
-            config["monetary_policy"]["sigma"] * 1e18,
-            config["monetary_policy"]["target_debt_fraction"] * 1e18,
+            to_int(config["monetary_policy"]["sigma"]),
+            to_int(config["monetary_policy"]["target_debt_fraction"]),
             {"from": deployer},
         )
         controller.add_new_monetary_policy(mp, {"from": deployer})
@@ -199,8 +200,8 @@ def main():
             symbol,
             [token, stable],
             pool_conf["A"],
-            pool_conf["fee"] * 1e10,
-            pool_conf["offpeg_fee_mul"] * 1e10,
+            to_int(pool_conf["fee"], 10),
+            to_int(pool_conf["offpeg_fee_mul"], 10),
             round(pool_conf["ma_seconds"] / math.log(2)),
             0,
             [0, 0],
@@ -217,14 +218,14 @@ def main():
             controller,
             stable,
             swap,
-            config["peg_keepers"]["caller_profit_fraction"] * 1e5,
+            to_int(config["peg_keepers"]["caller_profit_fraction"], 5),
             {"from": deployer},
         )
 
         # Configuration
         stable_oracle.add_price_pair(swap, {"from": deployer})
         regulator.add_peg_keeper(
-            peg_keeper, config["peg_keepers"]["debt_ceiling"] * 1e18, {"from": deployer}
+            peg_keeper, to_int(config["peg_keepers"]["debt_ceiling"]), {"from": deployer}
         )
 
     # Optionally deploy l2 sequencer uptime oracle and hook
@@ -272,13 +273,13 @@ def main():
         tx = controller.add_market(
             collateral,
             market_conf["A"],
-            market_conf["amm_fee"] * 1e18,
-            market_conf["amm_admin_fee"] * 1e18,
+            to_int(market_conf["amm_fee"]),
+            to_int(market_conf["amm_admin_fee"]),
             oracle,
             monetary_policy_indexes[market_conf["base_apy"]],
-            market_conf["loan_discount"] * 1e18,
-            market_conf["liquidation_discount"] * 1e18,
-            market_conf["debt_ceiling"] * 1e18,
+            to_int(market_conf["loan_discount"]),
+            to_int(market_conf["liquidation_discount"]),
+            to_int(market_conf["debt_ceiling"]),
             {"from": deployer},
         )
 
