@@ -11,6 +11,11 @@ is_whitelisted: public(HashMap[address, bool])
 owner: public(address)
 
 
+event WhitelistSet:
+    account: indexed(address)
+    is_whitelisted: bool
+
+
 @external
 def __init__(owner: address):
     self.owner = owner
@@ -44,6 +49,7 @@ def set_whitelisted(accounts: DynArray[address, max_value(uint16)], is_whitelist
     assert msg.sender == self.owner, "DFM: only owner"
     for account in accounts:
         self.is_whitelisted[account] = is_whitelisted
+        log WhitelistSet(account, is_whitelisted)
 
 
 @view
