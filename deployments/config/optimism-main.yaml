@@ -2,6 +2,9 @@ peg_keepers:
   paired_assets:
     - "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"  # USDT
     - "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"  # USDC
+    - "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1"  # DAI
+    - "0x2e3d870790dc77a83dd1d18184acc7439a53f475"  # FRAX
+    - "0xC52D7F23a2e460248Db6eE192Cb23dD12bDDCbf6"  # crvUSD
 
 markets:
   # WETH

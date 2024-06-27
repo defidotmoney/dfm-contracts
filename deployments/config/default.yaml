@@ -1,5 +1,5 @@
 stablecoin:
-  name: "Defi.Money"
+  name: "Defi.Money Stablecoin"
   symbol: "MONEY"
   default_options: "0x0003010011010000000000000000000000000000ea60"
 
@@ -9,8 +9,8 @@ main_controller:
 peg_keepers:
   worst_price_threshold: 0.001
   price_deviation: 100
-  action_delay: 0
-  debt_ceiling: 10_000_000
+  action_delay: 30
+  debt_ceiling: 1_000_000
   caller_profit_fraction: 0.2
   pool_config:
     A: 100
@@ -27,7 +27,7 @@ monetary_policy:
   target_debt_fraction: 0.1
 
 core_owner:
-  fee_receiver: "000000000000000000000000000000000000fee5"  # TODO
+  fee_receiver: "0x222d2B30EcD382a058618d9F1ee01F147666E48b"
   start_offset: 302400
 
 curve:
@@ -40,3 +40,5 @@ layerzero:
 
 chainlink:
   sequencer_uptime: null
+
+whitelist: true

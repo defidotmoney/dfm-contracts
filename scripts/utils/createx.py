@@ -7,4 +7,6 @@ def deploy_deterministic(deployer, salt, container, *args):
     createx = Contract(CREATE_X)
     initcode = container.deploy.encode_input(*args)
     tx = createx.deployCreate3(salt, initcode, {"from": deployer})
-    return container.at(tx.events["ContractCreation"]["newContract"])
+    deploy_address = tx.events["ContractCreation"]["newContract"]
+    print(f"  {container._name} deployed at: {deploy_address}\n")
+    return container.at(deploy_address)

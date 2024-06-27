@@ -29,6 +29,7 @@ from brownie import (
 # hooks
 from brownie import (
     L2SequencerUptimeHook,
+    WhitelistHook,
 )
 
 # periphery
@@ -38,13 +39,15 @@ from brownie import (
 
 from scripts.utils.connection import ConnectionManager
 from scripts.utils.createx import deploy_deterministic
+from scripts.utils.float2int import to_int
 from scripts.utils.rate0 import apy_to_rate0
 
 
-# TODO
-CORE_DEPLOY_SALT = "0x01"
-STABLECOIN_DEPLOY_SALT = "0x02"
-CONTROLLER_DEPLOY_SALT = "0x03"
+TEAM_MULTISIG = "0x222d2B30EcD382a058618d9F1ee01F147666E48b"
+
+CORE_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da00fd7df6d5c020290265c131"
+STABLECOIN_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da008c17e7bcb0ca2203ff159b"
+CONTROLLER_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da006a506030994eee0392f93b"
 
 
 def _recursive_merge(base_dict, new_dict):
@@ -60,9 +63,11 @@ def main():
     Deploys core Defi.Money contracts to mainnet.
     """
 
-    # TODO
+    # TODO set the actual `account` objects here
+    # deterministic deployer must be consistent between chains
     deterministic_deployer = "0xDeF1c4aD4a9C6bcd718C91e6AB79958217FA27DA"
-    deployer = accounts[0]
+    # normal deployer should be unique per-chain to avoid overlap in non-deterministic addresses
+    deployer = "0xbADbABEFA66BfA6e01C4918229ea65e20BbC79e2"
 
     network_name = network.show_active()
     deploy_log = Path(f"./deployments/logs/{network_name}.yaml")
@@ -125,19 +130,19 @@ def main():
         core,
         stable,
         [],
-        config["main_controller"]["global_debt_ceiling"] * 1e18,
+        to_int(config["main_controller"]["global_debt_ceiling"]),
     )
 
     stable_oracle = AggregateStablePrice.deploy(
-        core, stable, config["stable_oracle"]["sigma"] * 1e18, {"from": deployer}
+        core, stable, to_int(config["stable_oracle"]["sigma"]), {"from": deployer}
     )
     regulator = PegKeeperRegulator.deploy(
         core,
         controller,
         stable,
         stable_oracle,
-        config["peg_keepers"]["worst_price_threshold"] * 1e18,
-        config["peg_keepers"]["price_deviation"] * 1e18,
+        to_int(config["peg_keepers"]["worst_price_threshold"]),
+        to_int(config["peg_keepers"]["price_deviation"]),
         config["peg_keepers"]["action_delay"],
         {"from": deployer},
     )
@@ -171,8 +176,8 @@ def main():
             stable_oracle,
             controller,
             apy_to_rate0(base_apy),
-            config["monetary_policy"]["sigma"] * 1e18,
-            config["monetary_policy"]["target_debt_fraction"] * 1e18,
+            to_int(config["monetary_policy"]["sigma"]),
+            to_int(config["monetary_policy"]["target_debt_fraction"]),
             {"from": deployer},
         )
         controller.add_new_monetary_policy(mp, {"from": deployer})
@@ -189,15 +194,15 @@ def main():
     for token in config["peg_keepers"]["paired_assets"]:
         # Deploy AMM for pegkeeper
         token = Contract(token)
-        name = f"{config['stablecoin']['symbol']}/{token.symbol()} Curve LP"
-        symbol = f"{config['stablecoin']['symbol']}{token.symbol()}"
+        name = f"{token.symbol()}/{config['stablecoin']['symbol']} Curve LP"
+        symbol = f"dfm{token.symbol()}"
         curve_factory.deploy_plain_pool(
             name,
             symbol,
-            [stable, token],
+            [token, stable],
             pool_conf["A"],
-            pool_conf["fee"] * 1e10,
-            pool_conf["offpeg_fee_mul"] * 1e10,
+            to_int(pool_conf["fee"], 10),
+            to_int(pool_conf["offpeg_fee_mul"], 10),
             round(pool_conf["ma_seconds"] / math.log(2)),
             0,
             [0, 0],
@@ -214,14 +219,14 @@ def main():
             controller,
             stable,
             swap,
-            config["peg_keepers"]["caller_profit_fraction"] * 1e5,
+            to_int(config["peg_keepers"]["caller_profit_fraction"], 5),
             {"from": deployer},
         )
 
         # Configuration
         stable_oracle.add_price_pair(swap, {"from": deployer})
         regulator.add_peg_keeper(
-            peg_keeper, config["peg_keepers"]["debt_ceiling"] * 1e18, {"from": deployer}
+            peg_keeper, to_int(config["peg_keepers"]["debt_ceiling"]), {"from": deployer}
         )
 
     # Optionally deploy l2 sequencer uptime oracle and hook
@@ -231,6 +236,10 @@ def main():
             config["chainlink"]["sequencer_uptime"], {"from": deployer}
         )
         hook = L2SequencerUptimeHook.deploy(uptime_oracle, {"from": deployer})
+        controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
+
+    if config["whitelist"]:
+        hook = WhitelistHook.deploy(deployer, {"from": deployer})
         controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
 
     # Add individual markets
@@ -269,13 +278,13 @@ def main():
         tx = controller.add_market(
             collateral,
             market_conf["A"],
-            market_conf["amm_fee"] * 1e18,
-            market_conf["amm_admin_fee"] * 1e18,
+            to_int(market_conf["amm_fee"]),
+            to_int(market_conf["amm_admin_fee"]),
             oracle,
             monetary_policy_indexes[market_conf["base_apy"]],
-            market_conf["loan_discount"] * 1e18,
-            market_conf["liquidation_discount"] * 1e18,
-            market_conf["debt_ceiling"] * 1e18,
+            to_int(market_conf["loan_discount"]),
+            to_int(market_conf["liquidation_discount"]),
+            to_int(market_conf["debt_ceiling"]),
             {"from": deployer},
         )
 
@@ -286,6 +295,10 @@ def main():
     print("Deployment complete!")
     print(f" * Core deployment addresses saved at {deploy_log.as_posix()}")
     print(" * Remember to verify source code!")
+    if config["whitelist"]:
+        print(" * Remember to add approved accounts to the whitelist!")
+    else:
+        print(" * NOTE: No whitelist active, any account can interact with the system.")
     if stable_peers:
         print(" * Remember to add the stablecoin as a peer on existing deployments:")
         print(f'     setPeer({lz_endpoint.eid()}, "0x{to_bytes(stable.address).hex()}")')
