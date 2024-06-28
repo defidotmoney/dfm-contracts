@@ -119,8 +119,8 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         if (debtAmount > 0) stableCoin.transferFrom(msg.sender, address(this), debtAmount);
 
         (int256 debtChange, uint256 collReceived) = mainController.get_close_loan_amounts(msg.sender, market);
-        require(debtChange < 0);
-        require(collReceived > 0);
+        require(debtChange < 0, "DFM: No debt owed");
+        require(collReceived > 0, "DFM: No coll received");
 
         uint256 debtShortfall = uint256(-debtChange) - debtAmount;
 
