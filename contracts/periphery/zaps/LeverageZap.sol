@@ -59,7 +59,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         @notice Use a flashloan to create a new loan
         @dev The router swap should convert exactly `debtAmount` of stablecoin into the collateral
              for the given market. The entire received collateral balance is used to create the new
-             loan. Any remaining stablecoin balance is transferred to the caller.
+             loan. No debt or collateral is returned.
         @param market Address of the market to create a new loan in
         @param debtAmount Debt amount of the loan
         @param collAmount Collateral amount provided by the caller
@@ -85,9 +85,6 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
             routingData
         );
         stableCoin.flashLoan(this, address(stableCoin), debtAmount, data);
-
-        uint256 amount = stableCoin.balanceOf(address(this));
-        if (amount > 0) stableCoin.transfer(msg.sender, amount);
     }
 
     /**
@@ -130,11 +127,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         );
         stableCoin.flashLoan(this, address(stableCoin), debtAmount, data);
 
-        uint256 amount = collateral.balanceOf(address(this));
-        if (amount > 0) collateral.safeTransfer(msg.sender, amount);
-
-        amount = stableCoin.balanceOf(address(this));
-        if (amount > 0) stableCoin.transfer(msg.sender, amount);
+        _transferTokensToCaller(collateral);
     }
 
     /**
@@ -158,11 +151,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         bytes memory data = abi.encode(FlashLoanAction.CloseLoan, msg.sender, market, collateral, routingData);
         stableCoin.flashLoan(this, address(stableCoin), debtShortfall, data);
 
-        uint256 amount = collateral.balanceOf(address(this));
-        if (amount > 0) collateral.safeTransfer(msg.sender, amount);
-
-        amount = stableCoin.balanceOf(address(this));
-        if (amount > 0) stableCoin.transfer(msg.sender, amount);
+        _transferTokensToCaller(collateral);
     }
 
     function onFlashLoan(
@@ -191,7 +180,8 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         );
 
         _callRouter(stableCoin, flashloanAmount, routingData);
-        mainController.create_loan(account, market, collateral.balanceOf(address(this)), flashloanAmount, numBands);
+        uint256 debtAmount = flashloanAmount - stableCoin.balanceOf(address(this));
+        mainController.create_loan(account, market, collateral.balanceOf(address(this)), debtAmount, numBands);
     }
 
     function _flashLoanIncreaseDebt(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
@@ -229,5 +219,13 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         (bool success, ) = router.call(routingData);
         require(success, "DFM: Odos router call failed");
         token.safeApprove(router, 0);
+    }
+
+    function _transferTokensToCaller(IERC20 collateral) internal {
+        uint256 amount = collateral.balanceOf(address(this));
+        if (amount > 0) collateral.safeTransfer(msg.sender, amount);
+
+        amount = stableCoin.balanceOf(address(this));
+        if (amount > 0) stableCoin.transfer(msg.sender, amount);
     }
 }
