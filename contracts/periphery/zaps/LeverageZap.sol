@@ -158,8 +158,9 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         );
 
         _callRouter(stableCoin, flashloanAmount, routingData);
+        uint256 collAmount = collateral.balanceOf(address(this));
         uint256 debtAmount = flashloanAmount - stableCoin.balanceOf(address(this));
-        mainController.create_loan(account, market, collateral.balanceOf(address(this)), debtAmount, numBands);
+        mainController.create_loan(account, market, collAmount, debtAmount, numBands);
     }
 
     function _flashIncrease(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
@@ -168,17 +169,17 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
             (uint256, address, address, IERC20, bytes)
         );
 
-        _callRouter(stableCoin, stableCoin.balanceOf(address(this)), routingData);
-        int256 debtAmount = int256(flashloanAmount - stableCoin.balanceOf(address(this)));
+        _callRouter(stableCoin, flashloanAmount, routingData);
         int256 collAmount = int256(collateral.balanceOf(address(this)));
-        mainController.adjust_loan(account, market, debtAmount, collAmount);
+        int256 debtAmount = int256(flashloanAmount - stableCoin.balanceOf(address(this)));
+        mainController.adjust_loan(account, market, collAmount, debtAmount);
     }
 
     function _flashDecrease(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
         (, address account, address market, IBridgeToken collateral, uint256 collAmount, bytes memory routingData) = abi
             .decode(data, (uint256, address, address, IBridgeToken, uint256, bytes));
 
-        mainController.adjust_loan(account, market, -int256(flashloanAmount), -int256(collAmount));
+        mainController.adjust_loan(account, market, -int256(collAmount), -int256(flashloanAmount));
         _callRouter(collateral, collAmount, routingData);
     }
 
