@@ -31,15 +31,16 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         if (address(collateral) == address(0)) {
             collateral = IERC20(mainController.get_collateral(market));
             collateral.safeApprove(address(mainController), type(uint256).max);
+            marketCollaterals[market] = collateral;
         }
         return collateral;
     }
 
     function close_loan(address market, uint256 debtAmount, bytes calldata routingData) external {
         IERC20 collateral = _getCollateral(market);
-        IERC20(stableCoin).transferFrom(msg.sender, address(this), debtAmount);
+        if (debtAmount > 0) IERC20(stableCoin).transferFrom(msg.sender, address(this), debtAmount);
 
-        (int256 debtChange, uint256 collReceived) = mainController.get_close_loan_amounts(market, msg.sender);
+        (int256 debtChange, uint256 collReceived) = mainController.get_close_loan_amounts(msg.sender, market);
         require(debtChange < 0);
         require(collReceived > 0);
 
@@ -63,11 +64,11 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
             (address, address, IERC20, bytes)
         );
 
-        (, uint256 collReceived) = mainController.close_loan(market, account);
+        (, uint256 collReceived) = mainController.close_loan(account, market);
 
         collateral.safeApprove(router, collReceived);
         (bool success, ) = router.call(routingData);
-        require(success, "Router call failed");
+        require(success, "DFM: Odos router call failed");
         collateral.safeApprove(router, 0);
 
         return _RETURN_VALUE;
