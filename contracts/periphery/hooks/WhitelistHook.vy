@@ -30,13 +30,13 @@ def get_configuration() -> (uint256, bool[4]):
 @view
 @external
 def on_create_loan_view(account: address, market: address, coll_amount: uint256, debt_amount: uint256) -> int256:
-    return self._assert_is_whitelisted(account)
+    return 0
 
 
 @external
 def on_create_loan(account: address, market: address, coll_amount: uint256, debt_amount: uint256) -> int256:
-    return self._assert_is_whitelisted(account)
-
+    assert self.is_whitelisted[account], "DFM: not whitelisted"
+    return 0
 
 @external
 def set_owner(owner: address):
@@ -50,10 +50,3 @@ def set_whitelisted(accounts: DynArray[address, max_value(uint16)], is_whitelist
     for account in accounts:
         self.is_whitelisted[account] = is_whitelisted
         log WhitelistSet(account, is_whitelisted)
-
-
-@view
-@internal
-def _assert_is_whitelisted(account: address) -> int256:
-    assert self.is_whitelisted[account], "DFM: not whitelisted"
-    return 0

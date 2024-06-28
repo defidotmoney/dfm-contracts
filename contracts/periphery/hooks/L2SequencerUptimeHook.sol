@@ -28,7 +28,7 @@ contract L2SequencerUptimeHook {
         uint256 collAmount,
         uint256 debtAmount
     ) external returns (int256 debtAdjustment) {
-        _onCreate();
+        require(uptimeOracle.getUptimeStatus(), "DFM: Sequencer down, no new loan");
         return 0;
     }
 
@@ -38,7 +38,6 @@ contract L2SequencerUptimeHook {
         uint256 collAmount,
         uint256 debtAmount
     ) external view returns (int256 debtAdjustment) {
-        _onCreate();
         return 0;
     }
 
@@ -48,7 +47,12 @@ contract L2SequencerUptimeHook {
         int256 collChange,
         int256 debtChange
     ) external returns (int256 debtAdjustment) {
-        _onAdjust(collChange, debtChange);
+        if (debtChange > 0 || collChange < 0) {
+            if (!uptimeOracle.getUptimeStatus()) {
+                if (debtChange > 0) revert("DFM: Sequencer down, no debt++");
+                else revert("DFM: Sequencer down, no coll--");
+            }
+        }
         return 0;
     }
 
@@ -58,20 +62,6 @@ contract L2SequencerUptimeHook {
         int256 collChange,
         int256 debtChange
     ) external returns (int256 debtAdjustment) {
-        _onAdjust(collChange, debtChange);
         return 0;
-    }
-
-    function _onCreate() internal view {
-        require(uptimeOracle.getUptimeStatus(), "DFM: Sequencer down, no new loan");
-    }
-
-    function _onAdjust(int256 collChange, int256 debtChange) internal view {
-        if (debtChange > 0 || collChange < 0) {
-            if (!uptimeOracle.getUptimeStatus()) {
-                if (debtChange > 0) revert("DFM: Sequencer down, no debt++");
-                else revert("DFM: Sequencer down, no coll--");
-            }
-        }
     }
 }

@@ -48,6 +48,10 @@ interface IControllerHooks {
         uint256 debtAmount
     ) external returns (int256 debtAdjustment);
 
+    /**
+        @dev Read-only implementation of `on_create_loan` used for pending state calculations.
+             If the nonpayable version would revert, this function should instead return 0.
+     */
     function on_create_loan_view(
         address account,
         address market,
@@ -72,6 +76,10 @@ interface IControllerHooks {
         int256 debtChange
     ) external returns (int256 debtAdjustment);
 
+    /**
+        @dev Read-only implementation of `on_adjust_loan` used for pending state calculations.
+             If the nonpayable version would revert, this function should instead return 0.
+     */
     function on_adjust_loan_view(
         address account,
         address market,
@@ -93,6 +101,10 @@ interface IControllerHooks {
         uint256 accountDebt
     ) external returns (int256 debtAdjustment);
 
+    /**
+        @dev Read-only implementation of `on_close_loan` used for pending state calculations.
+             If the nonpayable version would revert, this function should instead return 0.
+     */
     function on_close_loan_view(
         address account,
         address market,
@@ -114,6 +126,10 @@ interface IControllerHooks {
         uint256 debtLiquidated
     ) external returns (int256 debtAdjustment);
 
+    /**
+        @dev Read-only implementation of `on_liquidation` used for pending state calculations.
+             If the nonpayable version would revert, this function should instead return 0.
+     */
     function on_liquidation_view(
         address caller,
         address market,
