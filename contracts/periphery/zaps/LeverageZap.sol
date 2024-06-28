@@ -23,6 +23,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
 
     enum FlashLoanAction {
         CreateLoan,
+        IncreaseDebt,
         CloseLoan
     }
 
@@ -88,12 +89,29 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         if (amount > 0) stableCoin.transfer(msg.sender, amount);
     }
 
-    function increaseDebt() external {
-        // optionally add external coll and/or debt
-        // flashloan debt
-        // swap debt -> coll
-        // deposit coll and mint debt
-        // repay flashloan
+    /**
+        @dev The router swap should convert `debtFlashloan` of stablecoin into the collateral
+             for the given market. The loan adjustment adds the entire collateral balance and
+             mints the required debt to repay the flashloan. No debt or collateral is returned.
+        @param market Address of the market where the loan is being adjusted
+        @param debtAmount Debt amount provided by the caller
+        @param debtFlashloan Debt amount to flashloan
+        @param collAmount Collateral amount provided by the caller
+        @param routingData Odos router swap calldata
+     */
+    function increaseDebt(
+        address market,
+        uint256 debtAmount,
+        uint256 debtFlashloan,
+        uint256 collAmount,
+        bytes calldata routingData
+    ) external {
+        IERC20 collateral = _getCollateral(market);
+        if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
+        if (debtAmount > 0) stableCoin.transferFrom(msg.sender, address(this), debtAmount);
+
+        bytes memory data = abi.encode(FlashLoanAction.IncreaseDebt, msg.sender, market, collateral, routingData);
+        stableCoin.flashLoan(this, address(stableCoin), debtFlashloan, data);
     }
 
     function decreaseDebt() external {
@@ -143,6 +161,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
 
         FlashLoanAction action = abi.decode(data, (FlashLoanAction));
         if (action == FlashLoanAction.CreateLoan) _flashLoanCreateLoan(amount, data);
+        else if (action == FlashLoanAction.IncreaseDebt) _flashLoanIncreaseDebt(amount, data);
         else if (action == FlashLoanAction.CloseLoan) _flashLoanCloseLoan(data);
         else revert("DFM: Invalid flashloan action");
 
@@ -157,6 +176,18 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
 
         _callRouter(stableCoin, flashloanAmount, routingData);
         mainController.create_loan(account, market, collateral.balanceOf(address(this)), flashloanAmount, numBands);
+    }
+
+    function _flashLoanIncreaseDebt(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
+        (, address account, address market, IBridgeToken collateral, bytes memory routingData) = abi.decode(
+            data,
+            (uint256, address, address, IBridgeToken, bytes)
+        );
+
+        _callRouter(stableCoin, stableCoin.balanceOf(address(this)), routingData);
+        int256 debtAmount = int256(flashloanAmount - stableCoin.balanceOf(address(this)));
+        int256 collAmount = int256(collateral.balanceOf(address(this)));
+        mainController.adjust_loan(account, market, debtAmount, collAmount);
     }
 
     function _flashLoanCloseLoan(bytes calldata data) internal returns (bytes32) {
