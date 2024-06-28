@@ -9,6 +9,7 @@ import { OAppCore } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppCore.
 import { IOAppMsgInspector } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/interfaces/IOAppMsgInspector.sol";
 import { ERC20FlashMint } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20FlashMint.sol";
 import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import { IERC3156FlashLender } from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IProtocolCore } from "../interfaces/IProtocolCore.sol";
 import { IBridgeToken } from "../interfaces/IBridgeToken.sol";
@@ -89,7 +90,7 @@ contract BridgeToken is IBridgeToken, OFT, ERC20FlashMint, ERC20Permit {
         @param token The address of the token that is requested
         @return The amount of token that can be loaned
      */
-    function maxFlashLoan(address token) public view override returns (uint256) {
+    function maxFlashLoan(address token) public view override(ERC20FlashMint, IERC3156FlashLender) returns (uint256) {
         if (token == address(this) && isFlashMintEnabled) {
             return 2 ** 127 - totalSupply();
         }
