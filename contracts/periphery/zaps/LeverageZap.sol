@@ -67,7 +67,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
 
         uint256 debtShortfall = uint256(-debtChange) - debtAmount;
 
-        bytes memory data = abi.encode(FlashLoanAction.CloseLoan, market, msg.sender, collateral, routingData);
+        bytes memory data = abi.encode(FlashLoanAction.CloseLoan, msg.sender, market, collateral, routingData);
         stableCoin.flashLoan(this, address(stableCoin), debtShortfall, data);
 
         uint256 amount = collateral.balanceOf(address(this));
@@ -103,29 +103,28 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
             (uint256, address, address, IERC20, uint256, bytes)
         );
 
-        stableCoin.safeApprove(router, flashloanAmount);
-        (bool success, ) = router.call(routingData);
-        require(success, "DFM: Odos router call failed");
-        stableCoin.safeApprove(router, 0);
-
+        _callRouter(stableCoin, flashloanAmount, routingData);
         mainController.create_loan(account, market, collateral.balanceOf(address(this)), flashloanAmount, numBands);
 
         return _RETURN_VALUE;
     }
 
     function _flashLoanCloseLoan(bytes calldata data) internal returns (bytes32) {
-        (, address market, address account, IERC20 collateral, bytes memory routingData) = abi.decode(
+        (, address account, address market, IBridgeToken collateral, bytes memory routingData) = abi.decode(
             data,
-            (uint256, address, address, IERC20, bytes)
+            (uint256, address, address, IBridgeToken, bytes)
         );
 
         (, uint256 collReceived) = mainController.close_loan(account, market);
-
-        collateral.safeApprove(router, collReceived);
-        (bool success, ) = router.call(routingData);
-        require(success, "DFM: Odos router call failed");
-        collateral.safeApprove(router, 0);
+        _callRouter(collateral, collReceived, routingData);
 
         return _RETURN_VALUE;
+    }
+
+    function _callRouter(IBridgeToken token, uint256 amount, bytes memory routingData) internal {
+        token.safeApprove(router, amount);
+        (bool success, ) = router.call(routingData);
+        require(success, "DFM: Odos router call failed");
+        token.safeApprove(router, 0);
     }
 }
