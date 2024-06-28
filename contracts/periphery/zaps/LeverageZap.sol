@@ -57,6 +57,21 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         stableCoin.flashLoan(this, address(stableCoin), debtAmount, data);
     }
 
+    function increaseDebt() external {
+        // optionally add external coll and/or debt
+        // flashloan debt
+        // swap debt -> coll
+        // deposit coll and mint debt
+        // repay flashloan
+    }
+
+    function decreaseDebt() external {
+        // flashloan debt
+        // repay debt, withdraw coll
+        // swap coll -> debt
+        // repay flashloan
+    }
+
     function close_loan(address market, uint256 debtAmount, bytes calldata routingData) external {
         IERC20 collateral = _getCollateral(market);
         if (debtAmount > 0) stableCoin.transferFrom(msg.sender, address(this), debtAmount);
