@@ -24,6 +24,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
     enum FlashLoanAction {
         CreateLoan,
         IncreaseDebt,
+        DecreaseDebt,
         CloseLoan
     }
 
@@ -114,11 +115,33 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         stableCoin.flashLoan(this, address(stableCoin), debtFlashloan, data);
     }
 
-    function decreaseDebt() external {
-        // flashloan debt
-        // repay debt, withdraw coll
-        // swap coll -> debt
-        // repay flashloan
+    /**
+        @notice Decrease the debt of an existing loan by selling collateral
+        @dev The router swap must convert up to `collAmount` of collateral into at least `debtAmount`
+             of stablecoin. Any remaining debt or collateral balances are transferred to the caller.
+        @param market Address of the market to close the loan in
+        @param debtAmount Amount of debt to reduce the loan by
+        @param collAmount Amount of collateral to withdraw from the loan
+        @param routingData Odos router swap calldata
+     */
+    function decreaseDebt(address market, uint256 debtAmount, uint256 collAmount, bytes calldata routingData) external {
+        IERC20 collateral = _getCollateral(market);
+
+        bytes memory data = abi.encode(
+            FlashLoanAction.DecreaseDebt,
+            msg.sender,
+            market,
+            collateral,
+            collAmount,
+            routingData
+        );
+        stableCoin.flashLoan(this, address(stableCoin), debtAmount, data);
+
+        uint256 amount = collateral.balanceOf(address(this));
+        if (amount > 0) collateral.safeTransfer(msg.sender, amount);
+
+        amount = stableCoin.balanceOf(address(this));
+        if (amount > 0) stableCoin.transfer(msg.sender, amount);
     }
 
     /**
@@ -188,6 +211,14 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         int256 debtAmount = int256(flashloanAmount - stableCoin.balanceOf(address(this)));
         int256 collAmount = int256(collateral.balanceOf(address(this)));
         mainController.adjust_loan(account, market, debtAmount, collAmount);
+    }
+
+    function _flashLoanDecreaseDebt(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
+        (, address account, address market, IBridgeToken collateral, uint256 collAmount, bytes memory routingData) = abi
+            .decode(data, (uint256, address, address, IBridgeToken, uint256, bytes));
+
+        mainController.adjust_loan(account, market, -int256(flashloanAmount), -int256(collAmount));
+        _callRouter(collateral, collAmount, routingData);
     }
 
     function _flashLoanCloseLoan(bytes calldata data) internal returns (bytes32) {
