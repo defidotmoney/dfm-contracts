@@ -91,28 +91,21 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
     }
 
     /**
-        @dev The router swap should convert `debtFlashloan` of stablecoin into the collateral
+        @notice Use a flashloan to increase the debt and collateral of an existing loan
+        @dev The router swap should convert `debtAmount` of stablecoin into the collateral
              for the given market. The loan adjustment adds the entire collateral balance and
              mints the required debt to repay the flashloan. No debt or collateral is returned.
         @param market Address of the market where the loan is being adjusted
-        @param debtAmount Debt amount provided by the caller
-        @param debtFlashloan Debt amount to flashloan
+        @param debtAmount Debt amount to flashloan
         @param collAmount Collateral amount provided by the caller
         @param routingData Odos router swap calldata
      */
-    function increaseDebt(
-        address market,
-        uint256 debtAmount,
-        uint256 debtFlashloan,
-        uint256 collAmount,
-        bytes calldata routingData
-    ) external {
+    function increaseDebt(address market, uint256 debtAmount, uint256 collAmount, bytes calldata routingData) external {
         IERC20 collateral = _getCollateral(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
-        if (debtAmount > 0) stableCoin.transferFrom(msg.sender, address(this), debtAmount);
 
         bytes memory data = abi.encode(FlashLoanAction.IncreaseDebt, msg.sender, market, collateral, routingData);
-        stableCoin.flashLoan(this, address(stableCoin), debtFlashloan, data);
+        stableCoin.flashLoan(this, address(stableCoin), debtAmount, data);
     }
 
     /**
