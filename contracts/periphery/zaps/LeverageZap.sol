@@ -12,6 +12,8 @@ import { IBridgeToken } from "../../interfaces/IBridgeToken.sol";
 /**
     @title Leverage Zap using Odos V2 Router
     @author defidotmoney
+    @notice Creates, adjust, and close loans using flashloans and performing swaps via Odos
+    @dev Used as a delegate for calls to `MainController`
  */
 contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
     using SafeERC20 for IERC20;
@@ -51,10 +53,10 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         @notice Use a flashloan to create a new loan
         @dev The router swap should convert exactly `debtAmount` of stablecoin into the collateral
              for the given market. The entire received collateral balance is used to create the new
-             loan. No debt or collateral is returned.
+             loan. No stablecoins or collateral are returned.
         @param market Address of the market to create a new loan in
         @param collAmount Collateral amount provided by the caller
-        @param debtAmount Debt amount of the loan
+        @param debtAmount Amount of stablecoins to open a loan for
         @param numBands Number of bands to use for the loan
         @param routingData Odos router swap calldata
      */
@@ -74,12 +76,12 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
 
     /**
         @notice Use a flashloan to increase the debt and collateral of an existing loan
-        @dev The router swap should convert `debtAmount` of stablecoin into the collateral
-             for the given market. The loan adjustment adds the entire collateral balance and
-             mints the required debt to repay the flashloan. No debt or collateral is returned.
+        @dev The router swap should convert `debtAmount` of stablecoin into the collateral for the
+             given market. The loan adjustment adds the entire collateral balance and mints the
+             required stablecoins to repay the flashloan. No stablecoins or collateral are returned.
         @param market Address of the market where the loan is being adjusted
         @param collAmount Collateral amount provided by the caller
-        @param debtAmount Debt amount to flashloan
+        @param debtAmount Stablecoin amount to flashloan
         @param routingData Odos router swap calldata
      */
     function increaseLoan(
@@ -98,7 +100,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
     /**
         @notice Decrease the debt of an existing loan by selling collateral
         @dev The router swap must convert up to `collAmount` of collateral into at least `debtAmount`
-             of stablecoin. Any remaining debt or collateral balances are transferred to the caller.
+             of stablecoin. Any remaining stablecoin or collateral balances are transferred to the caller.
         @param market Address of the market to close the loan in
         @param collAmount Amount of collateral to withdraw from the loan
         @param debtAmount Amount of debt to reduce the loan by
@@ -121,9 +123,9 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
     /**
         @notice Close a loan by selling collateral to cover a portion of the debt
         @dev The router swap should convert enough collateral into stablecoin to cover the debt
-             shortfall. Any remaining debt or collateral balances are transferred to the caller.
+             shortfall. Remaining stablecoin and collateral balances are transferred to the caller.
         @param market Address of the market to close the loan in
-        @param debtAmount Debt amount provided by the caller
+        @param debtAmount Stablecoin amount provided by the caller
         @param routingData Odos router swap calldata
      */
     function closeLoan(address market, uint256 debtAmount, bytes calldata routingData) external nonReentrant {
@@ -162,6 +164,10 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         return _RETURN_VALUE;
     }
 
+    /**
+        @dev 1. Swaps the flashloaned stablecoins for collateral.
+             2. Uses the collateral to create a new loan and mint stablecoins to repay the flashloan.
+     */
     function _flashCreate(uint256 flashloanAmount, bytes calldata data) internal {
         (, address account, address market, IERC20 collateral, uint256 numBands, bytes memory routingData) = abi.decode(
             data,
@@ -174,6 +180,10 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         mainController.create_loan(account, market, collAmount, debtAmount, numBands);
     }
 
+    /**
+        @dev 1. Swaps the flashloaned stablecoins for collateral.
+             2. Adds the collateral to an existing loan and mints stablecoins to repay the flashloan.
+     */
     function _flashIncrease(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
         (, address account, address market, IERC20 collateral, bytes memory routingData) = abi.decode(
             data,
@@ -186,6 +196,10 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         mainController.adjust_loan(account, market, collAmount, debtAmount);
     }
 
+    /**
+        @dev 1. Uses the flashloaned stablecoin to repay an existing loan, and withdraws a portion of the collateral.
+             2. Swaps the withdrawn collateral for the stablecoins required repay the flashloan.
+     */
     function _flashDecrease(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
         (, address account, address market, IBridgeToken collateral, uint256 collAmount, bytes memory routingData) = abi
             .decode(data, (uint256, address, address, IBridgeToken, uint256, bytes));
@@ -194,6 +208,11 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         _callRouter(collateral, collAmount, routingData);
     }
 
+    /**
+        @dev 1. Uses the available stablecoin balance (flashloaned and received from the caller) to
+                close an existing loan, and receive the collateral from the loan.
+             2. Swaps the withdrawn collateral for the stablecoins required repay the flashloan.
+     */
     function _flashClose(bytes calldata data) internal returns (bytes32) {
         (, address account, address market, IBridgeToken collateral, bytes memory routingData) = abi.decode(
             data,
