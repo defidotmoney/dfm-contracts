@@ -42,3 +42,8 @@ def test_insufficient_coll_to_create(market, stable, collateral, router, zap, al
     data = router.mockSwap.encode_input(stable, collateral, 10_000 * 10**18, 1 * 10**18)
     with brownie.reverts("DFM:M Debt too high"):
         zap.createLoan(market, 10**18, 10_000 * 10**18, 4, data, {"from": alice})
+
+
+def test_invalid_market(zap, alice):
+    with brownie.reverts("DFM: Market does not exist"):
+        zap.createLoan(alice, 10**18, 10_000 * 10**18, 4, b"", {"from": alice})

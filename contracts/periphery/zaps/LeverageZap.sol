@@ -67,7 +67,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         uint256 numBands,
         bytes calldata routingData
     ) external nonReentrant {
-        IERC20 collateral = _getCollateral(market);
+        IERC20 collateral = _getCollateralOrRevert(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
         bytes memory data = abi.encode(Action.CreateLoan, msg.sender, market, collateral, numBands, routingData);
@@ -90,7 +90,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         uint256 debtAmount,
         bytes calldata routingData
     ) external nonReentrant {
-        IERC20 collateral = _getCollateral(market);
+        IERC20 collateral = _getCollateralOrRevert(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
         bytes memory data = abi.encode(Action.IncreaseLoan, msg.sender, market, collateral, routingData);
@@ -112,7 +112,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         uint256 debtAmount,
         bytes calldata routingData
     ) external nonReentrant {
-        IERC20 collateral = _getCollateral(market);
+        IERC20 collateral = _getCollateralOrRevert(market);
 
         bytes memory data = abi.encode(Action.DecreaseLoan, msg.sender, market, collateral, collAmount, routingData);
         stableCoin.flashLoan(this, address(stableCoin), debtAmount, data);
@@ -129,7 +129,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         @param routingData Odos router swap calldata
      */
     function closeLoan(address market, uint256 debtAmount, bytes calldata routingData) external nonReentrant {
-        IERC20 collateral = _getCollateral(market);
+        IERC20 collateral = _getCollateralOrRevert(market);
         if (debtAmount > 0) stableCoin.transferFrom(msg.sender, address(this), debtAmount);
 
         (int256 debtChange, uint256 collReceived) = mainController.get_close_loan_amounts(msg.sender, market);
@@ -223,10 +223,11 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         _callRouter(collateral, collReceived, routingData);
     }
 
-    function _getCollateral(address market) internal returns (IERC20) {
+    function _getCollateralOrRevert(address market) internal returns (IERC20) {
         IERC20 collateral = marketCollaterals[market];
         if (address(collateral) == address(0)) {
             collateral = IERC20(mainController.get_collateral(market));
+            require(address(collateral) != address(0), "DFM: Market does not exist");
             collateral.safeApprove(address(mainController), type(uint256).max);
             marketCollaterals[market] = collateral;
         }
