@@ -3,6 +3,7 @@
 pragma solidity 0.8.25;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC3156FlashBorrower } from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import { IMainController } from "../../interfaces/IMainController.sol";
@@ -12,7 +13,7 @@ import { IBridgeToken } from "../../interfaces/IBridgeToken.sol";
     @title Leverage Zap using Odos V2 Router
     @author defidotmoney
  */
-contract LeverageZapOdosV2 is IERC3156FlashBorrower {
+contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
     using SafeERC20 for IERC20;
     using SafeERC20 for IBridgeToken;
 
@@ -63,7 +64,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         uint256 debtAmount,
         uint256 numBands,
         bytes calldata routingData
-    ) external {
+    ) external nonReentrant {
         IERC20 collateral = _getCollateral(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
@@ -81,7 +82,12 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         @param debtAmount Debt amount to flashloan
         @param routingData Odos router swap calldata
      */
-    function increaseLoan(address market, uint256 collAmount, uint256 debtAmount, bytes calldata routingData) external {
+    function increaseLoan(
+        address market,
+        uint256 collAmount,
+        uint256 debtAmount,
+        bytes calldata routingData
+    ) external nonReentrant {
         IERC20 collateral = _getCollateral(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
@@ -98,7 +104,12 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         @param debtAmount Amount of debt to reduce the loan by
         @param routingData Odos router swap calldata
      */
-    function decreaseLoan(address market, uint256 collAmount, uint256 debtAmount, bytes calldata routingData) external {
+    function decreaseLoan(
+        address market,
+        uint256 collAmount,
+        uint256 debtAmount,
+        bytes calldata routingData
+    ) external nonReentrant {
         IERC20 collateral = _getCollateral(market);
 
         bytes memory data = abi.encode(Action.DecreaseLoan, msg.sender, market, collateral, collAmount, routingData);
@@ -115,7 +126,7 @@ contract LeverageZapOdosV2 is IERC3156FlashBorrower {
         @param debtAmount Debt amount provided by the caller
         @param routingData Odos router swap calldata
      */
-    function closeLoan(address market, uint256 debtAmount, bytes calldata routingData) external {
+    function closeLoan(address market, uint256 debtAmount, bytes calldata routingData) external nonReentrant {
         IERC20 collateral = _getCollateral(market);
         if (debtAmount > 0) stableCoin.transferFrom(msg.sender, address(this), debtAmount);
 
