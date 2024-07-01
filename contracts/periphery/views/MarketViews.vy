@@ -274,7 +274,7 @@ def get_market_states_for_account(
 @external
 def get_pending_market_state_for_account(
     account: address,
-    market: address,
+    market: MarketOperator,
     coll_change: int256,
     debt_change: int256,
     num_bands: uint256 = 0
@@ -293,27 +293,36 @@ def get_pending_market_state_for_account(
             Liquidation price range (high, low)
             Debt adjustment applied by hooks
     """
-    c: MarketContracts = self._get_market_contracts_or_revert(market)
+    c: MarketContracts = self._get_market_contracts_or_revert(market.address)
+    amm: AMM = AMM(c.amm)
 
     state: PendingAccountState = empty(PendingAccountState)
-    debt: uint256 = MarketOperator(market).debt(account)
+    debt: uint256 = market.debt(account)
+
+    # if no coll or debt change, we return the current state
+    if coll_change == 0 and debt_change == 0:
+        if debt > 0:
+            state.account_debt = debt
+            state.amm_stable_balance, state.amm_coll_balance = amm.get_sum_xy(account)
+            state.health = market.health(account, True)
+            state.bands = amm.read_user_tick_numbers(account)
+            state.coll_conversion_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
+        return state
+
     assert convert(debt, int256) + debt_change > 0, "DFM:C Non-positive debt"
 
     if debt == 0:
-        if coll_change == 0 and debt_change == 0:
-            return state
-
         assert coll_change > 0 and debt_change > 0, "DFM:C 0 coll or debt"
         state.hook_debt_adjustment = MAIN_CONTROLLER.on_create_loan_hook_adjustment(
             account,
-            market,
+            market.address,
             convert(coll_change, uint256),
             convert(debt_change, uint256),
         )
     elif coll_change != 0 or debt_change != 0:
         state.hook_debt_adjustment = MAIN_CONTROLLER.on_adjust_loan_hook_adjustment(
             account,
-            market,
+            market.address,
             coll_change,
             debt_change,
         )
@@ -325,8 +334,7 @@ def get_pending_market_state_for_account(
         state.amm_coll_balance,
         state.health,
         state.bands
-    ) = MarketOperator(market).pending_account_state_calculator(account, coll_change, debt_final, num_bands)
-    amm: AMM = AMM(c.amm)
+    ) = market.pending_account_state_calculator(account, coll_change, debt_final, num_bands)
     state.coll_conversion_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
 
     return state
