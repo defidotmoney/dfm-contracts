@@ -47,3 +47,21 @@ def test_insufficient_coll_to_create(market, stable, collateral, router, zap, al
 def test_invalid_market(zap, alice):
     with brownie.reverts("DFM: Market does not exist"):
         zap.createLoan(alice, 10**18, 10_000 * 10**18, 4, b"", {"from": alice})
+
+
+@pytest.mark.parametrize("amount", [10000, 25000])
+def test_zap_balance_exceeds_debt(
+    market, stable, controller, collateral, router, zap, alice, amount
+):
+    amount *= 10**18
+    stable.mint(zap, amount, {"from": controller})
+    data = router.mockSwap.encode_input(stable, collateral, 10_000 * 10**18, 4 * 10**18)
+    zap.createLoan(market, 10**18, 10_000 * 10**18, 4, data, {"from": alice})
+
+    assert market.user_state(alice) == (5 * 10**18, 0, 1, 4)
+
+    assert stable.balanceOf(alice) == 0
+    assert collateral.balanceOf(alice) == 0
+
+    assert stable.balanceOf(zap) == amount - 10_000 * 10**18 + 1
+    assert collateral.balanceOf(zap) == 0

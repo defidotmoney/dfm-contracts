@@ -50,3 +50,22 @@ def test_insufficient_coll_to_create(market, stable, collateral, router, zap, al
     data = router.mockSwap.encode_input(stable, collateral, 20_000 * 10**18, 10**18)
     with brownie.reverts("DFM:M Debt too high"):
         zap.increaseLoan(market, 0, 20_000 * 10**18, data, {"from": alice})
+
+
+@pytest.mark.parametrize("amount", [10000, 25000])
+def test_zap_balance_exceeds_debt(
+    market, stable, controller, collateral, router, zap, alice, amount
+):
+    amount *= 10**18
+    stable.mint(zap, amount, {"from": controller})
+    collateral._mint_for_testing(alice, 10**18, {"from": alice})
+    data = router.mockSwap.encode_input(stable, collateral, 10_000 * 10**18, 3 * 10**18)
+    zap.increaseLoan(market, 10**18, 10_000 * 10**18, data, {"from": alice})
+
+    assert market.user_state(alice) == (9 * 10**18, 0, 5_000 * 10**18, 4)
+
+    assert stable.balanceOf(alice) == 0
+    assert collateral.balanceOf(alice) == 0
+
+    assert stable.balanceOf(zap) == amount - 10_000 * 10**18
+    assert collateral.balanceOf(zap) == 0
