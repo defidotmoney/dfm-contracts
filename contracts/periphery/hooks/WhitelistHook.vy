@@ -45,7 +45,7 @@ def set_owner(owner: address):
 
 
 @external
-def set_whitelisted(accounts: DynArray[address, max_value(uint16)], is_whitelisted: bool):
+def set_whitelisted(accounts: DynArray[address, max_value(uint8)], is_whitelisted: bool):
     assert msg.sender == self.owner, "DFM: only owner"
     for account in accounts:
         self.is_whitelisted[account] = is_whitelisted
