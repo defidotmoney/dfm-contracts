@@ -176,7 +176,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
 
         _callRouter(stableCoin, flashloanAmount, routingData);
         uint256 collAmount = collateral.balanceOf(address(this));
-        uint256 debtAmount = flashloanAmount - stableCoin.balanceOf(address(this));
+        uint256 debtAmount = _calculateDebtAmount(flashloanAmount, 1);
         mainController.create_loan(account, market, collAmount, debtAmount, numBands);
     }
 
@@ -192,7 +192,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
 
         _callRouter(stableCoin, flashloanAmount, routingData);
         int256 collAmount = int256(collateral.balanceOf(address(this)));
-        int256 debtAmount = int256(flashloanAmount - stableCoin.balanceOf(address(this)));
+        int256 debtAmount = int256(_calculateDebtAmount(flashloanAmount, 0));
         mainController.adjust_loan(account, market, collAmount, debtAmount);
     }
 
@@ -247,5 +247,14 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
 
         amount = stableCoin.balanceOf(address(this));
         if (amount > 0) stableCoin.transfer(msg.sender, amount);
+    }
+
+    function _calculateDebtAmount(uint256 flashloanAmount, uint256 minAmount) internal view returns (uint256) {
+        uint256 balance = stableCoin.balanceOf(address(this));
+        if (flashloanAmount > balance) {
+            return flashloanAmount - balance;
+        } else {
+            return minAmount;
+        }
     }
 }
