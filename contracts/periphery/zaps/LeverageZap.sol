@@ -228,7 +228,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         if (address(collateral) == address(0)) {
             collateral = IERC20(mainController.get_collateral(market));
             require(address(collateral) != address(0), "DFM: Market does not exist");
-            collateral.safeApprove(address(mainController), type(uint256).max);
+            collateral.forceApprove(address(mainController), type(uint256).max);
             marketCollaterals[market] = collateral;
         }
         return collateral;
