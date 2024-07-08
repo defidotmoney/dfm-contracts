@@ -190,7 +190,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         @dev 1. Swaps the flashloaned stablecoins for collateral.
              2. Adds the collateral to an existing loan and mints stablecoins to repay the flashloan.
      */
-    function _flashIncrease(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
+    function _flashIncrease(uint256 flashloanAmount, bytes calldata data) internal {
         (, address account, address market, IERC20 collateral, bytes memory routingData) = abi.decode(
             data,
             (uint256, address, address, IERC20, bytes)
@@ -206,7 +206,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         @dev 1. Uses the flashloaned stablecoin to repay an existing loan, and withdraws a portion of the collateral.
              2. Swaps the withdrawn collateral for the stablecoins required repay the flashloan.
      */
-    function _flashDecrease(uint256 flashloanAmount, bytes calldata data) internal returns (bytes32) {
+    function _flashDecrease(uint256 flashloanAmount, bytes calldata data) internal {
         (, address account, address market, IBridgeToken collateral, uint256 collAmount, bytes memory routingData) = abi
             .decode(data, (uint256, address, address, IBridgeToken, uint256, bytes));
 
@@ -219,7 +219,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
                 close an existing loan, and receive the collateral from the loan.
              2. Swaps the withdrawn collateral for the stablecoins required repay the flashloan.
      */
-    function _flashClose(bytes calldata data) internal returns (bytes32) {
+    function _flashClose(bytes calldata data) internal {
         (, address account, address market, IBridgeToken collateral, bytes memory routingData) = abi.decode(
             data,
             (uint256, address, address, IBridgeToken, bytes)
