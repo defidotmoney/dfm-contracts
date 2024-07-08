@@ -144,6 +144,12 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         _transferTokensToCaller(collateral);
     }
 
+    /**
+        @dev This contract assumes that `stableCoin` only ever performs flashloans of itself and
+             that the fee charged will always be zero. If you are modifying this contract for use
+             with a different flashlender, consider if whether implementation requires validation
+             checks for the `fee` and `token` parameters.
+     */
     function onFlashLoan(
         address initiator,
         address /* token */,
