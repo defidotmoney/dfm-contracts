@@ -74,6 +74,7 @@ interface AMM:
 
 interface MonetaryPolicy:
     def rate(market: MarketOperator) -> uint256: view
+    def rate_after_debt_change(market: MarketOperator, debt_change: int256) -> uint256: view
 
 interface PriceOracle:
     def price() -> uint256: view
@@ -123,6 +124,7 @@ struct PendingAccountState:
     bands: int256[2]
     coll_conversion_range: uint256[2]
     hook_debt_adjustment: int256
+    pending_rate: uint256
 
 struct CloseLoanState:
     total_debt_repaid: uint256
@@ -292,12 +294,14 @@ def get_pending_market_state_for_account(
             Bands (high, low)
             Liquidation price range (high, low)
             Debt adjustment applied by hooks
+            New market interest rate based on the adjusted debt
     """
     c: MarketContracts = self._get_market_contracts_or_revert(market.address)
     amm: AMM = AMM(c.amm)
 
     state: PendingAccountState = empty(PendingAccountState)
     debt: uint256 = market.debt(account)
+    state.pending_rate = MAIN_CONTROLLER.monetary_policies(c.mp_idx).rate_after_debt_change(market, debt_change)
 
     # if no coll or debt change, we return the current state
     if coll_change == 0 and debt_change == 0:
