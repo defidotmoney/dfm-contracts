@@ -92,6 +92,15 @@ def owner() -> address:
 @view
 @external
 def rate(market: address) -> uint256:
+    """
+    @notice Returns the new interest rate for the given market, with 1e18 precision
+    @dev Read-only version used in view methods. Returns the same value as `rate_write`.
+         Note that the rate returned here may not be the same as the actual rate currently
+         charged by the market. This rate is applied during a state-changing interaction
+         with the market. To get the current rate you must call `AMM.rate()`.
+    @param market Address of the market to calculate the rate for
+    @return New per-second interest rate
+    """
     return self.calculate_rate(market, STABLECOIN_ORACLE.price(), 0)
 
 
@@ -99,8 +108,9 @@ def rate(market: address) -> uint256:
 @external
 def rate_after_debt_change(market: address, debt_change: int256) -> uint256:
     """
-    @notice Calculate the new interest rate based on a change to the total debt of a market
-    @param market MarketOperator address
+    @notice Calculates the expected interest rate for the given market, based on a
+            change to the market's total debt.
+    @param market Address of the market to calculate the rate for
     @param debt_change Debt adjustment amount. A positive value mints, negative burns.
     @return New per-second interest rate
     """
@@ -109,8 +119,15 @@ def rate_after_debt_change(market: address, debt_change: int256) -> uint256:
 
 @external
 def rate_write(market: address) -> uint256:
-    # Not needed here but useful for more automated policies
-    # which change rate0 - for example rate0 targeting some fraction pl_debt/total_debt
+    """
+    @notice Returns the new interest rate for the given market, with 1e18 precision
+    @dev It is preferred to call this method over `rate` during on-chain interaction.
+         Note that the rate returned here may not be the same as the actual rate currently
+         charged by the market. This rate is applied during a state-changing interaction
+         with the market. To get the current rate you must call `AMM.rate()`.
+    @param market Address of the market to calculate the rate for
+    @return New per-second interest rate
+    """
     return self.calculate_rate(market, STABLECOIN_ORACLE.price_w(), 0)
 
 
@@ -119,7 +136,7 @@ def set_rate(rate: uint256):
     """
     @notice Set the rate0 variable
     @dev rate0 determines the base per-second interest rate charged.
-         To calculate from APR: `rate0 = 10**18 * ((apr + 1) ** (1 / 31536000) - 1)`
+         To calculate from APY: `rate0 = 10**18 * ((apy + 1) ** (1 / 31536000) - 1)`
     """
     self._assert_only_owner()
     assert rate <= MAX_RATE
