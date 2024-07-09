@@ -228,13 +228,28 @@ def calculate_rate(market: address, _price: uint256, debt_change: int256) -> uin
     p: int256 = convert(_price, int256)
     pk_debt: uint256 = CONTROLLER.get_peg_keeper_active_debt()
 
+    # apply `debt_change` to market total debt, with a lower bound of zero
+    market_debt: uint256 = 0
+    if market != empty(address):
+        market_debt = MarketOperator(market).total_debt()
+        if debt_change < 0 and market_debt < convert(-debt_change, uint256):
+            # also bound `debt_change` to the market debt, so that total debt adjustment is accurate
+            debt_change = -convert(market_debt, int256)
+            market_debt = 0
+        else:
+            market_debt = convert(convert(market_debt, int256) + debt_change, uint256)
+
     power: int256 = (10**18 - p) * 10**18 / sigma  # high price -> negative pow -> low rate
     if pk_debt > 0:
         total_debt: uint256 = CONTROLLER.total_debt()
         if total_debt == 0:
             return 0
-        else:
-            power -= convert(pk_debt * 10**18 / total_debt * 10**18 / target_debt_fraction, int256)
+
+        if debt_change != 0:
+            # apply `debt_change` to total debt, with a lower bound of zero
+            total_debt = convert(max(convert(total_debt, int256) + debt_change, 0), uint256)
+
+        power -= convert(pk_debt * 10**18 / total_debt * 10**18 / target_debt_fraction, int256)
 
     # Rate accounting for stablecoin price and PegKeeper debt
     rate: uint256 = self.rate0 * min(self.exp(power), MAX_EXP) / 10**18
@@ -243,9 +258,6 @@ def calculate_rate(market: address, _price: uint256, debt_change: int256) -> uin
     if market != empty(address):
         ceiling: uint256 = MarketOperator(market).debt_ceiling()
         if ceiling > 0:
-            market_debt: uint256 = MarketOperator(market).total_debt()
-            if debt_change != 0:
-                market_debt = convert(max(convert(market_debt, int256) + debt_change, 0), uint256)
             f: uint256 = min(market_debt * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
             rate = min(rate * ((10**18 - TARGET_REMAINDER) + TARGET_REMAINDER * 10**18 / (10**18 - f)) / 10**18, MAX_RATE)
 
