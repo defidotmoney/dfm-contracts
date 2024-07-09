@@ -92,14 +92,26 @@ def owner() -> address:
 @view
 @external
 def rate(market: address) -> uint256:
-    return self.calculate_rate(market, STABLECOIN_ORACLE.price())
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price(), 0)
+
+
+@view
+@external
+def rate_after_debt_change(market: address, debt_change: int256) -> uint256:
+    """
+    @notice Calculate the new interest rate based on a change to the total debt of a market
+    @param market MarketOperator address
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @return New per-second interest rate
+    """
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price(), debt_change)
 
 
 @external
 def rate_write(market: address) -> uint256:
     # Not needed here but useful for more automated policies
     # which change rate0 - for example rate0 targeting some fraction pl_debt/total_debt
-    return self.calculate_rate(market, STABLECOIN_ORACLE.price_w())
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price_w(), 0)
 
 
 @external
@@ -192,7 +204,7 @@ def exp(power: int256) -> uint256:
 
 @view
 @internal
-def calculate_rate(market: address, _price: uint256) -> uint256:
+def calculate_rate(market: address, _price: uint256, debt_change: int256) -> uint256:
     sigma: int256 = self.sigma
     target_debt_fraction: uint256 = self.target_debt_fraction
 
@@ -214,7 +226,10 @@ def calculate_rate(market: address, _price: uint256) -> uint256:
     if market != empty(address):
         ceiling: uint256 = MarketOperator(market).debt_ceiling()
         if ceiling > 0:
-            f: uint256 = min(MarketOperator(market).total_debt() * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
+            market_debt: uint256 = MarketOperator(market).total_debt()
+            if debt_change != 0:
+                market_debt = convert(max(convert(market_debt, int256) + debt_change, 0), uint256)
+            f: uint256 = min(market_debt * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
             rate = min(rate * ((10**18 - TARGET_REMAINDER) + TARGET_REMAINDER * 10**18 / (10**18 - f)) / 10**18, MAX_RATE)
 
     return rate
