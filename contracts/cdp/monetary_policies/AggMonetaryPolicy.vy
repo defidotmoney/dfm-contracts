@@ -53,32 +53,31 @@ target_debt_fraction: public(uint256)
 @external
 def __init__(
     core: CoreOwner,
-    price_oracle: PriceOracle,
     controller: Controller,
-    rate: uint256,
+    stable_oracle: PriceOracle,
+    rate0: uint256,
     sigma: uint256,
     target_debt_fraction: uint256
 ):
     """
     @notice Contract constructor
     @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
-    @param price_oracle `AggregateStablePrice` address. Used to determine the
-                        stablecoin price.
     @param controller `MainController` address.
-    @param rate Base per-second interest rate charged.
+    @param stable_oracle `AggregateStablePrice` address. Used to determine the stablecoin price.
+    @param rate0 Base per-second interest rate charged.
     @param sigma Initial sigma value.
     @param target_debt_fraction Ideal peg keeper debt fraction.
     """
     CORE_OWNER = core
-    STABLECOIN_ORACLE = price_oracle
     CONTROLLER = controller
+    STABLECOIN_ORACLE = stable_oracle
 
     assert sigma >= MIN_SIGMA
     assert sigma <= MAX_SIGMA
     assert target_debt_fraction > 0
     assert target_debt_fraction <= MAX_TARGET_DEBT_FRACTION
-    assert rate <= MAX_RATE
-    self.rate0 = rate
+    assert rate0 <= MAX_RATE
+    self.rate0 = rate0
     self.sigma = convert(sigma, int256)
     self.target_debt_fraction = target_debt_fraction
 

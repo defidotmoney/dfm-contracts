@@ -173,8 +173,8 @@ def main():
     for c, base_apy in enumerate(set(i["base_apy"] for i in config["markets"])):
         mp = AggMonetaryPolicy.deploy(
             core,
-            stable_oracle,
             controller,
+            stable_oracle,
             apy_to_rate0(base_apy),
             to_int(config["monetary_policy"]["sigma"]),
             to_int(config["monetary_policy"]["target_debt_fraction"]),
