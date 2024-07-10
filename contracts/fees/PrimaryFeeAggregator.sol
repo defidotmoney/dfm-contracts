@@ -2,10 +2,10 @@
 
 pragma solidity 0.8.25;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "../base/dependencies/CoreOwnable.sol";
-import "../base/dependencies/SystemStart.sol";
-import "../interfaces/IFeeReceiver.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { CoreOwnable } from "../base/dependencies/CoreOwnable.sol";
+import { SystemStart } from "../base/dependencies/SystemStart.sol";
+import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
 
 /**
     @title Primary Chain Fee Aggregator

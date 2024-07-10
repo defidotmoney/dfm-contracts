@@ -2,12 +2,13 @@
 
 pragma solidity 0.8.25;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
-import "../base/dependencies/CoreOwnable.sol";
-import "../base/dependencies/SystemStart.sol";
-import "../interfaces/IFeeReceiver.sol";
-import "../interfaces/IStakerRewardRegulator.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { CoreOwnable } from "../base/dependencies/CoreOwnable.sol";
+import { SystemStart } from "../base/dependencies/SystemStart.sol";
+import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
+import { IStakerRewardRegulator } from "../interfaces/IStakerRewardRegulator.sol";
 
 /**
     @title  StableStaker: ERC4626-ish Staking Contract
