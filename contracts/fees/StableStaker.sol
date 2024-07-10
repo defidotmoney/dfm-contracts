@@ -67,12 +67,14 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         address _core,
         IERC20 _stable,
         address _feeAggregator,
+        IStakerRewardRegulator _rewardRegulator,
         string memory _name,
         string memory _symbol,
         uint32 _cooldownDuration
     ) ERC20(_name, _symbol) CoreOwnable(_core) SystemStart(_core) {
         asset = _stable;
         feeAggregator = _feeAggregator;
+        rewardRegulator = _rewardRegulator;
         cooldownDuration = _cooldownDuration;
 
         emit FeeAggregatorSet(_feeAggregator);
