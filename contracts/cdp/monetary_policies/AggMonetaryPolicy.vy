@@ -53,32 +53,31 @@ target_debt_fraction: public(uint256)
 @external
 def __init__(
     core: CoreOwner,
-    price_oracle: PriceOracle,
     controller: Controller,
-    rate: uint256,
+    stable_oracle: PriceOracle,
+    rate0: uint256,
     sigma: uint256,
     target_debt_fraction: uint256
 ):
     """
     @notice Contract constructor
     @param core `DFMProtocolCore` address. Ownership is inherited from this contract.
-    @param price_oracle `AggregateStablePrice` address. Used to determine the
-                        stablecoin price.
     @param controller `MainController` address.
-    @param rate Base per-second interest rate charged.
+    @param stable_oracle `AggregateStablePrice` address. Used to determine the stablecoin price.
+    @param rate0 Base per-second interest rate charged.
     @param sigma Initial sigma value.
     @param target_debt_fraction Ideal peg keeper debt fraction.
     """
     CORE_OWNER = core
-    STABLECOIN_ORACLE = price_oracle
     CONTROLLER = controller
+    STABLECOIN_ORACLE = stable_oracle
 
     assert sigma >= MIN_SIGMA
     assert sigma <= MAX_SIGMA
     assert target_debt_fraction > 0
     assert target_debt_fraction <= MAX_TARGET_DEBT_FRACTION
-    assert rate <= MAX_RATE
-    self.rate0 = rate
+    assert rate0 <= MAX_RATE
+    self.rate0 = rate0
     self.sigma = convert(sigma, int256)
     self.target_debt_fraction = target_debt_fraction
 
@@ -92,14 +91,43 @@ def owner() -> address:
 @view
 @external
 def rate(market: address) -> uint256:
-    return self.calculate_rate(market, STABLECOIN_ORACLE.price())
+    """
+    @notice Returns the new interest rate for the given market, with 1e18 precision
+    @dev Read-only version used in view methods. Returns the same value as `rate_write`.
+         Note that the rate returned here may not be the same as the actual rate currently
+         charged by the market. This rate is applied during a state-changing interaction
+         with the market. To get the current rate you must call `AMM.rate()`.
+    @param market Address of the market to calculate the rate for
+    @return New per-second interest rate
+    """
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price(), 0)
+
+
+@view
+@external
+def rate_after_debt_change(market: address, debt_change: int256) -> uint256:
+    """
+    @notice Calculates the expected interest rate for the given market, based on a
+            change to the market's total debt.
+    @param market Address of the market to calculate the rate for
+    @param debt_change Debt adjustment amount. A positive value mints, negative burns.
+    @return New per-second interest rate
+    """
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price(), debt_change)
 
 
 @external
 def rate_write(market: address) -> uint256:
-    # Not needed here but useful for more automated policies
-    # which change rate0 - for example rate0 targeting some fraction pl_debt/total_debt
-    return self.calculate_rate(market, STABLECOIN_ORACLE.price_w())
+    """
+    @notice Returns the new interest rate for the given market, with 1e18 precision
+    @dev It is preferred to call this method over `rate` during on-chain interaction.
+         Note that the rate returned here may not be the same as the actual rate currently
+         charged by the market. This rate is applied during a state-changing interaction
+         with the market. To get the current rate you must call `AMM.rate()`.
+    @param market Address of the market to calculate the rate for
+    @return New per-second interest rate
+    """
+    return self.calculate_rate(market, STABLECOIN_ORACLE.price_w(), 0)
 
 
 @external
@@ -107,7 +135,7 @@ def set_rate(rate: uint256):
     """
     @notice Set the rate0 variable
     @dev rate0 determines the base per-second interest rate charged.
-         To calculate from APR: `rate0 = 10**18 * ((apr + 1) ** (1 / 31536000) - 1)`
+         To calculate from APY: `rate0 = 10**18 * ((apy + 1) ** (1 / 31536000) - 1)`
     """
     self._assert_only_owner()
     assert rate <= MAX_RATE
@@ -192,20 +220,35 @@ def exp(power: int256) -> uint256:
 
 @view
 @internal
-def calculate_rate(market: address, _price: uint256) -> uint256:
+def calculate_rate(market: address, _price: uint256, debt_change: int256) -> uint256:
     sigma: int256 = self.sigma
     target_debt_fraction: uint256 = self.target_debt_fraction
 
     p: int256 = convert(_price, int256)
     pk_debt: uint256 = CONTROLLER.get_peg_keeper_active_debt()
 
+    # apply `debt_change` to market total debt, with a lower bound of zero
+    market_debt: uint256 = 0
+    if market != empty(address):
+        market_debt = MarketOperator(market).total_debt()
+        if debt_change < 0 and market_debt < convert(-debt_change, uint256):
+            # also bound `debt_change` to the market debt, so that total debt adjustment is accurate
+            debt_change = -convert(market_debt, int256)
+            market_debt = 0
+        else:
+            market_debt = convert(convert(market_debt, int256) + debt_change, uint256)
+
     power: int256 = (10**18 - p) * 10**18 / sigma  # high price -> negative pow -> low rate
     if pk_debt > 0:
         total_debt: uint256 = CONTROLLER.total_debt()
         if total_debt == 0:
             return 0
-        else:
-            power -= convert(pk_debt * 10**18 / total_debt * 10**18 / target_debt_fraction, int256)
+
+        if debt_change != 0:
+            # apply `debt_change` to total debt, with a lower bound of zero
+            total_debt = convert(max(convert(total_debt, int256) + debt_change, 0), uint256)
+
+        power -= convert(pk_debt * 10**18 / total_debt * 10**18 / target_debt_fraction, int256)
 
     # Rate accounting for stablecoin price and PegKeeper debt
     rate: uint256 = self.rate0 * min(self.exp(power), MAX_EXP) / 10**18
@@ -214,7 +257,7 @@ def calculate_rate(market: address, _price: uint256) -> uint256:
     if market != empty(address):
         ceiling: uint256 = MarketOperator(market).debt_ceiling()
         if ceiling > 0:
-            f: uint256 = min(MarketOperator(market).total_debt() * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
+            f: uint256 = min(market_debt * 10**18 / ceiling, 10**18 - TARGET_REMAINDER / 1000)
             rate = min(rate * ((10**18 - TARGET_REMAINDER) + TARGET_REMAINDER * 10**18 / (10**18 - f)) / 10**18, MAX_RATE)
 
     return rate

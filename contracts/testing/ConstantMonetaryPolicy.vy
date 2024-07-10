@@ -12,8 +12,14 @@ def rate(market: address) -> uint256:
     return self._rate
 
 
+@view
 @external
-def rate_write(controller: address) -> uint256:
+def rate_after_debt_change(market: address, debt_change: int256) -> uint256:
+    return self._rate
+
+
+@external
+def rate_write(market: address) -> uint256:
     return self._rate
 
 
