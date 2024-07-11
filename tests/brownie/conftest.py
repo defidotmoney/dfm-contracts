@@ -48,8 +48,12 @@ def core(DFMProtocolCore, deployer, fee_receiver):
 
 
 @pytest.fixture(scope="module")
-def stable(BridgeToken, LzEndpointMock, core, deployer):
-    mock_endpoint = LzEndpointMock.deploy({"from": deployer})
+def mock_endpoint(LzEndpointMock, deployer):
+    return LzEndpointMock.deploy(101, 10**10, {"from": deployer})
+
+
+@pytest.fixture(scope="module")
+def stable(BridgeToken, core, mock_endpoint, deployer):
     return BridgeToken.deploy(core, "Stablecoin", "SC", mock_endpoint, b"", [], {"from": deployer})
 
 
