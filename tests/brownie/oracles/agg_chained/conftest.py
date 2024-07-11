@@ -4,8 +4,8 @@ from brownie import ZERO_ADDRESS
 
 
 @pytest.fixture(scope="module")
-def uniswap(MockUniOracleReader, deployer):
-    return MockUniOracleReader.deploy({"from": deployer})
+def uniswap(UniOracleReaderMock, deployer):
+    return UniOracleReaderMock.deploy({"from": deployer})
 
 
 @pytest.fixture(scope="module")

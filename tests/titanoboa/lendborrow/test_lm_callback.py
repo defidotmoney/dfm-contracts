@@ -7,7 +7,7 @@ from ..conftest import approx
 @pytest.fixture(scope="module")
 def lm_callback(amm, market, admin):
     with boa.env.prank(admin):
-        cb = boa.load("contracts/testing/DummyLMCallback.vy", amm.address)
+        cb = boa.load("contracts/testing/LMCallbackTester.vy", amm.address)
         market.set_liquidity_mining_hook(cb.address)
         return cb
 

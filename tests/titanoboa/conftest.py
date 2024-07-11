@@ -71,14 +71,14 @@ def collateral_token(get_collateral_token):
 @pytest.fixture(scope="module")
 def price_oracle(admin):
     with boa.env.prank(admin):
-        oracle = boa.load("contracts/testing/DummyPriceOracle.vy", PRICE * 10**18)
+        oracle = boa.load("contracts/testing/PriceOracleMock.vy", PRICE * 10**18)
         return oracle
 
 
 @pytest.fixture(scope="module")
 def core(admin, fee_receiver):
     with boa.env.prank(admin):
-        return boa.load("contracts/testing/MockCoreOwner.vy", admin, fee_receiver)
+        return boa.load("contracts/testing/CoreOwnerMock.vy", admin, fee_receiver)
 
 
 @pytest.fixture(scope="module")

@@ -48,8 +48,8 @@ def core(DFMProtocolCore, deployer, fee_receiver):
 
 
 @pytest.fixture(scope="module")
-def stable(BridgeToken, MockLzEndpoint, core, deployer):
-    mock_endpoint = MockLzEndpoint.deploy({"from": deployer})
+def stable(BridgeToken, LzEndpointMock, core, deployer):
+    mock_endpoint = LzEndpointMock.deploy({"from": deployer})
     return BridgeToken.deploy(core, "Stablecoin", "SC", mock_endpoint, b"", [], {"from": deployer})
 
 
@@ -59,8 +59,8 @@ def policy(ConstantMonetaryPolicy, deployer):
 
 
 @pytest.fixture(scope="module")
-def dummy_oracle(DummyPriceOracle, deployer):
-    return DummyPriceOracle.deploy(3000 * 10**18, {"from": deployer})
+def dummy_oracle(PriceOracleMock, deployer):
+    return PriceOracleMock.deploy(3000 * 10**18, {"from": deployer})
 
 
 @pytest.fixture(scope="module")
