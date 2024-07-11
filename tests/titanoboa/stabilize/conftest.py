@@ -133,7 +133,7 @@ def agg(
 def crypto_agg(dummy_tricrypto, agg, stableswap_a, admin):
     with boa.env.prank(admin):
         crypto_agg = boa.load(
-            "contracts/testing/CryptoWithStablePrice.vy",
+            "contracts/testing/PriceOracleTricrypto.vy",
             dummy_tricrypto.address,
             0,
             stableswap_a,
@@ -169,7 +169,7 @@ def pk_regulator(admin, core, stablecoin, mock_peg_keepers, agg, controller):
 def mock_peg_keepers(stablecoin):
     """Make Regulator always pass order of prices check"""
     return [
-        boa.load("contracts/testing/MockPegKeeper.vy", price, stablecoin)
+        boa.load("contracts/testing/PegKeeperMock.vy", price, stablecoin)
         for price in [0, 2**256 - 1]
     ]
 

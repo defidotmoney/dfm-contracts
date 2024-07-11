@@ -70,7 +70,7 @@ def test_price_order(
 
 
 def test_aggregator_price(peg_keepers, mock_peg_keepers, pk_regulator, agg, admin, stablecoin):
-    mock_peg_keeper = boa.load("contracts/testing/MockPegKeeper.vy", 10**18, stablecoin)
+    mock_peg_keeper = boa.load("contracts/testing/PegKeeperMock.vy", 10**18, stablecoin)
     with boa.env.prank(admin):
         agg.add_price_pair(mock_peg_keeper)
         for price in [0.95, 1.05]:
@@ -178,7 +178,7 @@ def preset_peg_keepers(pk_regulator, admin, stablecoin):
         for pk in get_peg_keepers(pk_regulator):
             pk_regulator.remove_peg_keeper(pk)
     return [
-        boa.load("contracts/testing/MockPegKeeper.vy", (1 + i) * 10**18, stablecoin).address
+        boa.load("contracts/testing/PegKeeperMock.vy", (1 + i) * 10**18, stablecoin).address
         for i in range(8)
     ]
 
