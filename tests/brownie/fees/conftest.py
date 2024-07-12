@@ -1,10 +1,10 @@
 import pytest
-
+from brownie_tokens import ERC20
 
 SWAP_BONUS_PCT = 100
-MAX_SWAP_BONUS = 50000
+MAX_SWAP_BONUS = 100 * 10**18
 MIN_RELAY_BALANCE = 10**10
-MAX_RELAY_SWAP_DEBT = 50000
+MAX_RELAY_SWAP_DEBT = 5000 * 10**18
 PRIMARY_ID = 101
 BRIDGE_BONUS_PCT = 100
 MAX_BRIDGE_BONUS = 1000
@@ -23,8 +23,38 @@ def relay_key():
 
 
 @pytest.fixture(scope="module")
-def weth(collateral):
-    return collateral
+def weth(_deploy_market):
+    token = ERC20(success=True, fail="revert", decimals=18)
+    _deploy_market(token)
+    return token
+
+
+@pytest.fixture(scope="module")
+def collateral1(_deploy_market):
+    token = ERC20(success=True, fail="revert", decimals=18)
+    _deploy_market(token)
+    return token
+
+
+@pytest.fixture(scope="module")
+def collateral2(_deploy_market):
+    token = ERC20(success=None, fail="revert", decimals=6)
+    _deploy_market(token)
+    return token
+
+
+@pytest.fixture(scope="module")
+def collateral3(_deploy_market):
+    token = ERC20(success=True, fail=False, decimals=8)
+    _deploy_market(token)
+    return token
+
+
+# parametrized fixture runs tests against `collateral1`, `collateral2` and `collateral3`
+# used to test common base functions inherited from `FeeConverterBase`
+@pytest.fixture(scope="module", params=[0, 1, 2])
+def collateral(collateral1, collateral2, collateral3, request):
+    return [collateral1, collateral2, collateral3][request.param]
 
 
 @pytest.fixture(scope="module")
