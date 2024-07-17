@@ -18,8 +18,8 @@ Core protocol based on Curve Finance's [crvUSD](https://github.com/curvefi/curve
 * [`deployments/logs`](deployments/logs): Log files containing addresses of completed deployments.
 
 ### Scripts
-* [`scripts/deploy_local.py`](scripts/deploy_local.py): Script for deploying on a local hardhat network.
-* [`scripts/deploy_mainnet.py`](scripts/deploy_mainnet.py): Script for deploying to a production network (or forked environment).
+* [`scripts/deploy/local.py`](scripts/deploy/local.py): Script for deploying on a local hardhat network.
+* [`scripts/deploy/mainnet.py`](scripts/deploy/mainnet.py): Script for deploying to a production network (or forked environment).
 
 ### Tests
 * [`tests/brownie`](tests/brownie): Brownie test suite.
@@ -58,10 +58,10 @@ Core protocol based on Curve Finance's [crvUSD](https://github.com/curvefi/curve
 
 ### To a Local Network
 
-To run [`scripts/deploy_local.py`](scripts/deploy_local.py) and deploy all contracts on a local hardhat network:
+To run [`scripts/deploy/local.py`](scripts/deploy/local.py) and deploy all contracts on a local hardhat network:
 
 ```bash
-brownie run deploy_local -i
+brownie run deploy/local -i
 ```
 
 The brownie console will open once deployment has finished. The hardhat session will persist as long as brownie remains open.
@@ -72,11 +72,11 @@ Mainnet deployment configurations are handled by YAML files within [`deployments
 
 Before the actual deployment it is recommended to do a test run on a forked mainnet. If you deploy to a network ending in `-fork`, the related mainnet deploy config is used.
 
-To run [`scripts/deploy_mainnet.py`](scripts/deploy_mainnet.py):
+To run [`scripts/deploy/mainnet.py`](scripts/deploy/mainnet.py):
 
 
 ```bash
-brownie run deploy_mainnet --network [network name] -i
+brownie run deploy/mainnet --network [network name] -i
 ```
 
 The brownie console will open once deployment has finished.
