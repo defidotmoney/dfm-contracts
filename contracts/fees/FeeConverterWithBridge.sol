@@ -94,7 +94,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
     function bridgeDebt() external payable whenEnabled {
         address receiver = primaryChainFeeAggregator;
         require(receiver != address(0), "DFM: Bridge receiver not set");
-        require(!canSwapNativeForDebt(), "DFM: Swap native for debt first");
+        require(!canSwapNativeForDebt(), "DFM: swapNativeForDebt first");
 
         uint256 amount = stableCoin.balanceOf(address(this));
         uint256 reward = getBridgeDebtReward();
@@ -117,6 +117,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
                 `bridgeDebt`. Expressed in BPS.
      */
     function setBridgeBonusPctBps(uint16 _bridgeBonusPctBps) external onlyOwner {
+        require(_bridgeBonusPctBps <= MAX_BPS, "DFM: pct > MAX_PCT");
         bridgeBonusPctBps = _bridgeBonusPctBps;
     }
 

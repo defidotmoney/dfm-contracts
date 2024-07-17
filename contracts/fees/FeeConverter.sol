@@ -63,7 +63,7 @@ contract FeeConverter is FeeConverterBase {
         uint256 amountIn,
         uint256 minAmountOut
     ) public override returns (uint256 amountOut) {
-        require(!canSwapNativeForDebt(), "DFM: Swap native for debt first");
+        require(!canSwapNativeForDebt(), "DFM: swapNativeForDebt first");
         amountOut = super.swapDebtForColl(outputToken, amountIn, minAmountOut);
         transferToAggregator();
         return amountOut;
@@ -75,6 +75,9 @@ contract FeeConverter is FeeConverterBase {
              correctly a direct call to this function is likely not needed.
      */
     function transferToAggregator() public {
-        stableCoin.transfer(primaryChainFeeAggregator, stableCoin.balanceOf(address(this)));
+        address receiver = primaryChainFeeAggregator;
+        if (receiver != address(0)) {
+            stableCoin.transfer(primaryChainFeeAggregator, stableCoin.balanceOf(address(this)));
+        }
     }
 }
