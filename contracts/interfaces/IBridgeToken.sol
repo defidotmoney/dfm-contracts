@@ -2,8 +2,10 @@
 pragma solidity ^0.8.0;
 
 import { IOFT } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC3156FlashLender } from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 
-interface IBridgeToken is IOFT {
+interface IBridgeToken is IOFT, IERC20, IERC3156FlashLender {
     function setMinter(address minter, bool isApproved) external returns (bool);
 
     function mint(address _account, uint256 _amount) external returns (bool);

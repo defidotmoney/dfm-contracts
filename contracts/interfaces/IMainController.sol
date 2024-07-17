@@ -22,5 +22,8 @@ interface IMainController {
 
     function adjust_loan(address account, address market, int256 collChange, int256 debtChange) external;
 
-    function close_loan(address account, address market) external;
+    function close_loan(
+        address account,
+        address market
+    ) external returns (int256 callerDebtBalanceChange, uint256 collReceived);
 }
