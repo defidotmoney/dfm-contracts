@@ -28,6 +28,30 @@ def get_decrease_loan_routing_data(zap, account, market, coll_amount, debt_amoun
 
 
 def get_close_loan_routing_data(zap, account, market, use_account_balance=True, max_slippage=0.003):
+    """
+    Generates the `routingData` input for use with `LeverageZap.closeLoan`.
+
+    Note that Odos' quotes are valid for 60 seconds, if the generated data is not used within
+    that timeframe it will need to be re-queried.
+
+    Args:
+        zap: Address of `LeverageZap` deployment on the connected chain
+        account: Address of the account that will close a loan
+        market: Address of the market where the loan is being closed
+        use_account_balance: If True, the full MONEY balance of `account` is used and the zap
+            only swaps enough collateral to cover the difference. If False, no MONEY is taken
+            from `account` and the zap will swap enough collateral to cover the entire debt.
+        max_slippage: Maximum allowable slippage in the router swap, denoted as a fraction.
+            Excess MONEY from the swap is returned to the caller. Setting slippage too low
+            will fail because of interest that accrues between the time of generating the
+            swap data and the time the transaction confirms.
+
+    Returns:
+        string: `routingData` for use in `LeverageZap.closeLoan`
+        int: Amount of collateral that will be swapped for MONEY, as an integer with the same
+             precision used in the token smart contract
+        int: Expected amount of MONEY received in the swap, as an integer with 1e18 precision
+    """
     controller = Contract(CONTROLLER)
     token = controller.get_collateral(market)
 
@@ -40,15 +64,15 @@ def get_close_loan_routing_data(zap, account, market, use_account_balance=True, 
 
     assert shortfall > 0
 
-    expected = shortfall / controller.get_oracle_price(token) * (1 + max_slippage)
+    amount_out = shortfall / controller.get_oracle_price(token) * (1 + max_slippage)
 
-    received, path_id = get_quote(chain.id, zap, token, MONEY, expected, max_slippage)
+    amount_in, path_id = get_quote(chain.id, zap, token, MONEY, amount_out, max_slippage)
 
-    while received < shortfall:
-        expected *= shortfall / received
-        received, path_id = get_quote(chain.id, zap, token, MONEY, expected, max_slippage)
+    while amount_in < shortfall:
+        amount_out *= shortfall / amount_in
+        amount_in, path_id = get_quote(chain.id, zap, token, MONEY, amount_out, max_slippage)
 
-    return get_route_calldata(zap, path_id)
+    return get_route_calldata(zap, path_id), amount_out, amount_in
 
 
 def get_quote(chain_id, caller, input_token, output_token, amount, max_slippage=0.003):
