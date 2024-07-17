@@ -225,12 +225,15 @@ def get_market_amm_bands(
     for i in range(5000):
         if n > n_final:
             break
-        bands.append(Band({
-            band_num: n,
-            price_range: [amm.p_oracle_down(n), amm.p_oracle_up(n)],
-            coll_balance: amm.bands_y(n),
-            debt_balance: amm.bands_x(n)}
-        ))
+        coll_balance: uint256 = amm.bands_y(n)
+        debt_balance: uint256 = amm.bands_x(n)
+        if coll_balance != 0 or debt_balance != 0:
+            bands.append(Band({
+                band_num: n,
+                price_range: [amm.p_oracle_down(n), amm.p_oracle_up(n)],
+                coll_balance: coll_balance,
+                debt_balance: debt_balance
+            }))
         n = unsafe_add(n, 1)
     return bands, [min_band, max_band]
 
