@@ -31,7 +31,11 @@ contract LzEndpointMock {
         address _refundAddress
     ) external payable returns (MessagingReceipt memory) {
         require(msg.value >= _nativeFee, "LzEndpointMock: Insufficient fee");
-        if (msg.value > _nativeFee) _refundAddress.call{ value: msg.value - _nativeFee }("");
+        if (msg.value > _nativeFee) {
+            (bool success, ) = _refundAddress.call{ value: msg.value - _nativeFee }("");
+            require(success, "LzEndpointMock: Gas refund transfer failed");
+        }
+
         emit MessageSent(_params.dstEid, _params.receiver, _params.message, _params.options);
     }
 
