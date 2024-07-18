@@ -45,12 +45,15 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
         require(lastDistributionWeek < getWeek(), "DFM: Already distro'd this week");
         lastDistributionWeek = uint16(getWeek());
 
-        // transfer incentive to the caller
-        uint256 amount = callerIncentive;
-        if (amount > 0) stableCoin.transfer(msg.sender, callerIncentive);
-
         uint256 initialAmount = stableCoin.balanceOf(address(this));
-        require(initialAmount > 0, "DFM: Nothing to distribute");
+        uint256 amount = callerIncentive;
+        require(initialAmount > amount * 2, "DFM: Nothing to distribute");
+
+        // transfer incentive to the caller
+        if (amount > 0) {
+            stableCoin.transfer(msg.sender, amount);
+            initialAmount -= amount;
+        }
 
         uint256 length = priorityReceivers.length;
         for (uint256 i = 0; i < length; i++) {
