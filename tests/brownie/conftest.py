@@ -11,8 +11,9 @@ market_liquidation_discount = 6 * 10**16  # 6%
 
 
 @pytest.fixture(scope="function", autouse=True)
-def base_setup(fn_isolation):
-    pass
+def base_setup(chain, fn_isolation):
+    ts = ((chain.time() // 604800) + 1) * 604800
+    chain.mine(timestamp=ts)
 
 
 @pytest.fixture(scope="module")
