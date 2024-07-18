@@ -8,7 +8,7 @@ MAX_RELAY_SWAP_DEBT = 5000 * 10**18
 PRIMARY_ID = 31337
 BRIDGE_BONUS_PCT = 100
 MAX_BRIDGE_BONUS = 10**18
-FEE_AGG_CALLER_INCENTIVE = 100
+FEE_AGG_CALLER_INCENTIVE = 10**18
 COOLDOWN_PERIOD = 7 * 76400
 
 REG_MIN_PRICE = int(0.99 * 10**18)
@@ -145,3 +145,13 @@ def mock_bridge_relay(accounts, core, relay_key, deployer):
     core.setAddress(relay_key, relay, {"from": deployer})
 
     return relay
+
+
+@pytest.fixture(scope="module")
+def mock_fee_receiver(FeeReceiverMock, stable, deployer):
+    return FeeReceiverMock.deploy(stable, {"from": deployer})
+
+
+@pytest.fixture(scope="module")
+def mock_fee_receiver2(FeeReceiverMock, stable, deployer):
+    return FeeReceiverMock.deploy(stable, {"from": deployer})
