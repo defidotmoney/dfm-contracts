@@ -56,6 +56,8 @@ contract FeeConverterWithBridge is FeeConverterBase {
         maxBridgeBonusAmount = _maxBridgeBonusAmount;
     }
 
+    receive() external payable {}
+
     /**
         @notice The Amount of `stableCoin` received as a reward for calling `bridgeOut`
      */
@@ -106,7 +108,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
         uint256 remaining = address(this).balance - initial;
         if (remaining > 0) {
             (bool success, ) = msg.sender.call{ value: remaining }("");
-            require(success, "DFM: Transfer failed");
+            require(success, "DFM: Gas refund transfer failed");
         }
     }
 
