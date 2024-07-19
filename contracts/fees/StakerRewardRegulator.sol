@@ -69,7 +69,6 @@ contract StakerRewardRegulator is IStakerRewardRegulator, CoreOwnable {
     function _setPriceBounds(uint256 _minPrice, uint256 _maxPrice) internal {
         require(_maxPrice >= 1e18, "DFM: maxPrice below 1e18");
         require(_minPrice <= 1e18, "DFM: minPrice above 1e18");
-        require(_maxPrice >= _minPrice, "DFM: maxPrice > minPrice");
         require(_maxPrice - _minPrice <= MAX_PRICE_RANGE, "DFM: MAX_PRICE_RANGE");
 
         minPrice = uint64(_minPrice);
