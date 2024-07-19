@@ -33,8 +33,6 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     address public govStaker;
 
     uint32 public cooldownDuration;
-
-    uint16 public lastDistributionWeek;
     uint32 public lastDistributionDay;
 
     uint32 public lastUpdate;
@@ -80,6 +78,8 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
         emit FeeAggregatorSet(_feeAggregator);
         emit CooldownDurationUpdated(_cooldownDuration);
+
+        _setNewStream(0, 0);
     }
 
     // --- external view functions ---
@@ -103,7 +103,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     function convertToAssets(uint256 shares) public view returns (uint256) {
         uint256 supply = totalSupply();
 
-        return supply == 0 ? shares : Math.mulDiv(shares, supply, totalAssets(), Math.Rounding.Down);
+        return supply == 0 ? shares : Math.mulDiv(shares, totalAssets(), supply, Math.Rounding.Down);
     }
 
     function previewDeposit(uint256 assets) public view returns (uint256) {
@@ -113,7 +113,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     function previewMint(uint256 shares) public view returns (uint256) {
         uint256 supply = totalSupply();
 
-        return supply == 0 ? shares : Math.mulDiv(shares, supply, totalAssets(), Math.Rounding.Up);
+        return supply == 0 ? shares : Math.mulDiv(shares, totalAssets(), supply, Math.Rounding.Up);
     }
 
     function previewWithdraw(uint256 assets) public view returns (uint256) {
@@ -277,7 +277,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         if (updateDays == 0) return;
 
         // only `notifyWeeklyFees` can update us across weeks
-        if (getDay() / 7 > lastDistributionWeek) return;
+        if (getDay() / 7 > lastDistributionDay / 7) return;
 
         uint256 newAmount = (lastWeeklyAmountReceived / 7) * updateDays;
         uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
