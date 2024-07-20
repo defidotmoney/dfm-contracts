@@ -203,10 +203,13 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
         uint256 updateUntil = _advanceCurrentStream();
         uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
-        uint256 newAmount = asset.balanceOf(address(this)) - totalStoredAssets - totalCooldownAssets - residualAmount;
-        lastWeeklyAmountReceived = newAmount;
+        uint256 weekAmount = asset.balanceOf(address(this)) - totalStoredAssets - totalCooldownAssets - residualAmount;
+        lastWeeklyAmountReceived = weekAmount;
 
-        emit WeeklyFeesReceived(newAmount);
+        uint256 updateDays = getDay() - (getWeek() * 7) + 1;
+        uint256 newAmount = (weekAmount / 7) * updateDays;
+
+        emit WeeklyFeesReceived(weekAmount);
 
         _setNewStream(newAmount, residualAmount);
     }
