@@ -79,7 +79,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         emit FeeAggregatorSet(_feeAggregator);
         emit CooldownDurationUpdated(_cooldownDuration);
 
-        _setNewStream(0, 0);
+        _setNewStream(0, 0, getDay());
     }
 
     // --- external view functions ---
@@ -211,7 +211,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
         emit WeeklyFeesReceived(weekAmount);
 
-        _setNewStream(newAmount, residualAmount);
+        _setNewStream(newAmount, residualAmount, getDay());
     }
 
     function setCooldownDuration(uint32 _cooldownDuration) external onlyOwner {
@@ -270,21 +270,19 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
     /**
         @dev Advance the current reward stream, and optionally update the stream
-             within the current week. If a new week has started, the stream can
-             only be updated through a call to `notifyWeeklyFees`.
+             within the current week.
     */
     function _updateDailyStream() internal {
         uint256 updateUntil = _advanceCurrentStream();
 
-        uint256 updateDays = getDay() - lastDistributionDay;
+        uint256 lastUpdateDay = (lastDistributionDay / 7 + 1) * 7 - 1;
+        uint256 day = Math.min(getDay(), lastUpdateDay);
+        uint256 updateDays = day - lastDistributionDay;
         if (updateDays == 0) return;
-
-        // only `notifyWeeklyFees` can update us across weeks
-        if (getDay() / 7 > lastDistributionDay / 7) return;
 
         uint256 newAmount = (lastWeeklyAmountReceived / 7) * updateDays;
         uint256 residualAmount = (periodFinish - updateUntil) * rewardsPerSecond;
-        _setNewStream(newAmount, residualAmount);
+        _setNewStream(newAmount, residualAmount, day);
     }
 
     /** @dev Advance the current reward stream */
@@ -299,7 +297,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     }
 
     /** @dev Start a new reward stream period */
-    function _setNewStream(uint256 newAmount, uint256 residualAmount) internal {
+    function _setNewStream(uint256 newAmount, uint256 residualAmount, uint256 day) internal {
         uint256 stakerAmount = rewardRegulator.getStakerRewardAmount(newAmount);
         require(stakerAmount <= newAmount, "sMONEY: Invalid stakerAmount");
 
@@ -315,8 +313,8 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
         lastUpdate = uint32(block.timestamp);
         periodFinish = uint32(block.timestamp + 2 days);
-        lastDistributionDay = uint32(getDay());
+        lastDistributionDay = uint32(day);
 
-        emit NewRewardPeriod(getDay(), newAmount, stakerAmount, govAmount);
+        emit NewRewardPeriod(day, newAmount, stakerAmount, govAmount);
     }
 }
