@@ -4,9 +4,9 @@ import brownie
 
 def test_initial_assumptions(reward_regulator):
     assert reward_regulator.minPrice() == 99 * 10**16
-    assert reward_regulator.maxPrice() == 101 * 10**16
-    assert reward_regulator.minStakerPct() == 3000
-    assert reward_regulator.maxStakerPct() == 7000
+    assert reward_regulator.maxPrice() == 10**18
+    assert reward_regulator.minStakerPct() == 0
+    assert reward_regulator.maxStakerPct() == 10000
 
 
 @pytest.mark.parametrize(
