@@ -61,7 +61,7 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
             amount = (initialAmount * p.pctInBps) / MAX_BPS;
             if (p.maximumAmount != 0 && amount > p.maximumAmount) amount = p.maximumAmount;
             stableCoin.transfer(address(p.target), amount);
-            p.target.notifyWeeklyFees(amount);
+            p.target.notifyNewFees(amount);
         }
 
         // we fetch the balance again so that priority receivers have
@@ -69,7 +69,7 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
         amount = stableCoin.balanceOf(address(this));
         if (amount > 0) {
             stableCoin.transfer(address(fallbackReceiver), amount);
-            fallbackReceiver.notifyWeeklyFees(amount);
+            fallbackReceiver.notifyNewFees(amount);
         }
     }
 

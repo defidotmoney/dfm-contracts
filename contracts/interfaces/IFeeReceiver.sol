@@ -13,5 +13,5 @@ interface IFeeReceiver {
         @dev Should be permissioned so that only the aggregator can call.
         @param amount Stablecoin amount that was sent to the contract.
      */
-    function notifyWeeklyFees(uint256 amount) external;
+    function notifyNewFees(uint256 amount) external;
 }

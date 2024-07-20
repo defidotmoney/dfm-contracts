@@ -198,7 +198,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
     // --- guarded external functions ---
 
-    function notifyWeeklyFees(uint256) external {
+    function notifyNewFees(uint256) external {
         require(msg.sender == feeAggregator);
 
         uint256 updateUntil = _advanceCurrentStream();
@@ -302,8 +302,9 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
         uint256 govAmount = newAmount - stakerAmount;
         if (govAmount > 0) {
-            asset.transfer(govStaker, govAmount);
-            // TODO notify?
+            address _govStaker = govStaker;
+            asset.transfer(_govStaker, govAmount);
+            IFeeReceiver(_govStaker).notifyNewFees(govAmount);
         }
 
         stakerAmount += residualAmount;
