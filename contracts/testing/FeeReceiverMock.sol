@@ -17,8 +17,8 @@ contract FeeReceiverMock is IFeeReceiver {
         stableCoin = _stable;
     }
 
-    function notifyWeeklyFees(uint256 amount) external {
-        require(!raiseOnNotify, "FeeReceiverMock: notifyWeeklyFees");
+    function notifyNewFees(uint256 amount) external {
+        require(!raiseOnNotify, "FeeReceiverMock: notifyNewFees");
 
         emit Notified(amount);
 

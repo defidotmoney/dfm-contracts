@@ -154,7 +154,7 @@ def test_priority_receiver_notify_reverts(
     fee_agg.addPriorityReceivers([(mock_fee_receiver2, 100, 0)], {"from": deployer})
     mock_fee_receiver2.setRaiseOnNotify(True, {"from": deployer})
 
-    with brownie.reverts("FeeReceiverMock: notifyWeeklyFees"):
+    with brownie.reverts("FeeReceiverMock: notifyNewFees"):
         fee_agg.processWeeklyDistribution({"from": alice})
 
 
@@ -170,7 +170,7 @@ def test_fallback_receiver_bad_address(fee_agg, mock_bridge_relay, stable, alice
 def test_fallback_receiver_notify_reverts(fee_agg, stable, mock_fee_receiver, alice, bob, deployer):
     stable.transfer(fee_agg, 10**24, {"from": bob})
     mock_fee_receiver.setRaiseOnNotify(True, {"from": deployer})
-    with brownie.reverts("FeeReceiverMock: notifyWeeklyFees"):
+    with brownie.reverts("FeeReceiverMock: notifyNewFees"):
         fee_agg.processWeeklyDistribution({"from": alice})
 
 
