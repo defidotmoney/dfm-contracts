@@ -31,12 +31,18 @@ contract LzEndpointMock {
         address _refundAddress
     ) external payable returns (MessagingReceipt memory) {
         require(msg.value >= _nativeFee, "LzEndpointMock: Insufficient fee");
+        _assertOptionsType3(_params.options);
         if (msg.value > _nativeFee) {
             (bool success, ) = _refundAddress.call{ value: msg.value - _nativeFee }("");
             require(success, "LzEndpointMock: Gas refund transfer failed");
         }
 
         emit MessageSent(_params.dstEid, _params.receiver, _params.message, _params.options);
+    }
+
+    function _assertOptionsType3(bytes calldata _options) internal pure virtual {
+        uint16 optionsType = uint16(bytes2(_options[0:2]));
+        require(optionsType == 3, "LzEndpointMock: Invalid options");
     }
 
     fallback() external {

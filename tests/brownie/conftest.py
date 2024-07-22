@@ -54,8 +54,15 @@ def mock_endpoint(LzEndpointMock, deployer):
 
 
 @pytest.fixture(scope="module")
-def stable(BridgeToken, core, mock_endpoint, deployer):
-    return BridgeToken.deploy(core, "Stablecoin", "SC", mock_endpoint, b"", [], {"from": deployer})
+def lz_default_opts():
+    return "0x0003010011010000000000000000000000000000ea60"
+
+
+@pytest.fixture(scope="module")
+def stable(BridgeToken, core, mock_endpoint, lz_default_opts, deployer):
+    return BridgeToken.deploy(
+        core, "Stablecoin", "SC", mock_endpoint, lz_default_opts, [], {"from": deployer}
+    )
 
 
 @pytest.fixture(scope="module")
