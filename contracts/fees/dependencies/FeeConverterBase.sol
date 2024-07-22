@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.25;
+pragma solidity ^0.8.0;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { CoreOwnable } from "../../base/dependencies/CoreOwnable.sol";
 import { IMainController } from "../../interfaces/IMainController.sol";
 import { IBridgeToken } from "../../interfaces/IBridgeToken.sol";
+import { TokenRecovery } from "./TokenRecovery.sol";
 
 /**
     @title Fee Converter Abstract Base
     @dev Shared logic for `FeeConverter` and `FeeConverterWithBridge`
     @author defidotmoney
  */
-abstract contract FeeConverterBase is CoreOwnable {
+abstract contract FeeConverterBase is TokenRecovery {
     using SafeERC20 for IERC20Metadata;
 
     uint256 internal constant MAX_BPS = 10000;
@@ -39,7 +39,7 @@ abstract contract FeeConverterBase is CoreOwnable {
         uint256 _maxSwapBonusAmount,
         uint256 _minRelayBalance,
         uint256 _maxRelaySwapDebtAmount
-    ) CoreOwnable(_core) {
+    ) TokenRecovery(_core) {
         mainController = _mainController;
         stableCoin = _stableCoin;
         primaryChainFeeAggregator = _primaryChainFeeAggregator;
@@ -236,14 +236,6 @@ abstract contract FeeConverterBase is CoreOwnable {
      */
     function setMaxRelaySwapDebtAmount(uint256 _maxRelaySwapDebtAmount) external onlyOwner {
         maxRelaySwapDebtAmount = _maxRelaySwapDebtAmount;
-    }
-
-    function transferToken(IERC20Metadata token, address receiver, uint256 amount) external onlyOwner {
-        token.safeTransfer(receiver, amount);
-    }
-
-    function setTokenApproval(IERC20Metadata token, address spender, uint256 amount) external onlyOwner {
-        token.forceApprove(spender, amount);
     }
 
     // --- internal functions ---
