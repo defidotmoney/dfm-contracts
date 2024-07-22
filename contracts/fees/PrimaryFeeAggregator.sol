@@ -35,13 +35,38 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
         callerIncentive = _callerIncentive;
     }
 
+    receive() external payable {}
+
     function priorityReceiverCount() external view returns (uint256) {
         return priorityReceivers.length;
     }
 
-    // --- unguarded external functions
+    function quoteProcessWeeklyDistribution() external view returns (uint256 nativeFee) {
+        if (lastDistributionWeek == getWeek()) return 0;
 
-    function processWeeklyDistribution() external {
+        uint256 initialAmount = stableCoin.balanceOf(address(this));
+        uint256 amount = callerIncentive;
+        if (initialAmount <= amount * 2) return 0;
+        initialAmount -= amount;
+        uint256 remaining = initialAmount;
+
+        uint256 length = priorityReceivers.length;
+        for (uint256 i = 0; i < length; i++) {
+            PriorityReceiver memory p = priorityReceivers[i];
+            amount = (initialAmount * p.pctInBps) / MAX_BPS;
+            if (p.maximumAmount != 0 && amount > p.maximumAmount) amount = p.maximumAmount;
+            nativeFee += p.target.quoteNotifyNewFees(amount);
+            remaining -= amount;
+        }
+
+        if (remaining > 0) {
+            nativeFee += fallbackReceiver.quoteNotifyNewFees(remaining);
+        }
+    }
+
+    // --- unguarded external functions ---
+
+    function processWeeklyDistribution() external payable {
         require(lastDistributionWeek < getWeek(), "DFM: Already distro'd this week");
         lastDistributionWeek = uint16(getWeek());
 
@@ -61,7 +86,7 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
             amount = (initialAmount * p.pctInBps) / MAX_BPS;
             if (p.maximumAmount != 0 && amount > p.maximumAmount) amount = p.maximumAmount;
             stableCoin.transfer(address(p.target), amount);
-            p.target.notifyNewFees(amount);
+            p.target.notifyNewFees{ value: address(this).balance }(amount);
         }
 
         // we fetch the balance again so that priority receivers have
@@ -69,7 +94,12 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
         amount = stableCoin.balanceOf(address(this));
         if (amount > 0) {
             stableCoin.transfer(address(fallbackReceiver), amount);
-            fallbackReceiver.notifyNewFees(amount);
+            fallbackReceiver.notifyNewFees{ value: address(this).balance }(amount);
+        }
+
+        if (address(this).balance > 0) {
+            (bool success, ) = msg.sender.call{ value: address(this).balance }("");
+            require(success, "DFM: Gas refund transfer failed");
         }
     }
 

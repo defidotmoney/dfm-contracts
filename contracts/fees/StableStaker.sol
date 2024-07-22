@@ -134,6 +134,10 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         return balanceOf(owner);
     }
 
+    function quoteNotifyNewFees(uint256) external view returns (uint256) {
+        return 0;
+    }
+
     // --- unguarded external functions ---
 
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
@@ -198,7 +202,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
 
     // --- guarded external functions ---
 
-    function notifyNewFees(uint256) external {
+    function notifyNewFees(uint256) external payable {
         require(msg.sender == feeAggregator);
 
         uint256 updateUntil = _advanceCurrentStream();
@@ -212,6 +216,11 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         emit WeeklyFeesReceived(weekAmount);
 
         _setNewStream(newAmount, residualAmount, getDay());
+
+        if (msg.value != 0) {
+            (bool success, ) = msg.sender.call{ value: msg.value }("");
+            require(success, "DFM: Gas refund transfer failed");
+        }
     }
 
     function setCooldownDuration(uint32 _cooldownDuration) external onlyOwner {
