@@ -2,30 +2,30 @@
 
 pragma solidity 0.8.25;
 
-import { ILayerZeroComposer } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import { MessagingFee, SendParam } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import { IBridgeToken } from "../interfaces/IBridgeToken.sol";
 import { SystemStart } from "../base/dependencies/SystemStart.sol";
 import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
+import { IFeeReceiverLzCompose } from "../interfaces/IFeeReceiverLzCompose.sol";
 import { TokenRecovery } from "./dependencies/TokenRecovery.sol";
 
 /**
-    @title LzCompose Fee Receiver
+    @title LzCompose Fee Forwarder
     @author defidotmoney
     @dev Bridges received stablecoin fees to another chain and then notifies the
          receiver via a LayerZero composed message. The receiver must implement
-         the `ILayerZeroComposer` interface.
+         the `IFeeReceiverLzCompose` interface.
  */
-contract FeeReceiverLzCompose is TokenRecovery, SystemStart {
+contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
     IBridgeToken public immutable stableCoin;
     uint32 public immutable thisId;
     uint256 public immutable bridgeEpochFrequency;
 
-    ILayerZeroComposer public remoteReceiver;
+    IFeeReceiverLzCompose public remoteReceiver;
     uint32 public remoteEid;
     uint64 public gasLimit;
 
-    event ReceiverSet(ILayerZeroComposer receiver, uint32 eid);
+    event ReceiverSet(IFeeReceiverLzCompose receiver, uint32 eid);
     event GasLimitSet(uint64 gasLimit);
 
     /**
@@ -36,7 +36,7 @@ contract FeeReceiverLzCompose is TokenRecovery, SystemStart {
     constructor(
         address _core,
         IBridgeToken _stable,
-        ILayerZeroComposer _receiver,
+        IFeeReceiverLzCompose _receiver,
         uint32 _remoteEid,
         uint64 _gasLimit,
         uint256 _bridgeFrequency
@@ -82,7 +82,7 @@ contract FeeReceiverLzCompose is TokenRecovery, SystemStart {
             });
     }
 
-    function _setReceiver(ILayerZeroComposer receiver, uint32 eid) internal {
+    function _setReceiver(IFeeReceiverLzCompose receiver, uint32 eid) internal {
         require(address(receiver) != address(0), "DFM: Empty receiver");
         require(stableCoin.peers(eid) != bytes32(0), "DFM: Receiver peer unset");
         remoteReceiver = receiver;
