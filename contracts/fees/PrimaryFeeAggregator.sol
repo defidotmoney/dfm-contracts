@@ -3,7 +3,7 @@
 pragma solidity 0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { CoreOwnable } from "../base/dependencies/CoreOwnable.sol";
+import { TokenRecovery } from "./dependencies/TokenRecovery.sol";
 import { SystemStart } from "../base/dependencies/SystemStart.sol";
 import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
 
@@ -13,7 +13,7 @@ import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
     @notice Receives stablecoin fees from all chains and coordinates onward
             distribution throughout the system
  */
-contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
+contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
     uint256 internal constant MAX_BPS = 10000;
     IERC20 public immutable stableCoin;
 
@@ -30,7 +30,7 @@ contract PrimaryFeeAggregator is CoreOwnable, SystemStart {
         uint256 maximumAmount; // Maximum amount sent each week. Set to 0 for no limit.
     }
 
-    constructor(address _core, IERC20 _stable, uint256 _callerIncentive) CoreOwnable(_core) SystemStart(_core) {
+    constructor(address _core, IERC20 _stable, uint256 _callerIncentive) TokenRecovery(_core) SystemStart(_core) {
         stableCoin = _stable;
         callerIncentive = _callerIncentive;
     }

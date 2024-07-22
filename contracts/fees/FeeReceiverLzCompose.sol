@@ -5,9 +5,9 @@ pragma solidity 0.8.25;
 import { ILayerZeroComposer } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import { MessagingFee, SendParam } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import { IBridgeToken } from "../interfaces/IBridgeToken.sol";
-import { CoreOwnable } from "../base/dependencies/CoreOwnable.sol";
 import { SystemStart } from "../base/dependencies/SystemStart.sol";
 import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
+import { TokenRecovery } from "./dependencies/TokenRecovery.sol";
 
 /**
     @title LzCompose Fee Receiver
@@ -16,7 +16,7 @@ import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
          receiver via a LayerZero composed message. The receiver must implement
          the `ILayerZeroComposer` interface.
  */
-contract FeeReceiverLzCompose is CoreOwnable, SystemStart {
+contract FeeReceiverLzCompose is TokenRecovery, SystemStart {
     IBridgeToken public immutable stableCoin;
     uint32 public immutable thisId;
     uint256 public immutable bridgeEpochFrequency;
@@ -40,7 +40,7 @@ contract FeeReceiverLzCompose is CoreOwnable, SystemStart {
         uint32 _remoteEid,
         uint64 _gasLimit,
         uint256 _bridgeFrequency
-    ) CoreOwnable(_core) SystemStart(_core) {
+    ) TokenRecovery(_core) SystemStart(_core) {
         require(_bridgeFrequency != 0, "DFM: _bridgeFrequency == 0");
 
         stableCoin = _stable;
