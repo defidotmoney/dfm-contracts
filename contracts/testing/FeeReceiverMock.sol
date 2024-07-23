@@ -10,6 +10,7 @@ contract FeeReceiverMock is IFeeReceiver {
 
     bool public raiseOnNotify;
     uint256 public returnAmount;
+    uint256 public nativeFee;
 
     event Notified(uint256 amount);
 
@@ -18,16 +19,21 @@ contract FeeReceiverMock is IFeeReceiver {
     }
 
     function quoteNotifyNewFees(uint256 amount) external view returns (uint256) {
-        return 0;
+        return nativeFee;
     }
 
     function notifyNewFees(uint256 amount) external payable {
         require(!raiseOnNotify, "FeeReceiverMock: notifyNewFees");
+        require(msg.value >= nativeFee, "FeeReceiverMock: nativeFee");
 
         emit Notified(amount);
 
         if (returnAmount > 0) {
             stableCoin.transfer(msg.sender, returnAmount);
+        }
+        if (msg.value > nativeFee) {
+            (bool success, ) = msg.sender.call{ value: msg.value - nativeFee }("");
+            require(success, "FeeReceiverMock: refund failed");
         }
     }
 
@@ -37,5 +43,9 @@ contract FeeReceiverMock is IFeeReceiver {
 
     function setReturnAmount(uint256 _amount) external {
         returnAmount = _amount;
+    }
+
+    function setNativeFee(uint256 amount) external {
+        nativeFee = amount;
     }
 }
