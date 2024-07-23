@@ -18,6 +18,7 @@ import { TokenRecovery } from "./dependencies/TokenRecovery.sol";
  */
 contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
     IBridgeToken public immutable stableCoin;
+    address public immutable feeAggregator;
     uint32 public immutable thisId;
     uint256 public immutable bridgeEpochFrequency;
 
@@ -36,6 +37,7 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
     constructor(
         address _core,
         IBridgeToken _stable,
+        address _feeAggregator,
         IFeeReceiverLzCompose _receiver,
         uint32 _remoteEid,
         uint64 _gasLimit,
@@ -44,6 +46,7 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
         require(_bridgeFrequency != 0, "DFM: _bridgeFrequency == 0");
 
         stableCoin = _stable;
+        feeAggregator = _feeAggregator;
         thisId = _stable.thisId();
         bridgeEpochFrequency = _bridgeFrequency;
 
@@ -59,6 +62,7 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
     }
 
     function notifyNewFees(uint256 amount) external payable {
+        require(msg.sender == feeAggregator, "DFM: Only feeAggregator");
         if (getWeek() % bridgeEpochFrequency == 0) {
             SendParam memory params = _getSendParams(amount);
             MessagingFee memory fee = MessagingFee(address(this).balance, 0);
