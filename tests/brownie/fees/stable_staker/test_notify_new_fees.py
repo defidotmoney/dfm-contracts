@@ -66,7 +66,6 @@ def test_zero_reward_amount(staker, alice, fee_agg):
 
 
 def test_transfers_to_gov_staker(staker, stable, fee_agg, mock_stable_oracle, deployer, gov_staker):
-
     amount = 10**18
 
     # this makes the reward regulator split 20/80 between staker / gov_staker
@@ -78,6 +77,14 @@ def test_transfers_to_gov_staker(staker, stable, fee_agg, mock_stable_oracle, de
     staker.mint(0, deployer, {"from": deployer})
 
     assert stable.balanceOf(gov_staker) == amount // 5 * 4
+
+
+def test_msg_value_refunded(staker, alice, fee_agg):
+    alice.transfer(fee_agg, "1 ether")
+    assert fee_agg.balance() == 10**18
+
+    staker.notifyNewFees(0, {"from": fee_agg, "value": "1 ether"})
+    assert fee_agg.balance() == 10**18
 
 
 def test_revert_on_unset_gov_staker_when_pct(staker, stable, fee_agg, mock_stable_oracle, deployer):
@@ -109,3 +116,10 @@ def test_revert_on_unset_regulator(staker, stable, fee_agg, mock_stable_oracle, 
 def test_notify_onlyowner(staker, alice):
     with brownie.reverts():
         staker.notifyNewFees(0, {"from": alice})
+
+
+def test_refund_reverts(staker, deployer, eth_receive_reverter):
+    staker.setFeeAggregator(eth_receive_reverter, {"from": deployer})
+
+    with brownie.reverts("DFM: Gas refund transfer failed"):
+        staker.notifyNewFees(0, {"from": eth_receive_reverter, "value": "1 ether"})
