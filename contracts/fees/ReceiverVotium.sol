@@ -2,41 +2,30 @@
 
 pragma solidity 0.8.25;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import { TokenRecovery } from "./dependencies/TokenRecovery.sol";
 import { IVotium } from "../interfaces/external/IVotium.sol";
 import { IFeeReceiverLzCompose } from "../interfaces/IFeeReceiverLzCompose.sol";
+import { GaugeAllocReceiverBase } from "./dependencies/GaugeAllocReceiverBase.sol";
 
-contract VotiumFeeReceiver is TokenRecovery, IFeeReceiverLzCompose {
-    using EnumerableSet for EnumerableSet.AddressSet;
-
-    uint256 constant MIN_AMOUNT = 100 * 1e18;
-
-    IERC20 public immutable stableCoin;
+/**
+    @notice Votium Fee Receiver
+    @author defidotmoney
+    @dev Receives fees bridged from `LzComposeForwarder` and deposits into Votium
+         https://github.com/oo-00/Votium/blob/80eb7fd/contracts/Votium.sol
+ */
+contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
     IVotium public immutable votium;
     address public immutable endpoint;
 
-    EnumerableSet.AddressSet private __gauges;
-
-    constructor(address core, IERC20 _stable, IVotium _votium, address _endpoint) TokenRecovery(core) {
-        stableCoin = _stable;
-        votium = _votium;
+    constructor(
+        address core,
+        address _stable,
+        address _votium,
+        address _endpoint,
+        GaugeAlloc[] memory _gauges,
+        address[] memory _excluded
+    ) GaugeAllocReceiverBase(core, _stable, _votium, _gauges, _excluded) {
+        votium = IVotium(_votium);
         endpoint = _endpoint;
-
-        _stable.approve(address(_votium), type(uint256).max);
-    }
-
-    function getGaugeCount() external view returns (uint256) {
-        return __gauges.length();
-    }
-
-    function isGaugeAdded(address gauge) external view returns (bool) {
-        return __gauges.contains(gauge);
-    }
-
-    function getGaugeList() external view returns (address[] memory) {
-        return __gauges.values();
     }
 
     function lzCompose(address _from, bytes32, bytes calldata, address, bytes calldata) external payable {
@@ -44,31 +33,20 @@ contract VotiumFeeReceiver is TokenRecovery, IFeeReceiverLzCompose {
         require(_from == address(stableCoin), "DFM: Incorrect oApp");
         require(msg.value == 0, "DFM: msg.value > 0");
 
-        uint256 count = __gauges.length();
-        if (count == 0) return;
+        address[] memory gauges = getGaugeList();
+        uint256 length = gauges.length;
+        if (length == 0) return;
 
-        uint256 amount = stableCoin.balanceOf(address(this)) / count;
-        if (amount < MIN_AMOUNT) return;
+        uint256 total = stableCoin.balanceOf(address(this));
+        uint256 totalAlloc = totalAllocationPoints;
+
+        uint256[] memory amounts = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            uint256 amount = (total * gaugeAllocationPoints[gauges[i]]) / totalAlloc;
+            if (amount >= MIN_AMOUNT) amounts[i] = amount;
+        }
 
         uint256 round = votium.activeRound();
-        votium.depositSplitGauges(address(stableCoin), amount, round, __gauges.values(), 0, new address[](0));
+        votium.depositUnevenSplitGauges(address(stableCoin), round, gauges, amounts, 0, getExclusionList());
     }
-
-    function addGauges(address[] calldata gauges) external onlyOwner {
-        uint256 length = gauges.length;
-        for (uint i = 0; i < length; i++) {
-            require(__gauges.add(gauges[i]), "DFM: Gauge already added");
-        }
-    }
-
-    function removeGauges(address[] calldata gauges) external onlyOwner {
-        uint256 length = gauges.length;
-        for (uint i = 0; i < length; i++) {
-            require(__gauges.remove(gauges[i]), "DFM: Unknown gauge");
-        }
-    }
-
-    // TODO
-    // exclusion list
-    // gauge weighting
 }
