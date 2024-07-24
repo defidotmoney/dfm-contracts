@@ -14,7 +14,8 @@ import { TokenRecovery } from "./TokenRecovery.sol";
 abstract contract GaugeAllocReceiverBase is TokenRecovery {
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    uint256 constant MIN_AMOUNT = 100 * 1e18;
+    uint256 public constant MIN_TOTAL_REWARD = 1000 * 1e18;
+    uint256 public constant MAX_TOTAL_ALLOCATION_POINTS = 10000;
 
     IERC20 public immutable stableCoin;
 
@@ -83,6 +84,7 @@ abstract contract GaugeAllocReceiverBase is TokenRecovery {
             emit GaugeAllocationSet(gauge, points);
             gaugeAllocationPoints[gauge] = points;
         }
+        require(totalAlloc <= MAX_TOTAL_ALLOCATION_POINTS, "DFM: MAX_TOTAL_ALLOCATION_POINTS");
         totalAllocationPoints = totalAlloc;
     }
 

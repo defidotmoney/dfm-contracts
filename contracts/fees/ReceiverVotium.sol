@@ -38,12 +38,13 @@ contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
         if (length == 0) return;
 
         uint256 total = stableCoin.balanceOf(address(this));
+        if (total < MIN_TOTAL_REWARD) return;
+
         uint256 totalAlloc = totalAllocationPoints;
 
         uint256[] memory amounts = new uint256[](length);
         for (uint256 i = 0; i < length; i++) {
-            uint256 amount = (total * gaugeAllocationPoints[gauges[i]]) / totalAlloc;
-            if (amount >= MIN_AMOUNT) amounts[i] = amount;
+            amounts[i] = (total * gaugeAllocationPoints[gauges[i]]) / totalAlloc;
         }
 
         uint256 round = votium.activeRound();
