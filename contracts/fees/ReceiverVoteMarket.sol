@@ -48,12 +48,13 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
         if (length == 0) return;
 
         uint256 total = stableCoin.balanceOf(address(this));
+        if (total < MIN_TOTAL_REWARD) return;
+
         uint256 totalAlloc = totalAllocationPoints;
 
         for (uint256 i = 0; i < length; i++) {
             address gauge = gauges[i];
             uint256 amount = (total * gaugeAllocationPoints[gauge]) / totalAlloc;
-            if (amount < MIN_AMOUNT) continue;
 
             uint256 bountyId = bountyIds[gauge];
             uint256 periodsLeft;
