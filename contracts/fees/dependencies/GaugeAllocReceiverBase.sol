@@ -20,7 +20,6 @@ abstract contract GaugeAllocReceiverBase is TokenRecovery {
     IERC20 public immutable stableCoin;
 
     EnumerableSet.AddressSet private __gauges;
-    EnumerableSet.AddressSet private __exclusions;
 
     uint256 public totalAllocationPoints;
 
@@ -31,38 +30,21 @@ abstract contract GaugeAllocReceiverBase is TokenRecovery {
         uint256 points;
     }
 
-    event ExclusionListSet(address account, bool isExcluded);
     event GaugeAllocationSet(address gauge, uint256 allocPoints);
 
-    constructor(
-        address core,
-        address _stable,
-        address _target,
-        GaugeAlloc[] memory _gauges,
-        address[] memory _excluded
-    ) TokenRecovery(core) {
+    constructor(address core, address _stable, address _target, GaugeAlloc[] memory _gauges) TokenRecovery(core) {
         stableCoin = IERC20(_stable);
+        IERC20(_stable).approve(_target, type(uint256).max);
 
         _setGauges(_gauges);
-        _setExclusionList(_excluded, true);
-
-        IERC20(_stable).approve(_target, type(uint256).max);
     }
 
     function getGaugeList() public view returns (address[] memory) {
         return __gauges.values();
     }
 
-    function getExclusionList() public view returns (address[] memory) {
-        return __exclusions.values();
-    }
-
     function setGauges(GaugeAlloc[] calldata gauges) external onlyOwner {
         _setGauges(gauges);
-    }
-
-    function setExclusionList(address[] calldata accounts, bool isExcluded) external onlyOwner {
-        _setExclusionList(accounts, isExcluded);
     }
 
     function _setGauges(GaugeAlloc[] memory gauges) internal {
@@ -86,14 +68,5 @@ abstract contract GaugeAllocReceiverBase is TokenRecovery {
         }
         require(totalAlloc <= MAX_TOTAL_ALLOCATION_POINTS, "DFM: MAX_TOTAL_ALLOCATION_POINTS");
         totalAllocationPoints = totalAlloc;
-    }
-
-    function _setExclusionList(address[] memory accounts, bool isExcluded) internal {
-        uint256 length = accounts.length;
-        for (uint i = 0; i < length; i++) {
-            if (isExcluded) require(__exclusions.add(accounts[i]), "DFM: Account already added");
-            else require(__exclusions.remove(accounts[i]), "DFM: Account not on list");
-            emit ExclusionListSet(accounts[i], isExcluded);
-        }
     }
 }
