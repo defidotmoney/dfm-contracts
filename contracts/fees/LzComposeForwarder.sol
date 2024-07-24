@@ -56,6 +56,8 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
         _setGasLimit(_gasLimit);
     }
 
+    // --- external view functions ---
+
     function quoteNotifyNewFees(uint256) external view returns (uint256 nativeFee) {
         if (getWeek() % bridgeEpochFrequency == 0) {
             uint256 amount = stableCoin.balanceOf(address(this));
@@ -66,6 +68,8 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
         }
         return 0;
     }
+
+    // --- guarded external functions ---
 
     function notifyNewFees(uint256) external payable {
         require(msg.sender == feeAggregator, "DFM: Only feeAggregator");
@@ -82,6 +86,14 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
             (bool success, ) = msg.sender.call{ value: msg.value }("");
             require(success, "DFM: Gas refund transfer failed");
         }
+    }
+
+    function setRemoteReceiver(IFeeReceiverLzCompose receiver, uint32 eid) external onlyOwner {
+        _setReceiver(receiver, eid);
+    }
+
+    function setGasLimit(uint64 gas) external onlyOwner {
+        _setGasLimit(gas);
     }
 
     // --- internal functions ---
