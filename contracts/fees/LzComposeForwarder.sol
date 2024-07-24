@@ -17,6 +17,8 @@ import { TokenRecovery } from "./dependencies/TokenRecovery.sol";
          the `IFeeReceiverLzCompose` interface.
  */
 contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
+    uint256 constant MIN_AMOUNT = 100 * 1e18;
+
     IBridgeToken public immutable stableCoin;
     address public immutable feeAggregator;
     uint32 public immutable thisId;
@@ -54,19 +56,31 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
         _setGasLimit(_gasLimit);
     }
 
-    function quoteNotifyNewFees(uint256 amount) external view returns (uint256 nativeFee) {
+    function quoteNotifyNewFees(uint256) external view returns (uint256 nativeFee) {
         if (getWeek() % bridgeEpochFrequency == 0) {
-            SendParam memory params = _getSendParams(amount);
-            return stableCoin.quoteSend(params, false).nativeFee;
-        } else return 0;
+            uint256 amount = stableCoin.balanceOf(address(this));
+            if (amount >= MIN_AMOUNT) {
+                SendParam memory params = _getSendParams(amount);
+                return stableCoin.quoteSend(params, false).nativeFee;
+            }
+        }
+        return 0;
     }
 
-    function notifyNewFees(uint256 amount) external payable {
+    function notifyNewFees(uint256) external payable {
         require(msg.sender == feeAggregator, "DFM: Only feeAggregator");
         if (getWeek() % bridgeEpochFrequency == 0) {
-            SendParam memory params = _getSendParams(amount);
-            MessagingFee memory fee = MessagingFee(address(this).balance, 0);
-            stableCoin.send{ value: fee.nativeFee }(params, fee, msg.sender);
+            uint256 amount = stableCoin.balanceOf(address(this));
+            if (amount >= MIN_AMOUNT) {
+                SendParam memory params = _getSendParams(amount);
+                MessagingFee memory fee = MessagingFee(address(this).balance, 0);
+                stableCoin.send{ value: address(this).balance }(params, fee, msg.sender);
+                return;
+            }
+        }
+        if (msg.value != 0) {
+            (bool success, ) = msg.sender.call{ value: msg.value }("");
+            require(success, "DFM: Gas refund transfer failed");
         }
     }
 
