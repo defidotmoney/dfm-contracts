@@ -16,14 +16,15 @@ contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
     IVotium public immutable votium;
     address public immutable endpoint;
 
+    event IncentivesAdded(address[] gauges, uint256[] amounts);
+
     constructor(
         address core,
         address _stable,
         address _votium,
         address _endpoint,
-        GaugeAlloc[] memory _gauges,
-        address[] memory _excluded
-    ) GaugeAllocReceiverBase(core, _stable, _votium, _gauges, _excluded) {
+        GaugeAlloc[] memory _gauges
+    ) GaugeAllocReceiverBase(core, _stable, _votium, _gauges) {
         votium = IVotium(_votium);
         endpoint = _endpoint;
     }
@@ -47,7 +48,7 @@ contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
             amounts[i] = (total * gaugeAllocationPoints[gauges[i]]) / totalAlloc;
         }
 
-        uint256 round = votium.activeRound();
-        votium.depositUnevenSplitGauges(address(stableCoin), round, gauges, amounts, 0, getExclusionList());
+        votium.depositUnevenSplitGaugesSimple(address(stableCoin), gauges, amounts);
+        emit IncentivesAdded(gauges, amounts);
     }
 }

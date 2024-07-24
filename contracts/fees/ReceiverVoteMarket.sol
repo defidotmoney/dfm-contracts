@@ -2,6 +2,7 @@
 
 pragma solidity 0.8.25;
 
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IVoteMarket } from "../interfaces/external/IVoteMarket.sol";
 import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
 import { GaugeAllocReceiverBase } from "./dependencies/GaugeAllocReceiverBase.sol";
@@ -13,14 +14,19 @@ import { GaugeAllocReceiverBase } from "./dependencies/GaugeAllocReceiverBase.so
          https://github.com/stake-dao/x-chain-vm/blob/23fe83a/src/Platform.sol
  */
 contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
     uint8 constant BOUNTY_PERIODS = 4;
     uint256 constant MAX_PRICE_PER_VOTE = type(uint256).max;
 
     address public immutable feeAggregator;
     IVoteMarket public immutable voteMarket;
 
+    EnumerableSet.AddressSet private __exclusions;
+
     event BountyCreated(address indexed gauge, uint256 bountyId);
     event BountyRewardAdded(address indexed gauge, uint256 indexed bountyId, uint256 rewardAmount);
+    event ExclusionListSet(address account, bool isExcluded);
 
     mapping(address gauge => uint256 id) private bountyIds;
 
@@ -31,9 +37,15 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
         address _voteMarket,
         GaugeAlloc[] memory _gauges,
         address[] memory _excluded
-    ) GaugeAllocReceiverBase(core, _stable, _voteMarket, _gauges, _excluded) {
+    ) GaugeAllocReceiverBase(core, _stable, _voteMarket, _gauges) {
         feeAggregator = _feeAggregator;
         voteMarket = IVoteMarket(_voteMarket);
+
+        _setExclusionList(_excluded, true);
+    }
+
+    function getExclusionList() public view returns (address[] memory) {
+        return __exclusions.values();
     }
 
     function quoteNotifyNewFees(uint256) external view returns (uint256) {
@@ -88,6 +100,19 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
         if (msg.value != 0) {
             (bool success, ) = msg.sender.call{ value: msg.value }("");
             require(success, "DFM: Gas refund transfer failed");
+        }
+    }
+
+    function setExclusionList(address[] calldata accounts, bool isExcluded) external onlyOwner {
+        _setExclusionList(accounts, isExcluded);
+    }
+
+    function _setExclusionList(address[] memory accounts, bool isExcluded) internal {
+        uint256 length = accounts.length;
+        for (uint i = 0; i < length; i++) {
+            if (isExcluded) require(__exclusions.add(accounts[i]), "DFM: Account already added");
+            else require(__exclusions.remove(accounts[i]), "DFM: Account not on list");
+            emit ExclusionListSet(accounts[i], isExcluded);
         }
     }
 }
