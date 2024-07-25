@@ -19,38 +19,51 @@ abstract contract FeeConverterBase is TokenRecovery {
     uint256 internal constant MAX_BPS = 10000;
     IMainController public immutable mainController;
     IBridgeToken public immutable stableCoin;
-    address public immutable wrappedNativeToken;
+    address public immutable wrappedNativeGas;
     address public primaryChainFeeAggregator;
 
     bool public isEnabled;
 
     uint16 public swapBonusPctBps;
-    uint256 public maxSwapBonusAmount;
-    uint256 public minRelayBalance;
-    uint256 public maxRelaySwapDebtAmount;
+    uint256 public swapMaxBonusAmount;
+    uint256 public relayMinBalance;
+    uint256 public relayMaxSwapDebtAmount;
+
+    event SwapTokens(
+        address indexed caller,
+        address indexed inputToken,
+        address indexed outputToken,
+        uint256 debtIn,
+        uint256 collOut
+    );
+    event SetIsEnabled(bool isEnabled);
+    event SetPrimaryChainFeeAggregator(address feeAggregator);
+    event setSwapBonusPct(uint256 bps);
+    event SetSwapMaxBonusAmount(uint256 amount);
+    event SetRelayMinBalance(uint256 minBalance);
+    event SetRelayMaxSwapDebtAmount(uint256 amount);
 
     constructor(
         address _core,
         IMainController _mainController,
         IBridgeToken _stableCoin,
         address _primaryChainFeeAggregator,
-        address _wrappedNativeToken,
+        address _wrappedNativeGas,
         uint16 _swapBonusPctBps,
-        uint256 _maxSwapBonusAmount,
-        uint256 _minRelayBalance,
-        uint256 _maxRelaySwapDebtAmount
+        uint256 _swapMaxBonusAmount,
+        uint256 _relayMinBalance,
+        uint256 _relayMaxSwapDebtAmount
     ) TokenRecovery(_core) {
         mainController = _mainController;
         stableCoin = _stableCoin;
-        primaryChainFeeAggregator = _primaryChainFeeAggregator;
-        wrappedNativeToken = _wrappedNativeToken;
+        wrappedNativeGas = _wrappedNativeGas;
 
-        swapBonusPctBps = _swapBonusPctBps;
-        maxSwapBonusAmount = _maxSwapBonusAmount;
-        minRelayBalance = _minRelayBalance;
-        maxRelaySwapDebtAmount = _maxRelaySwapDebtAmount;
-
-        isEnabled = true;
+        _setPrimaryChainFeeAggregator(_primaryChainFeeAggregator);
+        _setSwapBonusPctBps(_swapBonusPctBps);
+        _setSwapMaxBonusAmount(_swapMaxBonusAmount);
+        _setRelayMinBalance(_relayMinBalance);
+        _setRelayMaxSwapDebtAmount(_relayMaxSwapDebtAmount);
+        _setIsEnabled(true);
     }
 
     modifier whenEnabled() {
@@ -73,7 +86,7 @@ abstract contract FeeConverterBase is TokenRecovery {
         uint256 precision = 10 ** outputToken.decimals();
         uint256 price = mainController.get_oracle_price(address(outputToken));
         uint256 bonus = (debtAmountIn * swapBonusPctBps) / MAX_BPS;
-        if (bonus > maxSwapBonusAmount) bonus = maxSwapBonusAmount;
+        if (bonus > swapMaxBonusAmount) bonus = swapMaxBonusAmount;
         return _debtToColl(debtAmountIn + bonus, price, precision);
     }
 
@@ -91,8 +104,8 @@ abstract contract FeeConverterBase is TokenRecovery {
         uint256 precision = 10 ** outputToken.decimals();
         uint256 price = mainController.get_oracle_price(address(outputToken));
         uint256 discount = collAmountOut - ((collAmountOut * MAX_BPS) / (MAX_BPS + swapBonusPctBps));
-        if (_collToDebt(discount, price, precision) > maxSwapBonusAmount) {
-            discount = _debtToColl(maxSwapBonusAmount, price, precision);
+        if (_collToDebt(discount, price, precision) > swapMaxBonusAmount) {
+            discount = _debtToColl(swapMaxBonusAmount, price, precision);
         }
         return _collToDebt(collAmountOut - discount, price, precision);
     }
@@ -100,12 +113,12 @@ abstract contract FeeConverterBase is TokenRecovery {
     /**
         @notice Check if a call to `swapNativeForDebt` is currently allowed
         @dev Only possible when the relay is configured within the core owner,
-             and the relay's current balance is less than `minRelayBalance`
+             and the relay's current balance is less than `relayMinBalance`
      */
     function canSwapNativeForDebt() public view returns (bool) {
         address relay = bridgeRelay();
         if (relay == address(0)) return false;
-        if (relay.balance >= minRelayBalance) return false;
+        if (relay.balance >= relayMinBalance) return false;
         return true;
     }
 
@@ -116,10 +129,10 @@ abstract contract FeeConverterBase is TokenRecovery {
      */
     function getSwapNativeForDebtAmountOut(uint256 nativeAmountIn) public view returns (uint256 debtAmountOut) {
         if (!canSwapNativeForDebt()) return 0;
-        uint256 price = mainController.get_oracle_price(wrappedNativeToken);
+        uint256 price = mainController.get_oracle_price(wrappedNativeGas);
         uint256 bonus = (nativeAmountIn * swapBonusPctBps) / MAX_BPS;
         debtAmountOut = _collToDebt(nativeAmountIn + bonus, price, 1e18);
-        if (debtAmountOut > maxRelaySwapDebtAmount) return 0;
+        if (debtAmountOut > relayMaxSwapDebtAmount) return 0;
         return debtAmountOut;
     }
 
@@ -131,8 +144,8 @@ abstract contract FeeConverterBase is TokenRecovery {
      */
     function getSwapNativeForDebtAmountIn(uint256 debtAmountOut) external view returns (uint256 nativeAmountIn) {
         if (!canSwapNativeForDebt()) return 0;
-        if (debtAmountOut > maxRelaySwapDebtAmount) return 0;
-        uint256 price = mainController.get_oracle_price(wrappedNativeToken);
+        if (debtAmountOut > relayMaxSwapDebtAmount) return 0;
+        uint256 price = mainController.get_oracle_price(wrappedNativeGas);
         uint256 discount = debtAmountOut - ((debtAmountOut * MAX_BPS) / (MAX_BPS + swapBonusPctBps));
         return _debtToColl(debtAmountOut - discount, price, 1e18);
     }
@@ -155,8 +168,11 @@ abstract contract FeeConverterBase is TokenRecovery {
     ) public virtual whenEnabled returns (uint256 amountOut) {
         amountOut = getSwapDebtForCollAmountOut(outputToken, amountIn);
         require(amountOut >= minAmountOut, "DFM: Slippage");
+
         stableCoin.transferFrom(msg.sender, address(this), amountIn);
         outputToken.safeTransfer(msg.sender, amountOut);
+
+        emit SwapTokens(msg.sender, address(stableCoin), address(outputToken), amountIn, amountOut);
         return amountOut;
     }
 
@@ -164,8 +180,8 @@ abstract contract FeeConverterBase is TokenRecovery {
         @notice Purchase `stableCoin` using native gas tokens
         @dev Native gas is sent to the bridge relay to fund protocol
              bridge messages. The swap is only possible when the bridge
-             has less than `minRelayBalance`, and then only for up to
-             `maxRelaySwapDebtAmount` in `stableCoin`.
+             has less than `relayMinBalance`, and then only for up to
+             `relayMaxSwapDebtAmount` in `stableCoin`.
         @param amountIn Amount of native gas token in. Must be the same
                         amount that is sent in the call.
         @param minAmountOut Minimum amount of `stableCoin` to receive
@@ -184,6 +200,14 @@ abstract contract FeeConverterBase is TokenRecovery {
         require(success, "DFM: Transfer to relay failed");
 
         stableCoin.transfer(msg.sender, amountOut);
+
+        emit SwapTokens(
+            msg.sender,
+            0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE,
+            address(stableCoin),
+            amountIn,
+            amountOut
+        );
         return amountOut;
     }
 
@@ -193,7 +217,7 @@ abstract contract FeeConverterBase is TokenRecovery {
         @notice Enable or disable swaps and bridging
      */
     function setIsEnabled(bool _isEnabled) external onlyOwner {
-        isEnabled = _isEnabled;
+        _setIsEnabled(_isEnabled);
     }
 
     /**
@@ -201,7 +225,7 @@ abstract contract FeeConverterBase is TokenRecovery {
         @dev The aggregator receives converted protocol fees from all chains.
      */
     function setPrimaryChainFeeAggregator(address _primaryChainFeeAggregator) external onlyOwner {
-        primaryChainFeeAggregator = _primaryChainFeeAggregator;
+        _setPrimaryChainFeeAggregator(_primaryChainFeeAggregator);
     }
 
     /**
@@ -209,8 +233,7 @@ abstract contract FeeConverterBase is TokenRecovery {
                 `swapDebtForColl` or `swapNativeForDebt`. Expressed in BPS.
      */
     function setSwapBonusPctBps(uint16 _swapBonusPctBps) external onlyOwner {
-        require(_swapBonusPctBps <= MAX_BPS, "DFM: pct > MAX_PCT");
-        swapBonusPctBps = _swapBonusPctBps;
+        _setSwapBonusPctBps(_swapBonusPctBps);
     }
 
     /**
@@ -218,8 +241,8 @@ abstract contract FeeConverterBase is TokenRecovery {
                 when calling `swapDebtForColl` or `swapNativeForDebt`, expressed
                 as an equivalent amount of `stableCoin`.
      */
-    function setMaxSwapBonusAmount(uint256 _maxSwapBonusAmount) external onlyOwner {
-        maxSwapBonusAmount = _maxSwapBonusAmount;
+    function setSwapMaxBonusAmount(uint256 _swapMaxBonusAmount) external onlyOwner {
+        _setSwapMaxBonusAmount(_swapMaxBonusAmount);
     }
 
     /**
@@ -227,15 +250,15 @@ abstract contract FeeConverterBase is TokenRecovery {
                 Calls to `swapNativeForDebt` are only possible when the balance
                 goes below this amount.
      */
-    function setMinRelayBalance(uint256 _minRelayBalance) external onlyOwner {
-        minRelayBalance = _minRelayBalance;
+    function setRelayMinBalance(uint256 _relayMinBalance) external onlyOwner {
+        _setRelayMinBalance(_relayMinBalance);
     }
 
     /**
         @notice Set the max `stableCoin` amount to receive when calling `swapNativeForDebt`.
      */
-    function setMaxRelaySwapDebtAmount(uint256 _maxRelaySwapDebtAmount) external onlyOwner {
-        maxRelaySwapDebtAmount = _maxRelaySwapDebtAmount;
+    function setRelayMaxSwapDebtAmount(uint256 _relayMaxSwapDebtAmount) external onlyOwner {
+        _setRelayMaxSwapDebtAmount(_relayMaxSwapDebtAmount);
     }
 
     // --- internal functions ---
@@ -246,5 +269,36 @@ abstract contract FeeConverterBase is TokenRecovery {
 
     function _collToDebt(uint256 amount, uint256 price, uint256 precision) internal pure returns (uint256) {
         return (amount * price) / precision;
+    }
+
+    function _setIsEnabled(bool _isEnabled) internal {
+        isEnabled = _isEnabled;
+        emit SetIsEnabled(_isEnabled);
+    }
+
+    function _setPrimaryChainFeeAggregator(address _primaryChainFeeAggregator) internal {
+        primaryChainFeeAggregator = _primaryChainFeeAggregator;
+        emit SetPrimaryChainFeeAggregator(_primaryChainFeeAggregator);
+    }
+
+    function _setSwapBonusPctBps(uint16 _swapBonusPctBps) internal {
+        require(_swapBonusPctBps <= MAX_BPS, "DFM: pct > MAX_PCT");
+        swapBonusPctBps = _swapBonusPctBps;
+        emit setSwapBonusPct(_swapBonusPctBps);
+    }
+
+    function _setSwapMaxBonusAmount(uint256 _swapMaxBonusAmount) internal {
+        swapMaxBonusAmount = _swapMaxBonusAmount;
+        emit SetSwapMaxBonusAmount(_swapMaxBonusAmount);
+    }
+
+    function _setRelayMinBalance(uint256 _relayMinBalance) internal {
+        relayMinBalance = _relayMinBalance;
+        emit SetRelayMinBalance(_relayMinBalance);
+    }
+
+    function _setRelayMaxSwapDebtAmount(uint256 _relayMaxSwapDebtAmount) internal {
+        relayMaxSwapDebtAmount = _relayMaxSwapDebtAmount;
+        emit SetRelayMaxSwapDebtAmount(_relayMaxSwapDebtAmount);
     }
 }

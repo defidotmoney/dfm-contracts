@@ -17,7 +17,7 @@ def test_amount_out(price, converter, collateral):
 
 def test_amount_out_max_bonus(price, converter, collateral):
     amount_out = converter.getSwapDebtForCollAmountOut(collateral, 14_000 * 10**18)
-    adjusted_in = 14_000 * 10**18 + converter.maxSwapBonusAmount()
+    adjusted_in = 14_000 * 10**18 + converter.swapMaxBonusAmount()
     assert amount_out == adjusted_in * 10 ** collateral.decimals() // price
 
 

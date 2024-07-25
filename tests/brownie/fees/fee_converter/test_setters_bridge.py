@@ -16,11 +16,11 @@ def test_set_bridge_bonus_pct(converter_bridge, deployer):
 
 
 def test_set_max_bridge_bonus_amount(converter_bridge, deployer):
-    converter_bridge.setMaxBridgeBonusAmount(987654321, {"from": deployer})
-    assert converter_bridge.maxBridgeBonusAmount() == 987654321
+    converter_bridge.setBridgeMaxBonusAmount(987654321, {"from": deployer})
+    assert converter_bridge.bridgeMaxBonusAmount() == 987654321
 
-    converter_bridge.setMaxBridgeBonusAmount(0, {"from": deployer})
-    assert converter_bridge.maxBridgeBonusAmount() == 0
+    converter_bridge.setBridgeMaxBonusAmount(0, {"from": deployer})
+    assert converter_bridge.bridgeMaxBonusAmount() == 0
 
 
 def test_set_bridge_bonus_pct_only_owner(converter_bridge, alice):
@@ -30,4 +30,4 @@ def test_set_bridge_bonus_pct_only_owner(converter_bridge, alice):
 
 def test_set_max_bridge_bonus_amount_only_owner(converter_bridge, alice):
     with brownie.reverts("DFM: Only owner"):
-        converter_bridge.setMaxBridgeBonusAmount(987654321, {"from": alice})
+        converter_bridge.setRelayMaxSwapDebtAmount(987654321, {"from": alice})

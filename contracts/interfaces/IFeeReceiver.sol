@@ -7,6 +7,8 @@ pragma solidity ^0.8.0;
          must implement this interface.
  */
 interface IFeeReceiver {
+    event NotifyNewFees(uint256 amountProcessed);
+
     /**
         @notice Get the current native fee amount required to call `notifyNewFees`
         @dev Fee receivers that do not perform bridge actions should return zero.

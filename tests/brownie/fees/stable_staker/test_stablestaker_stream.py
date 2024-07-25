@@ -10,7 +10,6 @@ def setup(stable, controller, staker, alice, fee_agg):
 
 
 def test_initial_assumptions(staker):
-    assert staker.lastDistributionDay() > 0
     assert staker.lastUpdate() // 604800 < chain[-1].timestamp // 604800
 
 

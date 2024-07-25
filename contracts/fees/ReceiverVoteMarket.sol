@@ -55,12 +55,13 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
     function notifyNewFees(uint256) external payable {
         require(msg.sender == feeAggregator, "DFM: Only feeAggregator");
 
+        uint256 total = stableCoin.balanceOf(address(this));
         address[] memory gauges = getGaugeList();
         uint256 length = gauges.length;
-        if (length == 0) return;
-
-        uint256 total = stableCoin.balanceOf(address(this));
-        if (total < MIN_TOTAL_REWARD) return;
+        if (length == 0 || total < MIN_TOTAL_REWARD) {
+            emit NotifyNewFees(0);
+            return;
+        }
 
         uint256 totalAlloc = totalAllocationPoints;
 
@@ -101,6 +102,7 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
             (bool success, ) = msg.sender.call{ value: msg.value }("");
             require(success, "DFM: Gas refund transfer failed");
         }
+        emit NotifyNewFees(total);
     }
 
     function setExclusionList(address[] calldata accounts, bool isExcluded) external onlyOwner {

@@ -50,5 +50,6 @@ contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
 
         votium.depositUnevenSplitGaugesSimple(address(stableCoin), gauges, amounts);
         emit IncentivesAdded(gauges, amounts);
+        emit NotifyNewFees(total);
     }
 }

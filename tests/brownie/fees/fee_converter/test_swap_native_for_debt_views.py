@@ -13,7 +13,7 @@ def price(request, dummy_oracle, deployer):
 def test_initial_assumptions(controller, converter, mock_bridge_relay, core, weth, price):
     assert controller.get_oracle_price(weth) == price
     assert core.bridgeRelay() == mock_bridge_relay
-    assert converter.minRelayBalance() == 10**10
+    assert converter.relayMinBalance() == 10**10
     assert mock_bridge_relay.balance() == 0
     assert converter.canSwapNativeForDebt()
 
@@ -36,13 +36,13 @@ def test_amount_in(price, converter):
 
 
 def test_amount_in_max(price, converter):
-    max_debt = converter.maxRelaySwapDebtAmount()
+    max_debt = converter.relayMaxSwapDebtAmount()
     amount_in = converter.getSwapNativeForDebtAmountIn(max_debt)
     assert abs(amount_in - (max_debt * 10**18 * 10000 // price // 10100)) <= (10**18 // price)
 
 
 def test_amount_in_exceeds_max(converter):
-    max_debt = converter.maxRelaySwapDebtAmount()
+    max_debt = converter.relayMaxSwapDebtAmount()
     assert converter.getSwapNativeForDebtAmountIn(max_debt + 1) == 0
 
 
@@ -51,13 +51,13 @@ def test_amount_out(price, converter):
 
 
 def test_amount_out_max(price, converter):
-    max_debt = converter.maxRelaySwapDebtAmount()
+    max_debt = converter.relayMaxSwapDebtAmount()
     expected_in = (max_debt * 10**18 * 10000 // price // 10100) + max(10**18 // price, 1)
     amount_out = converter.getSwapNativeForDebtAmountOut(expected_in)
     assert max_debt - (price // 10**18 + 1) <= amount_out <= max_debt
 
 
 def test_amount_out_exceeds_max(price, converter):
-    max_debt = converter.maxRelaySwapDebtAmount()
+    max_debt = converter.relayMaxSwapDebtAmount()
     expected_in = (max_debt * 10**18 * 10000 // price // 10100) + max(10**18 // price, 1)
     assert converter.getSwapNativeForDebtAmountOut(expected_in + 1) == 0

@@ -30,9 +30,9 @@ contract FeeConverter is FeeConverterBase {
         address _primaryChainFeeAggregator,
         address _wrappedNativeToken,
         uint16 _swapBonusPctBps,
-        uint256 _maxSwapBonusAmount,
-        uint256 _minRelayBalance,
-        uint256 _maxRelaySwapDebtAmount
+        uint256 _swapMaxBonusAmount,
+        uint256 _relayMinBalance,
+        uint256 _relayMaxSwapDebtAmount
     )
         FeeConverterBase(
             _core,
@@ -41,9 +41,9 @@ contract FeeConverter is FeeConverterBase {
             _primaryChainFeeAggregator,
             _wrappedNativeToken,
             _swapBonusPctBps,
-            _maxSwapBonusAmount,
-            _minRelayBalance,
-            _maxRelaySwapDebtAmount
+            _swapMaxBonusAmount,
+            _relayMinBalance,
+            _relayMaxSwapDebtAmount
         )
     {}
 
