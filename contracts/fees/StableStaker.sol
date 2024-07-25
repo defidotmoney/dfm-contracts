@@ -54,7 +54,6 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     event Cooldown(address indexed caller, uint256 assets, uint256 shares, uint256 cooldownEnd);
     event Unstake(address indexed owner, address indexed receiver, uint256 assets);
 
-    event WeeklyFeesReceived(uint256 amount);
     event NewRewardPeriod(uint256 day, uint256 total, uint256 stakerAmount, uint256 govAmount);
 
     event CooldownDurationUpdated(uint32 cooldownDuration);
@@ -213,14 +212,14 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         uint256 updateDays = getDay() - (getWeek() * 7) + 1;
         uint256 newAmount = (weekAmount / 7) * updateDays;
 
-        emit WeeklyFeesReceived(weekAmount);
-
         _setNewStream(newAmount, residualAmount, getDay());
 
         if (msg.value != 0) {
             (bool success, ) = msg.sender.call{ value: msg.value }("");
             require(success, "DFM: Gas refund transfer failed");
         }
+
+        emit NotifyNewFees(weekAmount);
     }
 
     function setCooldownDuration(uint32 _cooldownDuration) external onlyOwner {

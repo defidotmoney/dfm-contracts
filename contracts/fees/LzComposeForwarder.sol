@@ -79,13 +79,17 @@ contract LzComposeForwarder is TokenRecovery, SystemStart, IFeeReceiver {
                 SendParam memory params = _getSendParams(amount);
                 MessagingFee memory fee = MessagingFee(address(this).balance, 0);
                 stableCoin.send{ value: address(this).balance }(params, fee, msg.sender);
+
+                emit NotifyNewFees(amount);
                 return;
             }
         }
+
         if (msg.value != 0) {
             (bool success, ) = msg.sender.call{ value: msg.value }("");
             require(success, "DFM: Gas refund transfer failed");
         }
+        emit NotifyNewFees(0);
     }
 
     function setRemoteReceiver(IFeeReceiverLzCompose receiver, uint32 eid) external onlyOwner {

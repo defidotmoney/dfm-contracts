@@ -23,7 +23,17 @@ contract FeeConverterWithBridge is FeeConverterBase {
     uint32 public immutable primaryId;
 
     uint16 public bridgeBonusPctBps;
-    uint256 public maxBridgeBonusAmount;
+    uint128 public bridgeMaxBonusAmount;
+
+    event BridgeDebt(
+        address indexed caller,
+        address indexed remoteReceiver,
+        uint256 bridgeAmount,
+        uint256 callerReward
+    );
+
+    event SetBridgeBonusPct(uint256 bps);
+    event SetBridgeMaxBonusAmount(uint256 amount);
 
     constructor(
         address _core,
@@ -32,12 +42,12 @@ contract FeeConverterWithBridge is FeeConverterBase {
         address _primaryChainFeeAggregator,
         address _wrappedNativeToken,
         uint16 _swapBonusPctBps,
-        uint256 _maxSwapBonusAmount,
-        uint256 _minRelayBalance,
-        uint256 _maxRelaySwapDebtAmount,
+        uint256 _swapMaxBonusAmount,
+        uint256 _relayMinBalance,
+        uint256 _relayMaxSwapDebtAmount,
         uint32 _primaryId,
         uint16 _bridgeBonusPctBps,
-        uint256 _maxBridgeBonusAmount
+        uint128 _bridgeMaxBonusAmount
     )
         FeeConverterBase(
             _core,
@@ -46,14 +56,14 @@ contract FeeConverterWithBridge is FeeConverterBase {
             _primaryChainFeeAggregator,
             _wrappedNativeToken,
             _swapBonusPctBps,
-            _maxSwapBonusAmount,
-            _minRelayBalance,
-            _maxRelaySwapDebtAmount
+            _swapMaxBonusAmount,
+            _relayMinBalance,
+            _relayMaxSwapDebtAmount
         )
     {
         primaryId = _primaryId;
         bridgeBonusPctBps = _bridgeBonusPctBps;
-        maxBridgeBonusAmount = _maxBridgeBonusAmount;
+        bridgeMaxBonusAmount = _bridgeMaxBonusAmount;
     }
 
     receive() external payable {}
@@ -64,7 +74,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
     function getBridgeDebtReward() public view returns (uint256 debtReward) {
         uint256 amount = stableCoin.balanceOf(address(this));
         debtReward = (amount * bridgeBonusPctBps) / MAX_BPS;
-        if (debtReward > maxBridgeBonusAmount) debtReward = maxBridgeBonusAmount;
+        if (debtReward > bridgeMaxBonusAmount) debtReward = bridgeMaxBonusAmount;
 
         return debtReward;
     }
@@ -79,7 +89,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
 
         uint256 amount = stableCoin.balanceOf(address(this));
         uint256 bonus = (amount * bridgeBonusPctBps) / MAX_BPS;
-        if (bonus > maxBridgeBonusAmount) bonus = maxBridgeBonusAmount;
+        if (bonus > bridgeMaxBonusAmount) bonus = bridgeMaxBonusAmount;
 
         return stableCoin.quoteSimple(primaryId, receiver, amount - bonus);
     }
@@ -91,7 +101,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
                 receiver on the primary chain.
         @dev Only callable on non-primary chains. The caller is incentivized
              with `bridgeBonusPctBps` percent of the stables bridged, up to a
-             maximum of `maxBridgeBonusAmount`.
+             maximum of `bridgeMaxBonusAmount`.
      */
     function bridgeDebt() external payable whenEnabled {
         address receiver = primaryChainFeeAggregator;
@@ -110,6 +120,7 @@ contract FeeConverterWithBridge is FeeConverterBase {
             (bool success, ) = msg.sender.call{ value: remaining }("");
             require(success, "DFM: Gas refund transfer failed");
         }
+        emit BridgeDebt(msg.sender, receiver, amount - reward, reward);
     }
 
     // --- owner-only external functions ---
@@ -121,12 +132,14 @@ contract FeeConverterWithBridge is FeeConverterBase {
     function setBridgeBonusPctBps(uint16 _bridgeBonusPctBps) external onlyOwner {
         require(_bridgeBonusPctBps <= MAX_BPS, "DFM: pct > MAX_PCT");
         bridgeBonusPctBps = _bridgeBonusPctBps;
+        emit SetBridgeBonusPct(_bridgeBonusPctBps);
     }
 
     /**
         @notice Set the max `stableCoin` amount paid as a bonus when calling `bridgeDebt`.
      */
-    function setMaxBridgeBonusAmount(uint256 _maxBridgeBonusAmount) external onlyOwner {
-        maxBridgeBonusAmount = _maxBridgeBonusAmount;
+    function setBridgeMaxBonusAmount(uint128 _bridgeMaxBonusAmount) external onlyOwner {
+        bridgeMaxBonusAmount = _bridgeMaxBonusAmount;
+        emit SetBridgeMaxBonusAmount(_bridgeMaxBonusAmount);
     }
 }

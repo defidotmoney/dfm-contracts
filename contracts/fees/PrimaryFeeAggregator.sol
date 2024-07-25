@@ -30,6 +30,12 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
         uint256 maximumAmount; // Maximum amount sent each week. Set to 0 for no limit.
     }
 
+    event ProcessWeeklyDistribution(address indexed caller, uint256 distroAmount, uint256 callerIncentive);
+    event AddPriorityReceiver(IFeeReceiver receiver, uint256 pctInBps, uint256 maxAmount);
+    event RemovePriorityReceiver(IFeeReceiver receiver);
+    event SetFallbackReceiver(IFeeReceiver receiver);
+    event SetCallerIncentive(uint256 amount);
+
     constructor(address _core, IERC20 _stable, uint256 _callerIncentive) TokenRecovery(_core) SystemStart(_core) {
         stableCoin = _stable;
         callerIncentive = _callerIncentive;
@@ -71,19 +77,19 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
         lastDistributionWeek = uint16(getWeek());
 
         uint256 initialAmount = stableCoin.balanceOf(address(this));
-        uint256 amount = callerIncentive;
-        require(initialAmount > amount * 2, "DFM: Nothing to distribute");
+        uint256 callerIncentive_ = callerIncentive;
+        require(initialAmount > callerIncentive_ * 2, "DFM: Nothing to distribute");
 
         // transfer incentive to the caller
-        if (amount > 0) {
-            stableCoin.transfer(msg.sender, amount);
-            initialAmount -= amount;
+        if (callerIncentive_ > 0) {
+            stableCoin.transfer(msg.sender, callerIncentive_);
+            initialAmount -= callerIncentive_;
         }
 
         uint256 length = priorityReceivers.length;
         for (uint256 i = 0; i < length; i++) {
             PriorityReceiver memory p = priorityReceivers[i];
-            amount = (initialAmount * p.pctInBps) / MAX_BPS;
+            uint256 amount = (initialAmount * p.pctInBps) / MAX_BPS;
             if (p.maximumAmount != 0 && amount > p.maximumAmount) amount = p.maximumAmount;
             stableCoin.transfer(address(p.target), amount);
             p.target.notifyNewFees{ value: address(this).balance }(amount);
@@ -91,7 +97,7 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
 
         // we fetch the balance again so that priority receivers have
         // the option to return a portion of their received balance
-        amount = stableCoin.balanceOf(address(this));
+        uint256 amount = stableCoin.balanceOf(address(this));
         if (amount > 0) {
             stableCoin.transfer(address(fallbackReceiver), amount);
             fallbackReceiver.notifyNewFees{ value: address(this).balance }(amount);
@@ -101,6 +107,8 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
             (bool success, ) = msg.sender.call{ value: address(this).balance }("");
             require(success, "DFM: Gas refund transfer failed");
         }
+
+        emit ProcessWeeklyDistribution(msg.sender, initialAmount, callerIncentive_);
     }
 
     // --- owner-only external functions ---
@@ -116,6 +124,7 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
         for (uint256 i = 0; i < length; i++) {
             totalPct += _receivers[i].pctInBps;
             priorityReceivers.push(_receivers[i]);
+            emit AddPriorityReceiver(_receivers[i].target, _receivers[i].pctInBps, _receivers[i].maximumAmount);
         }
         require(totalPct <= MAX_BPS, "DFM: priority receiver pct > 100");
         totalPriorityReceiverPct = uint16(totalPct);
@@ -128,10 +137,18 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
     function removePriorityReceiver(uint256 idx) external onlyOwner {
         uint256 maxIdx = priorityReceivers.length - 1;
         totalPriorityReceiverPct -= priorityReceivers[idx].pctInBps;
+        IFeeReceiver receiver;
+
         if (idx < maxIdx) {
+            receiver = priorityReceivers[idx].target;
             priorityReceivers[idx] = priorityReceivers[maxIdx];
+        } else {
+            receiver = priorityReceivers[maxIdx].target;
         }
+
         priorityReceivers.pop();
+
+        emit RemovePriorityReceiver(receiver);
     }
 
     /**
@@ -142,6 +159,7 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
      */
     function setFallbackReceiver(IFeeReceiver _fallbackReceiver) external onlyOwner {
         fallbackReceiver = _fallbackReceiver;
+        emit SetFallbackReceiver(_fallbackReceiver);
     }
 
     /**
@@ -152,5 +170,6 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
      */
     function setCallerIncentive(uint256 _callerIncentive) external onlyOwner {
         callerIncentive = _callerIncentive;
+        emit SetCallerIncentive(_callerIncentive);
     }
 }

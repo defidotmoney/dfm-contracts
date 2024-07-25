@@ -19,18 +19,18 @@ def test_set_swap_bonus_pct(converter, deployer):
 
 
 def test_set_max_swap_bonus_amount(converter, deployer):
-    converter.setMaxSwapBonusAmount(12345, {"from": deployer})
-    assert converter.maxSwapBonusAmount() == 12345
+    converter.setSwapMaxBonusAmount(12345, {"from": deployer})
+    assert converter.swapMaxBonusAmount() == 12345
 
 
 def test_set_min_relay_balance(converter, deployer):
-    converter.setMinRelayBalance(88888, {"from": deployer})
-    assert converter.minRelayBalance() == 88888
+    converter.setRelayMinBalance(88888, {"from": deployer})
+    assert converter.relayMinBalance() == 88888
 
 
 def test_set_max_relay_swap_debt_amount(converter, deployer):
-    converter.setMaxRelaySwapDebtAmount(777, {"from": deployer})
-    assert converter.maxRelaySwapDebtAmount() == 777
+    converter.setRelayMaxSwapDebtAmount(777, {"from": deployer})
+    assert converter.relayMaxSwapDebtAmount() == 777
 
 
 def test_set_token_approval(converter, collateral, alice, deployer):
@@ -60,17 +60,17 @@ def test_set_swap_bonus_pct_onlyowner(converter, alice):
 
 def test_set_max_swap_bonus_amount_onlyowner(converter, alice):
     with brownie.reverts("DFM: Only owner"):
-        converter.setMaxSwapBonusAmount(12345, {"from": alice})
+        converter.setSwapMaxBonusAmount(12345, {"from": alice})
 
 
 def test_set_min_relay_balance_onlyowner(converter, alice):
     with brownie.reverts("DFM: Only owner"):
-        converter.setMinRelayBalance(88888, {"from": alice})
+        converter.setRelayMinBalance(88888, {"from": alice})
 
 
 def test_set_max_relay_swap_debt_amount_onlyowner(converter, alice):
     with brownie.reverts("DFM: Only owner"):
-        converter.setMaxRelaySwapDebtAmount(777, {"from": alice})
+        converter.setRelayMaxSwapDebtAmount(777, {"from": alice})
 
 
 def test_set_token_approval_onlyowner(converter, collateral, alice):
