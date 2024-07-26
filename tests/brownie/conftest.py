@@ -10,10 +10,16 @@ market_loan_discount = 9 * 10**16  # 9%; +2% from 4x 1% bands = 100% - 11% = 89%
 market_liquidation_discount = 6 * 10**16  # 6%
 
 
-@pytest.fixture(scope="function", autouse=True)
-def base_setup(chain, fn_isolation):
+@pytest.fixture(scope="module", autouse=True)
+def _module_base_setup(chain, module_isolation):
     ts = ((chain.time() // 604800) + 1) * 604800
     chain.mine(timestamp=ts)
+    pass
+
+
+@pytest.fixture(scope="function", autouse=True)
+def _base_setup(fn_isolation):
+    pass
 
 
 @pytest.fixture(scope="module")

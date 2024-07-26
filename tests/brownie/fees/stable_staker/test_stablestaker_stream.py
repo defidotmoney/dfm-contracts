@@ -8,6 +8,8 @@ def setup(stable, controller, staker, alice, fee_agg):
         stable.mint(acct, 10**30, {"from": controller})
         stable.approve(staker, 2**256 - 1, {"from": acct})
 
+    chain.mine(timedelta=604800)
+
 
 def test_initial_assumptions(staker):
     assert staker.lastUpdate() // 604800 < chain[-1].timestamp // 604800

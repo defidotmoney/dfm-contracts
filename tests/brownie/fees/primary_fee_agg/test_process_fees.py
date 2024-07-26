@@ -10,6 +10,8 @@ def setup(stable, controller, fee_agg, mock_fee_receiver, bob, deployer):
     stable.transfer(fee_agg, 10**24, {"from": bob})
     fee_agg.setFallbackReceiver(mock_fee_receiver, {"from": deployer})
 
+    chain.mine(timedelta=604800)
+
 
 @pytest.mark.parametrize("native_fee", [0, 10**12])
 def test_fallback_receiver_only(fee_agg, stable, mock_fee_receiver, alice, native_fee):

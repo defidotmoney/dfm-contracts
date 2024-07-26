@@ -34,20 +34,20 @@ def test_set_cooldown_duration_max(staker, deployer):
 
 
 def test_set_cooldown_duration_onlyowner(staker, alice):
-    with brownie.reverts("DFM: Only owner"):
+    with brownie.reverts("Ownable: caller is not the owner"):
         staker.setCooldownDuration(12345, {"from": alice})
 
 
 def test_set_fee_agg_onlyowner(staker, alice):
-    with brownie.reverts("DFM: Only owner"):
+    with brownie.reverts("Ownable: caller is not the owner"):
         staker.setFeeAggregator(alice, {"from": alice})
 
 
 def test_set_reward_reg_onlyowner(staker, alice):
-    with brownie.reverts("DFM: Only owner"):
+    with brownie.reverts("Ownable: caller is not the owner"):
         staker.setRewardRegulator(alice, {"from": alice})
 
 
 def test_set_gov_staker_onlyowner(staker, alice):
-    with brownie.reverts("DFM: Only owner"):
+    with brownie.reverts("Ownable: caller is not the owner"):
         staker.setGovStaker(alice, {"from": alice})
