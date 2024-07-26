@@ -2,11 +2,11 @@
 
 pragma solidity 0.8.25;
 
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { CoreOwnable } from "../base/dependencies/CoreOwnable.sol";
 import { SystemStart } from "../base/dependencies/SystemStart.sol";
+import { Peer } from "../bridge/dependencies/DataStructures.sol";
+import { BridgeTokenBase } from "../bridge/dependencies/BridgeTokenBase.sol";
 import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
 import { IStakerRewardRegulator } from "../interfaces/IStakerRewardRegulator.sol";
 
@@ -17,12 +17,14 @@ import { IStakerRewardRegulator } from "../interfaces/IStakerRewardRegulator.sol
              * Ethena Labs: StakedUSDeV2
              * Zefram: xERC20
     @notice Allows users to stake stablecoins to earn a portion of protocol yield.
-    @dev This contract mostly follows the ERC4626 standard, however it breaks
-         compatibility by lacking `withdraw` and `redeem` functions. Withdrawals
-         are possible by calling `cooldownAssets` or `cooldownShares`, waiting
-         for the `cooldownDuration` to pass, and then calling `unstake`.
+    @dev * This contract mostly follows the ERC4626 standard, however it breaks
+           compatibility by lacking `withdraw` and `redeem` functions. Withdrawals
+           are possible by calling `cooldownAssets` or `cooldownShares`, waiting
+           for the `cooldownDuration` to pass, and then calling `unstake`.
+         * Only deployed on the primary chain. Use `BridgeTokenSimple` as a peer
+           on non-primary chains.
  */
-contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
+contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
     uint256 public constant maxDeposit = type(uint256).max;
     uint256 public constant maxMint = type(uint256).max;
     uint256 public constant MAX_COOLDOWN_DURATION = 4 weeks;
@@ -68,8 +70,11 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
         IStakerRewardRegulator _rewardRegulator,
         string memory _name,
         string memory _symbol,
-        uint32 _cooldownDuration
-    ) ERC20(_name, _symbol) CoreOwnable(_core) SystemStart(_core) {
+        uint32 _cooldownDuration,
+        address _lzEndpoint,
+        bytes memory _defaultOptions,
+        Peer[] memory _tokenPeers
+    ) BridgeTokenBase(_core, _name, _symbol, _lzEndpoint, _defaultOptions, _tokenPeers) SystemStart(_core) {
         asset = _stable;
         feeAggregator = _feeAggregator;
         rewardRegulator = _rewardRegulator;
@@ -94,6 +99,7 @@ contract StableStaker is IFeeReceiver, ERC20, CoreOwnable, SystemStart {
     }
 
     function convertToShares(uint256 assets) public view returns (uint256) {
+        // TODO consider bridged supply
         uint256 supply = totalSupply();
 
         return supply == 0 ? assets : Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Down);
