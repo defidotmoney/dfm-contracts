@@ -9,6 +9,8 @@ def setup(stable, controller, fee_agg, mock_fee_receiver, bob, deployer):
     stable.mint(bob, 10**24, {"from": controller})
     fee_agg.setFallbackReceiver(mock_fee_receiver, {"from": deployer})
 
+    chain.mine(timedelta=604800)
+
 
 def test_same_week(fee_agg, stable, alice, bob):
     stable.transfer(fee_agg, 10**21, {"from": bob})

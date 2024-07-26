@@ -108,7 +108,9 @@ def fee_agg(PrimaryFeeAggregator, core, stable, deployer):
 
 
 @pytest.fixture(scope="module")
-def staker(StableStaker, core, stable, fee_agg, reward_regulator, deployer):
+def staker(
+    StableStaker, core, stable, fee_agg, reward_regulator, mock_endpoint, lz_default_opts, deployer
+):
     return StableStaker.deploy(
         core,
         stable,
@@ -117,6 +119,9 @@ def staker(StableStaker, core, stable, fee_agg, reward_regulator, deployer):
         "StableStaker",
         "SS",
         COOLDOWN_PERIOD,
+        mock_endpoint,
+        lz_default_opts,
+        [],
         {"from": deployer},
     )
 
