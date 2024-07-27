@@ -22,7 +22,7 @@ from brownie import (
 from brownie import (
     AggregateChainedOracle,
     ChainlinkEMA,
-    DummyPriceOracle,
+    PriceOracleMock,
     Layer2UptimeOracle,
 )
 
@@ -37,6 +37,7 @@ from brownie import (
     MarketViews,
 )
 
+from scripts.utils import deploylog
 from scripts.utils.connection import ConnectionManager
 from scripts.utils.createx import deploy_deterministic
 from scripts.utils.float2int import to_int
@@ -70,10 +71,11 @@ def main():
     deployer = "0xbADbABEFA66BfA6e01C4918229ea65e20BbC79e2"
 
     network_name = network.show_active()
-    deploy_log = Path(f"./deployments/logs/{network_name}.yaml")
-    if network_name.endswith("-fork"):
+    is_forked = network_name.endswith("-fork")
+
+    if is_forked:
         network_name = network_name[:-5]
-    elif deploy_log.exists():
+    elif deploylog.load(network_name):
         raise Exception("Deploy log exists for this chain! Delete if you wish to continue.")
 
     # Load deployment config for the target network
@@ -83,23 +85,32 @@ def main():
     with Path(f"deployments/config/{network_name}.yaml").open() as fp:
         _recursive_merge(config, yaml.safe_load(fp))
 
-    # Get remote peers for stablecoin
-    stable_peers = []
-    Path("./deployments/logs").mkdir(exist_ok=True)
-    if network_name != config["layerzero"]["primary_network"]:
-        primary_network_name = config["layerzero"]["primary_network"]
-        primary_deploy_log = Path(f"deployments/logs/{primary_network_name}.yaml")
-        if not primary_deploy_log.exists():
-            raise Exception("Missing deploy log for primary chain!")
-        with primary_deploy_log.open() as fp:
-            remote_stable = yaml.safe_load(fp)[config["stablecoin"]["symbol"]]
-        with ConnectionManager(primary_network_name):
-            stable_peers = Contract(remote_stable).getGlobalPeers()
-
     # Initialize required external contracts, in case of a misconfig we fail early
     lz_endpoint = Contract(config["layerzero"]["endpoint"])
     curve_ap = Contract(config["curve"]["address_provider"])
     curve_factory = Contract(curve_ap.get_address(12))
+    lz_eid = lz_endpoint.eid()
+
+    # Get remote peers for stablecoin
+    is_primary_network = network_name == config["layerzero"]["primary_network"]
+    token_peers = {}
+
+    if not is_primary_network:
+        primary_network_name = config["layerzero"]["primary_network"]
+
+        if not deploylog.exists(primary_network_name):
+            raise Exception("Missing deploy log for primary chain!")
+
+        with ConnectionManager(primary_network_name):
+            for name, addr in deploylog.load(primary_network_name)["tokens"].items():
+                peers = Contract(addr).getGlobalPeers()
+
+                if is_forked:
+                    # remove peers for the active chain, to avoid reverting
+                    # if the real deployment has already occured
+                    peers = [i for i in peers if i[0] != lz_eid]
+
+                token_peers[name] = peers
 
     # Deploy core contracts
     core = deploy_deterministic(
@@ -120,7 +131,7 @@ def main():
         config["stablecoin"]["symbol"],
         lz_endpoint,
         config["stablecoin"]["default_options"],
-        stable_peers,
+        token_peers.get(config["stablecoin"]["symbol"], []),
     )
 
     controller = deploy_deterministic(
@@ -152,16 +163,7 @@ def main():
 
     # Write the core deployment addresses to a log file. There are more contracts
     # to deploy, but with this we have enough to plug in our front-end.
-    deployments = {
-        "DFMProtocolCore": core.address,
-        config["stablecoin"]["symbol"]: stable.address,
-        "MainController": controller.address,
-        "AggregateStablePrice": stable_oracle.address,
-        "PegKeeperRegulator": regulator.address,
-        "MarketViews": views.address,
-    }
-    with deploy_log.open("w") as fp:
-        yaml.safe_dump(deployments, fp)
+    deploylog.update(core, stable, controller, stable_oracle, regulator, views)
 
     # Core contract configuration
     controller.set_peg_keeper_regulator(regulator, False, {"from": deployer})
@@ -266,8 +268,8 @@ def main():
             )
 
         elif market_conf["oracle"]["type"] == "dummy":
-            print("WARNING: Deploying DummyPriceOracle - do not use this in prod!")
-            oracle = DummyPriceOracle.deploy(
+            print("WARNING: Deploying PriceOracleMock - do not use this in prod!")
+            oracle = PriceOracleMock.deploy(
                 market_conf["oracle"].get("price", 10**18), {"from": deployer}
             )
 
@@ -293,12 +295,13 @@ def main():
         AMM.at(tx.events["AddMarket"]["amm"])
 
     print("Deployment complete!")
-    print(f" * Core deployment addresses saved at {deploy_log.as_posix()}")
+    print(f" * Core deployment addresses saved at {deploylog.get_path().as_posix()}")
     print(" * Remember to verify source code!")
     if config["whitelist"]:
         print(" * Remember to add approved accounts to the whitelist!")
     else:
         print(" * NOTE: No whitelist active, any account can interact with the system.")
-    if stable_peers:
+    if not is_primary_network:
         print(" * Remember to add the stablecoin as a peer on existing deployments:")
-        print(f'     setPeer({lz_endpoint.eid()}, "0x{to_bytes(stable.address).hex()}")')
+        for token in [stable]:
+            print(f'     {token.symbol()}.setPeer({lz_eid}, "0x{to_bytes(token.address).hex()}")')
