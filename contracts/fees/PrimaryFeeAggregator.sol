@@ -47,6 +47,9 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
         return priorityReceivers.length;
     }
 
+    /**
+        @notice The native gas amount to include when calling `processWeeklyDistribution`
+     */
     function quoteProcessWeeklyDistribution() external view returns (uint256 nativeFee) {
         if (lastDistributionWeek == getWeek()) return 0;
 
@@ -72,6 +75,13 @@ contract PrimaryFeeAggregator is TokenRecovery, SystemStart {
 
     // --- unguarded external functions ---
 
+    /**
+        @notice Distribute accrued fees and notify the receiver contracts
+        @dev * Can be called once per week.
+             * The caller must include at least `quoteProcessWeeklyDistribution` native
+               gas with the call. Any excess gas is refunded.
+             * The caller receives a stableCoin incentive of `callerIncentive`.
+     */
     function processWeeklyDistribution() external payable {
         require(lastDistributionWeek < getWeek(), "DFM: Already distro'd this week");
         lastDistributionWeek = uint16(getWeek());
