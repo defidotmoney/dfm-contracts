@@ -77,6 +77,7 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
             }
 
             if (periodsLeft == 0) {
+                // bounty does not exist or has expired, create a new one
                 bountyId = voteMarket.createBounty(
                     gauge,
                     address(this),
@@ -87,9 +88,11 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
                     getExclusionList(),
                     true
                 );
+                // +1 to bountyId so we can trust that zero == not created
                 bountyIds[gauge] = bountyId + 1;
                 emit BountyCreated(gauge, bountyId);
             } else {
+                // bounty exists and is still active, add rewards and increase the duration
                 uint8 periodIncrease;
                 if (periodsLeft < BOUNTY_PERIODS) periodIncrease = uint8(BOUNTY_PERIODS - periodsLeft);
                 voteMarket.increaseBountyDuration(bountyId, periodIncrease, amount, MAX_PRICE_PER_VOTE);
@@ -105,6 +108,12 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
         emit NotifyNewFees(total);
     }
 
+    /**
+        @notice Add or remove addresses from the exclusion list
+        @dev Excluded addresses are not eligible for any bounties created by
+             this contract. Adding or removing an address only affects future
+             bounties, it does not modify the blacklists of existing bounties.
+     */
     function setExclusionList(address[] calldata accounts, bool isExcluded) external onlyOwner {
         _setExclusionList(accounts, isExcluded);
     }

@@ -145,6 +145,12 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
 
     // --- unguarded external functions ---
 
+    /**
+        @notice Mints shares to the receiver by depositing an exact amount of underlying tokens
+        @param assets Amount of assets to deposit
+        @param receiver Address to mint shares to
+        @return shares Amount of shares minted
+     */
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
         // Check for rounding error since we round down in previewDeposit.
         require((shares = previewDeposit(assets)) != 0, "ZERO_SHARES");
@@ -153,6 +159,12 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
         return shares;
     }
 
+    /**
+        @notice Mints an exact amount of shares to the receiver by depositing underlying tokens
+        @param shares Amount of shares to mint
+        @param receiver Address to mint shares to
+        @return assets Amount of assets deposited
+     */
     function mint(uint256 shares, address receiver) external returns (uint256 assets) {
         _updateDailyStream();
 
@@ -163,7 +175,8 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
 
     /**
         @notice Redeem assets and start a cooldown to claim the underlying asset.
-        @param assets Amount of assets to redeem.
+        @param assets Amount of assets to start cooldown for.
+        @return shares Amount of shares redeemed.
      */
     function cooldownAssets(uint256 assets) external returns (uint256 shares) {
         _updateDailyStream();
@@ -177,6 +190,7 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
     /**
         @notice Redeem shares into assets, and start a cooldown to claim the underlying asset.
         @param shares Amount of shares to redeem.
+        @return assets Amount of assets cooling down.
      */
     function cooldownShares(uint256 shares) external returns (uint256 assets) {
         _updateDailyStream();
