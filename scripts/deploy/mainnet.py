@@ -105,6 +105,11 @@ def main():
             for name, addr in deploylog.load(primary_network_name)["tokens"].items():
                 peers = Contract(addr).getGlobalPeers()
 
+                if is_forked:
+                    # remove peers for the active chain, to avoid reverting
+                    # if the real deployment has already occured
+                    peers = [i for i in peers if i[0] != lz_eid]
+
                 token_peers[name] = peers
 
     # Deploy core contracts
