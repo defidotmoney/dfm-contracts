@@ -44,6 +44,7 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
 
     uint256 public totalStoredAssets;
     uint256 public totalCooldownAssets;
+    uint256 public totalMintedSupply;
 
     mapping(address => AssetCooldown) public cooldowns;
 
@@ -99,14 +100,13 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
     }
 
     function convertToShares(uint256 assets) public view returns (uint256) {
-        // TODO consider bridged supply
-        uint256 supply = totalSupply();
+        uint256 supply = totalMintedSupply;
 
         return supply == 0 ? assets : Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Down);
     }
 
     function convertToAssets(uint256 shares) public view returns (uint256) {
-        uint256 supply = totalSupply();
+        uint256 supply = totalMintedSupply;
 
         return supply == 0 ? shares : Math.mulDiv(shares, totalAssets(), supply, Math.Rounding.Down);
     }
@@ -116,13 +116,13 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
     }
 
     function previewMint(uint256 shares) public view returns (uint256) {
-        uint256 supply = totalSupply();
+        uint256 supply = totalMintedSupply;
 
         return supply == 0 ? shares : Math.mulDiv(shares, totalAssets(), supply, Math.Rounding.Up);
     }
 
     function previewWithdraw(uint256 assets) public view returns (uint256) {
-        uint256 supply = totalSupply();
+        uint256 supply = totalMintedSupply;
 
         return supply == 0 ? assets : Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Up);
     }
@@ -260,6 +260,7 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
         asset.transferFrom(msg.sender, address(this), assets);
 
         _mint(receiver, shares);
+        totalMintedSupply += shares;
         totalStoredAssets += assets;
 
         emit Deposit(msg.sender, receiver, assets, shares);
@@ -276,6 +277,7 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
         });
         totalCooldownAssets = totalCooldownAssets + assets;
         totalStoredAssets = totalStoredAssets - assets;
+        totalMintedSupply -= shares;
 
         _burn(msg.sender, shares);
 
@@ -330,5 +332,15 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
         lastDistributionDay = uint32(day);
 
         emit NewRewardPeriod(day, newAmount, stakerAmount, govAmount);
+    }
+
+    /** @dev Internal function to perform a credit operation. Inherited from `OFT`. */
+    function _credit(
+        address _to,
+        uint256 _amountLD,
+        uint32 _srcEid
+    ) internal override returns (uint256 amountReceivedLD) {
+        amountReceivedLD = super._credit(_to, _amountLD, _srcEid);
+        require(totalSupply() <= totalMintedSupply, "DFM: Oversupply");
     }
 }
