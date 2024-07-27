@@ -5,8 +5,11 @@ pragma solidity 0.8.25;
 import {
     MessagingParams,
     MessagingFee,
-    MessagingReceipt
+    MessagingReceipt,
+    Origin
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import { ILayerZeroReceiver } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import { OFTMsgCodec } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTMsgCodec.sol";
 
 contract LzEndpointMock {
     uint32 public immutable eid;
@@ -43,6 +46,14 @@ contract LzEndpointMock {
     function _assertOptionsType3(bytes calldata _options) internal pure virtual {
         uint16 optionsType = uint16(bytes2(_options[0:2]));
         require(optionsType == 3, "LzEndpointMock: Invalid options");
+    }
+
+    /** @dev Assumes that the token uses 18 decimals */
+    function mockMintTokens(ILayerZeroReceiver token, address receiver, uint32 srcId, uint256 amount) external {
+        bytes32 receiverBytes = OFTMsgCodec.addressToBytes32(receiver);
+        (bytes memory message, ) = OFTMsgCodec.encode(receiverBytes, uint64(amount / 10 ** 12), bytes(""));
+        Origin memory origin = Origin(srcId, OFTMsgCodec.addressToBytes32(address(token)), 0);
+        token.lzReceive(origin, bytes32(0), message, msg.sender, bytes(""));
     }
 
     fallback() external {
