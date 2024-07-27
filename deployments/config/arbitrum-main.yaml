@@ -46,3 +46,6 @@ markets:
 
 chainlink:
   sequencer_uptime: "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"
+
+fees:
+  weth: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
