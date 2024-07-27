@@ -111,7 +111,7 @@ abstract contract BridgeTokenBase is IBridgeTokenBase, OFT {
             uint32 eid = uint32(__eids.at(i));
             _peers[i] = Peer({ eid: eid, peer: peers[eid] });
         }
-        _peers[size] = Peer({ eid: thisId, peer: _addressToBytes32(address(this)) });
+        _peers[size] = Peer({ eid: thisId, peer: OFTMsgCodec.addressToBytes32(address(this)) });
         return _peers;
     }
 
@@ -128,7 +128,11 @@ abstract contract BridgeTokenBase is IBridgeTokenBase, OFT {
         (, uint256 amountReceivedLD) = _debitView(_amount, 0, _eid);
         require(amountReceivedLD > 0, "DFM:T 0 after precision loss");
 
-        (bytes memory message, ) = OFTMsgCodec.encode(_addressToBytes32(_target), _toSD(amountReceivedLD), bytes(""));
+        (bytes memory message, ) = OFTMsgCodec.encode(
+            OFTMsgCodec.addressToBytes32(_target),
+            _toSD(amountReceivedLD),
+            bytes("")
+        );
         return _quote(_eid, message, enforcedOptions[_eid][1], false).nativeFee;
     }
 
@@ -147,7 +151,11 @@ abstract contract BridgeTokenBase is IBridgeTokenBase, OFT {
         (uint256 amountSentLD, uint256 amountReceivedLD) = _debit(msg.sender, _amount, 0, _eid);
         require(amountReceivedLD > 0, "DFM:T 0 after precision loss");
 
-        (bytes memory message, ) = OFTMsgCodec.encode(_addressToBytes32(_target), _toSD(amountReceivedLD), bytes(""));
+        (bytes memory message, ) = OFTMsgCodec.encode(
+            OFTMsgCodec.addressToBytes32(_target),
+            _toSD(amountReceivedLD),
+            bytes("")
+        );
         bytes memory options = enforcedOptions[_eid][1];
 
         // @dev Optionally inspect the message and options depending if the OApp owner has set a msg inspector.
@@ -246,17 +254,12 @@ abstract contract BridgeTokenBase is IBridgeTokenBase, OFT {
         return super._credit(_to, _amountLD, _srcEid);
     }
 
-    /** @dev Convert address to layerzero-formatted bytes32 peer */
-    function _addressToBytes32(address account) internal pure returns (bytes32) {
-        return bytes32(uint256(uint160(account)));
-    }
-
     function _setPeer(uint32 _eid, bytes32 _peer) internal override {
         if (_eid == thisId) {
             // In case of a reconfiguration of many peers, validate that the local
             // peer is correct but do not store it as a remote peer. This way we
             // can safely use the output of `getGlobalPeers` across all chains.
-            require(_addressToBytes32(address(this)) == _peer, "DFM: Incorrect local peer");
+            require(OFTMsgCodec.addressToBytes32(address(this)) == _peer, "DFM: Incorrect local peer");
             return;
         }
 
