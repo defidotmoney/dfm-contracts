@@ -3,8 +3,8 @@
 pragma solidity 0.8.25;
 
 import { IVotium } from "../interfaces/external/IVotium.sol";
-import { IFeeReceiverLzCompose } from "../interfaces/IFeeReceiverLzCompose.sol";
 import { GaugeAllocReceiverBase } from "./dependencies/GaugeAllocReceiverBase.sol";
+import { LzComposeReceiverBase } from "./dependencies/LzComposeReceiverBase.sol";
 
 /**
     @notice Votium Fee Receiver
@@ -12,9 +12,8 @@ import { GaugeAllocReceiverBase } from "./dependencies/GaugeAllocReceiverBase.so
     @dev Receives fees bridged from `LzComposeForwarder` and deposits into Votium
          https://github.com/oo-00/Votium/blob/80eb7fd/contracts/Votium.sol
  */
-contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
+contract VotiumFeeReceiver is LzComposeReceiverBase, GaugeAllocReceiverBase {
     IVotium public immutable votium;
-    address public immutable endpoint;
 
     event IncentivesAdded(address[] gauges, uint256[] amounts);
 
@@ -23,23 +22,22 @@ contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
         address _stable,
         address _votium,
         address _endpoint,
+        address _remoteCaller,
         GaugeAlloc[] memory _gauges
-    ) GaugeAllocReceiverBase(core, _stable, _votium, _gauges) {
+    )
+        LzComposeReceiverBase(_endpoint, _stable, _remoteCaller, false)
+        GaugeAllocReceiverBase(core, _stable, _votium, _gauges)
+    {
         votium = IVotium(_votium);
-        endpoint = _endpoint;
     }
 
-    function lzCompose(address _from, bytes32, bytes calldata, address, bytes calldata) external payable {
-        require(msg.sender == endpoint, "DFM: Only lzEndpoint");
-        require(_from == address(stableCoin), "DFM: Incorrect oApp");
-        require(msg.value == 0, "DFM: msg.value > 0");
-
+    function _notifyNewFees(uint256) internal override returns (uint256) {
         address[] memory gauges = getGaugeList();
         uint256 length = gauges.length;
-        if (length == 0) return;
+        if (length == 0) return 0;
 
         uint256 total = stableCoin.balanceOf(address(this));
-        if (total < MIN_TOTAL_REWARD) return;
+        if (total < MIN_TOTAL_REWARD) return 0;
 
         uint256 totalAlloc = totalAllocationPoints;
 
@@ -50,6 +48,6 @@ contract VotiumFeeReceiver is IFeeReceiverLzCompose, GaugeAllocReceiverBase {
 
         votium.depositUnevenSplitGaugesSimple(address(stableCoin), gauges, amounts);
         emit IncentivesAdded(gauges, amounts);
-        emit NotifyNewFees(total);
+        return total;
     }
 }

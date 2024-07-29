@@ -56,9 +56,8 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
     event Deposit(address indexed caller, address indexed owner, uint256 assets, uint256 shares);
     event Cooldown(address indexed caller, uint256 assets, uint256 shares, uint256 cooldownEnd);
     event Unstake(address indexed owner, address indexed receiver, uint256 assets);
-
     event NewRewardPeriod(uint256 day, uint256 total, uint256 stakerAmount, uint256 govAmount);
-
+    event NotifyNewFees(uint256 amount);
     event CooldownDurationUpdated(uint32 cooldownDuration);
     event FeeAggregatorSet(address feeAggregator);
     event RewardRegulatorSet(IStakerRewardRegulator regulator);
