@@ -4,7 +4,7 @@ pragma solidity 0.8.25;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IVoteMarket } from "../interfaces/external/IVoteMarket.sol";
-import { IFeeReceiver } from "../interfaces/IFeeReceiver.sol";
+import { LocalReceiverBase } from "./dependencies/LocalReceiverBase.sol";
 import { GaugeAllocReceiverBase } from "./dependencies/GaugeAllocReceiverBase.sol";
 
 /**
@@ -13,13 +13,12 @@ import { GaugeAllocReceiverBase } from "./dependencies/GaugeAllocReceiverBase.so
     @dev Receives fees from `PrimaryFeeAggregator` and deposits into VoteMarket
          https://github.com/stake-dao/x-chain-vm/blob/23fe83a/src/Platform.sol
  */
-contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
+contract VoteMarketFeeReceiver is LocalReceiverBase, GaugeAllocReceiverBase {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     uint8 constant BOUNTY_PERIODS = 4;
     uint256 constant MAX_PRICE_PER_VOTE = type(uint256).max;
 
-    address public immutable feeAggregator;
     IVoteMarket public immutable voteMarket;
 
     EnumerableSet.AddressSet private __exclusions;
@@ -37,8 +36,7 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
         address _voteMarket,
         GaugeAlloc[] memory _gauges,
         address[] memory _excluded
-    ) GaugeAllocReceiverBase(core, _stable, _voteMarket, _gauges) {
-        feeAggregator = _feeAggregator;
+    ) LocalReceiverBase(_feeAggregator) GaugeAllocReceiverBase(core, _stable, _voteMarket, _gauges) {
         voteMarket = IVoteMarket(_voteMarket);
 
         _setExclusionList(_excluded, true);
@@ -48,19 +46,12 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
         return __exclusions.values();
     }
 
-    function quoteNotifyNewFees(uint256) external view returns (uint256) {
-        return 0;
-    }
-
-    function notifyNewFees(uint256) external payable {
-        require(msg.sender == feeAggregator, "DFM: Only feeAggregator");
-
+    function _notifyNewFees(uint256) internal override returns (uint256) {
         uint256 total = stableCoin.balanceOf(address(this));
         address[] memory gauges = getGaugeList();
         uint256 length = gauges.length;
         if (length == 0 || total < MIN_TOTAL_REWARD) {
-            emit NotifyNewFees(0);
-            return;
+            return 0;
         }
 
         uint256 totalAlloc = totalAllocationPoints;
@@ -101,11 +92,7 @@ contract VoteMarketFeeReceiver is IFeeReceiver, GaugeAllocReceiverBase {
             emit BountyRewardAdded(gauge, bountyId, amount);
         }
 
-        if (msg.value != 0) {
-            (bool success, ) = msg.sender.call{ value: msg.value }("");
-            require(success, "DFM: Gas refund transfer failed");
-        }
-        emit NotifyNewFees(total);
+        return total;
     }
 
     /**
