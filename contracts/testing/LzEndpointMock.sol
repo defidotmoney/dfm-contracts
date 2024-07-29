@@ -8,8 +8,10 @@ import {
     MessagingReceipt,
     Origin
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import { ILayerZeroComposer } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import { ILayerZeroReceiver } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import { OFTMsgCodec } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTMsgCodec.sol";
+import { OFTComposeMsgCodec } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
 
 contract LzEndpointMock {
     uint32 public immutable eid;
@@ -54,6 +56,16 @@ contract LzEndpointMock {
         (bytes memory message, ) = OFTMsgCodec.encode(receiverBytes, uint64(amount / 10 ** 12), bytes(""));
         Origin memory origin = Origin(srcId, OFTMsgCodec.addressToBytes32(address(token)), 0);
         token.lzReceive(origin, bytes32(0), message, msg.sender, bytes(""));
+    }
+
+    /**
+        @dev Calls `lzCompose` from the endpoint, simulating a compose message
+             from an OFT transfer
+     */
+    function mockLzCompose(address oApp, address sender, ILayerZeroComposer receiver, uint256 amount) external {
+        bytes memory composeMsg = abi.encode(OFTComposeMsgCodec.addressToBytes32(sender));
+        bytes memory message = OFTComposeMsgCodec.encode(0, 101, amount, composeMsg);
+        receiver.lzCompose(oApp, bytes32(0), message, msg.sender, bytes(""));
     }
 
     fallback() external {
