@@ -14,7 +14,7 @@ def votemarket(VoteMarketMock, stable, deployer):
 @pytest.fixture(scope="module")
 def votium_recv(VotiumFeeReceiver, core, votium, stable, mock_endpoint, deployer, alice, bob):
     return VotiumFeeReceiver.deploy(
-        core, stable, votium, mock_endpoint, [(alice, 3), (bob, 7)], {"from": deployer}
+        core, stable, votium, mock_endpoint, bob, [(alice, 3), (bob, 7)], {"from": deployer}
     )
 
 
