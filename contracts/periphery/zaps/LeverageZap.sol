@@ -7,6 +7,7 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuar
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC3156FlashBorrower } from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import { IMainController } from "../../interfaces/IMainController.sol";
+import { IMarketOperator } from "../../interfaces/IMarketOperator.sol";
 import { IBridgeToken } from "../../interfaces/IBridgeToken.sol";
 
 /**
@@ -29,7 +30,8 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         CreateLoan,
         IncreaseLoan,
         DecreaseLoan,
-        CloseLoan
+        CloseLoan,
+        AddColl
     }
 
     mapping(address market => IERC20 collateral) private marketCollaterals;
@@ -145,6 +147,38 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
     }
 
     /**
+        @notice Add collateral to a coll-converted loan to move it out of coll-conversion
+        @dev The router swap should convert the loan's total AMM stablecoin balance, back into collateral.
+             To query the balance call `market.AMM().get_sum_xy(msg.sender)[0]`. No stablecoins or
+             collateral are returned.
+        @param market Address of the market to adjust the loan in
+        @param collAmount Collateral amount provided by the caller and added to the loan
+        @param debtAmount Stablecoin amount provided by the caller, used to repay the loan
+        @param numBands Number of bands to set the loan to
+        @param routingData Odos router swawp calldata
+     */
+    function addCollateral(
+        address market,
+        uint256 collAmount,
+        uint256 debtAmount,
+        uint256 numBands,
+        bytes calldata routingData
+    ) external {
+        IERC20 collateral = _getCollateralOrRevert(market);
+        if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
+
+        uint256 debt = IMarketOperator(market).debt(msg.sender);
+        require(debt > debtAmount);
+        if (debtAmount > 0) {
+            stableCoin.transferFrom(msg.sender, address(this), debtAmount);
+            debt -= debtAmount;
+        }
+
+        bytes memory data = abi.encode(Action.AddColl, msg.sender, market, collateral, numBands, routingData);
+        stableCoin.flashLoan(this, address(stableCoin), debt, data);
+    }
+
+    /**
         @dev This contract assumes that `stableCoin` only ever performs flashloans of itself and
              that the fee charged will always be zero. If you are modifying this contract for use
              with a different flashlender, consider if whether implementation requires validation
@@ -165,6 +199,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         else if (action == Action.IncreaseLoan) _flashIncrease(amount, data);
         else if (action == Action.DecreaseLoan) _flashDecrease(amount, data);
         else if (action == Action.CloseLoan) _flashClose(data);
+        else if (action == Action.AddColl) _flashAddColl(amount, data);
         else revert("DFM: Invalid flashloan action");
 
         return _RETURN_VALUE;
@@ -227,6 +262,27 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
 
         (, uint256 collReceived) = mainController.close_loan(account, market);
         _callRouter(collateral, collReceived, routingData);
+    }
+
+    /**
+        @dev 1. Uses the available stablecoin balance to close an existing loan, receiving back some
+                mix of stablecoin and collateral.
+             2. Swaps any remaining stablecoins for collateral.
+             3. Uses all available collateral balance to create a new loan, and mints the stablecoin
+                balance required to repay the flashloan.
+     */
+    function _flashAddColl(uint256 flashloanAmount, bytes calldata data) internal {
+        (, address account, address market, IBridgeToken collateral, uint256 numBands, bytes memory routingData) = abi
+            .decode(data, (uint256, address, address, IBridgeToken, uint256, bytes));
+
+        mainController.close_loan(account, market);
+
+        uint256 debtAmount = stableCoin.balanceOf(address(this));
+        _callRouter(stableCoin, debtAmount, routingData);
+
+        uint256 collAmount = collateral.balanceOf(address(this));
+        debtAmount = _calculateDebtAmount(flashloanAmount, 1);
+        mainController.create_loan(account, market, collAmount, debtAmount, numBands);
     }
 
     function _getCollateralOrRevert(address market) internal returns (IERC20) {
