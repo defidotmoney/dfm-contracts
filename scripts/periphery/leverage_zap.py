@@ -75,6 +75,37 @@ def get_close_loan_routing_data(zap, account, market, use_account_balance=True, 
     return get_route_calldata(zap, path_id), amount_out, amount_in
 
 
+def get_add_coll_routing_data(zap, account, market, coll_amount, max_slippage=0.003):
+    """
+    Generates the `routingData` input for use with `LeverageZap.addCollateral`.
+
+    Note that Odos' quotes are valid for 60 seconds, if the generated data is not used within
+    that timeframe it will need to be re-queried.
+
+    Args:
+        zap: Address of `LeverageZap` deployment on the connected chain
+        account: Address of the account that will adjust a loan
+        market: Address of the market where the loan is being adjusted
+        coll_amount: Amount of collateral being added to the loan by `account`. Note that
+            this value does not affect the routing data, it is only used in calculating
+            the return value.
+        max_slippage: Maximum allowable slippage in the router swap, denoted as a fraction.
+
+    Returns:
+        string: `routingData` for use in `LeverageZap.closeLoan`
+        int: New collateral balance that will be backing the loan
+    """
+    controller = Contract(CONTROLLER)
+    token, amm = controller.market_contracts(market)[:-1]
+
+    debt_amm, coll_amm = Contract(amm).get_sum_xy(account)
+    assert debt_amm > 0
+
+    received, path_id = get_quote(chain.id, zap, MONEY, token, debt_amm, max_slippage)
+
+    return get_route_calldata(zap, path_id), coll_amount + coll_amm + received
+
+
 def get_quote(chain_id, caller, input_token, output_token, amount, max_slippage=0.003):
     if not isinstance(input_token, Contract):
         input_token = Contract(input_token)
