@@ -86,6 +86,21 @@ def collateral():
 
 
 @pytest.fixture(scope="module")
+def collateral2():
+    return ERC20(success=None, fail="revert")
+
+
+@pytest.fixture(scope="module")
+def collateral3():
+    return ERC20(success=True, fail=False)
+
+
+@pytest.fixture(scope="module")
+def collateral_list(collateral, collateral2, collateral3):
+    return [collateral, collateral2, collateral3]
+
+
+@pytest.fixture(scope="module")
 def _deploy_market(MarketOperator, controller, dummy_oracle, deployer):
     def fn(collateral):
         controller.add_market(
