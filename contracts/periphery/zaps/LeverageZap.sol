@@ -167,15 +167,15 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         IERC20 collateral = _getCollateralOrRevert(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
-        uint256 debt = IMarketOperator(market).debt(msg.sender);
-        require(debt > debtAmount);
+        uint256 debtOwed = IMarketOperator(market).debt(msg.sender);
+        require(debtOwed > debtAmount, "DFM: debtAmount >= debtOwed");
         if (debtAmount > 0) {
             stableCoin.transferFrom(msg.sender, address(this), debtAmount);
-            debt -= debtAmount;
+            debtOwed -= debtAmount;
         }
 
         bytes memory data = abi.encode(Action.AddColl, msg.sender, market, collateral, numBands, routingData);
-        stableCoin.flashLoan(this, address(stableCoin), debt, data);
+        stableCoin.flashLoan(this, address(stableCoin), debtOwed, data);
     }
 
     /**
