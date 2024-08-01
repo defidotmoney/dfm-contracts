@@ -118,3 +118,12 @@ def amm(AMM, controller, market):
 @pytest.fixture(scope="module")
 def views(MarketViews, controller, deployer):
     return MarketViews.deploy(controller, {"from": deployer})
+
+
+@pytest.fixture(scope="module")
+def eth_receive_reverter(EthReceiveTester, deployer):
+    # can be used to send ETH to payable functions
+    # will revert if the contract attempts to send any ETH back
+    contract = EthReceiveTester.deploy({"from": deployer})
+    contract.receive_eth({"from": deployer, "value": "1 ether"})
+    return contract
