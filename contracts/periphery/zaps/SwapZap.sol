@@ -51,13 +51,15 @@ contract SwapZapOdosV2 is ReentrancyGuard {
         _approveRouter(_stable);
     }
 
+    receive() external payable {}
+
     function createLoan(
         address market,
         uint256 debtAmount,
         uint256 numBands,
         InputAction calldata inputAction,
         OutputAction calldata outputAction
-    ) external nonReentrant {
+    ) external payable nonReentrant {
         _executeInputAction(inputAction);
         IERC20 collateral = _getCollateralOrRevert(market);
         uint256 collAmount = collateral.balanceOf(address(this));
@@ -71,7 +73,7 @@ contract SwapZapOdosV2 is ReentrancyGuard {
         uint256 debtIncrease,
         InputAction calldata inputAction,
         OutputAction calldata outputAction
-    ) external nonReentrant {
+    ) external payable nonReentrant {
         _executeInputAction(inputAction);
         IERC20 collateral = _getCollateralOrRevert(market);
 
@@ -91,7 +93,7 @@ contract SwapZapOdosV2 is ReentrancyGuard {
         address market,
         InputAction calldata inputAction,
         OutputAction calldata outputAction
-    ) external nonReentrant {
+    ) external payable nonReentrant {
         _executeInputAction(inputAction);
         mainController.close_loan(msg.sender, market);
         _executeOutputAction(outputAction);
@@ -104,17 +106,22 @@ contract SwapZapOdosV2 is ReentrancyGuard {
             token.safeTransferFrom(msg.sender, address(this), inputAction.tokenAmounts[i].amount);
             _approveRouter(token);
         }
-        if (inputAction.routingData.length > 0) _callRouter(inputAction.routingData);
+        if (inputAction.routingData.length > 0) _callRouter(inputAction.routingData, msg.value);
+        else require(msg.value == 0, "DFM: msg.value > 0");
     }
 
     function _executeOutputAction(OutputAction calldata outputAction) internal {
-        if (outputAction.routingData.length > 0) _callRouter(outputAction.routingData);
+        if (outputAction.routingData.length > 0) _callRouter(outputAction.routingData, 0);
 
         uint256 length = outputAction.tokens.length;
         for (uint256 i = 0; i < length; i++) {
             IERC20 token = outputAction.tokens[i];
             uint256 amount = token.balanceOf(address(this));
             if (amount > 0) token.safeTransfer(msg.sender, amount);
+        }
+        if (address(this).balance > 0) {
+            (bool success, ) = msg.sender.call{ value: address(this).balance }("");
+            require(success, "DFM: Transfer failed");
         }
     }
 
@@ -137,8 +144,8 @@ contract SwapZapOdosV2 is ReentrancyGuard {
         return collateral;
     }
 
-    function _callRouter(bytes memory routingData) internal {
-        (bool success, ) = router.call(routingData);
+    function _callRouter(bytes memory routingData, uint256 nativeAmount) internal {
+        (bool success, ) = router.call{ value: nativeAmount }(routingData);
         require(success, "DFM: Odos router call failed");
     }
 }
