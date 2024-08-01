@@ -55,6 +55,7 @@ contract SwapZapOdosV2 is ReentrancyGuard {
 
     function createLoan(
         address market,
+        uint256 collAmount,
         uint256 debtAmount,
         uint256 numBands,
         InputAction calldata inputAction,
@@ -62,28 +63,28 @@ contract SwapZapOdosV2 is ReentrancyGuard {
     ) external payable nonReentrant {
         _executeInputAction(inputAction);
         IERC20 collateral = _getCollateralOrRevert(market);
-        uint256 collAmount = collateral.balanceOf(address(this));
+        if (collAmount == type(uint256).max) collAmount = collateral.balanceOf(address(this));
         mainController.create_loan(msg.sender, market, collAmount, debtAmount, numBands);
         _executeOutputAction(outputAction);
     }
 
     function adjustLoan(
         address market,
-        uint256 collWithdrawal,
-        uint256 debtIncrease,
+        int256 collAdjustment,
+        int256 debtAdjustment,
         InputAction calldata inputAction,
         OutputAction calldata outputAction
     ) external payable nonReentrant {
         _executeInputAction(inputAction);
         IERC20 collateral = _getCollateralOrRevert(market);
 
-        int256 collAdjustment;
-        if (collWithdrawal > 0) collAdjustment = -int256(collWithdrawal);
-        else collAdjustment = int256(collateral.balanceOf(address(this)));
+        if (collAdjustment == type(int256).max) {
+            collAdjustment = int256(collateral.balanceOf(address(this)));
+        }
 
-        int256 debtAdjustment;
-        if (debtIncrease > 0) debtAdjustment = int256(debtAdjustment);
-        else debtAdjustment = -(int256(stableCoin.balanceOf(address(this))));
+        if (debtAdjustment == type(int256).min) {
+            debtAdjustment = -(int256(stableCoin.balanceOf(address(this))));
+        }
 
         mainController.adjust_loan(msg.sender, market, collAdjustment, debtAdjustment);
         _executeOutputAction(outputAction);
