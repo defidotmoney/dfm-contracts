@@ -6,6 +6,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IMainController } from "../../interfaces/IMainController.sol";
+import { IMarketOperator } from "../../interfaces/IMarketOperator.sol";
 
 /**
     @title Swap Zap using Odos V2 Router
@@ -90,12 +91,29 @@ contract SwapZapOdosV2 is ReentrancyGuard {
         _executeOutputAction(outputAction);
     }
 
+    /**
+        @param maxDebtAmount Max stablecoin balance to be transferred from the caller
+            to repay the loan. The actual amount is the difference between the owed
+            amount and the zap's balance after executing `inputAction` (if any).
+     */
     function closeLoan(
         address market,
+        uint256 maxDebtAmount,
         InputAction calldata inputAction,
         OutputAction calldata outputAction
     ) external payable nonReentrant {
+        _getCollateralOrRevert(market);
         _executeInputAction(inputAction);
+
+        if (maxDebtAmount > 0) {
+            uint256 debtOwed = IMarketOperator(market).debt(msg.sender);
+            uint256 balance = stableCoin.balanceOf(address(this));
+            if (debtOwed > balance) {
+                uint256 amount = debtOwed - balance;
+                if (amount > maxDebtAmount) amount = maxDebtAmount;
+                stableCoin.transferFrom(msg.sender, address(this), amount);
+            }
+        }
         mainController.close_loan(msg.sender, market);
         _executeOutputAction(outputAction);
     }
