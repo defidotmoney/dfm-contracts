@@ -24,8 +24,9 @@ import { OdosZapBase } from "./dependencies/OdosZapBase.sol";
            via `InputAction` and `OutputAction`. It is the responsibility of the caller to include
            all expected output tokens within `OutputAction.tokens`, including `stableCoin` and the
            market's collateral.
-         * Native gas sent in the call is included in the call to Odos. Any balance held by the
-           router is sent to the caller after the `OutputAction` swap.
+         * All native gas sent by the caller is included in the `InputAction` call to Odos.
+         * After completing the `OutputAction` call to Odos, any native gas balance held by the router
+           is sent to the caller.
  */
 contract SwapZap is OdosZapBase {
     using SafeERC20 for IERC20;
@@ -62,7 +63,8 @@ contract SwapZap is OdosZapBase {
     /**
         @notice Create a new loan for the caller
         @param market Address of the market to create a new loan in
-        @param collAmount Collateral amount to deposit
+        @param collAmount Collateral amount to deposit. Set as `type(uint256).max` to deposit
+            the total collateral balance held by the zap.
         @param debtAmount Amount of stablecoins to mint when opening the loan
         @param numBands Number of bands to use for the loan
         @param inputAction Array of token balances to transfer from the caller to the zap, and
@@ -78,10 +80,15 @@ contract SwapZap is OdosZapBase {
         InputAction calldata inputAction,
         OutputAction calldata outputAction
     ) external payable nonReentrant {
-        _executeInputAction(inputAction);
         IERC20 collateral = getCollateralOrRevert(market);
-        if (collAmount == type(uint256).max) collAmount = collateral.balanceOf(address(this));
+
+        _executeInputAction(inputAction);
+
+        if (collAmount == type(uint256).max) {
+            collAmount = collateral.balanceOf(address(this));
+        }
         mainController.create_loan(msg.sender, market, collAmount, debtAmount, numBands);
+
         _executeOutputAction(outputAction);
     }
 
@@ -89,7 +96,9 @@ contract SwapZap is OdosZapBase {
         @notice Adjust the caller's existing loan within a market
         @param market Address of the market to adjust the loan in
         @param collAdjustment Collateral adjustment amount. A positive value deposits, negative withdraws.
+            Set as `type(int256).max` to deposit the total collateral balance held by the zap.
         @param debtAdjustment Debt adjustment amount. A positive value mints, negative burns.
+            Set as `type(int256).min` to repay the total stablecoin balance held by the zap.
         @param inputAction Array of token balances to transfer from the caller to the zap, and
             optional Odos router calldata. See the top-level natspec for detailed information.
         @param outputAction Array of tokens to transfer from the zap to the caller, and optional
@@ -102,18 +111,18 @@ contract SwapZap is OdosZapBase {
         InputAction calldata inputAction,
         OutputAction calldata outputAction
     ) external payable nonReentrant {
-        _executeInputAction(inputAction);
         IERC20 collateral = getCollateralOrRevert(market);
+
+        _executeInputAction(inputAction);
 
         if (collAdjustment == type(int256).max) {
             collAdjustment = int256(collateral.balanceOf(address(this)));
         }
-
         if (debtAdjustment == type(int256).min) {
             debtAdjustment = -(int256(stableCoin.balanceOf(address(this))));
         }
-
         mainController.adjust_loan(msg.sender, market, collAdjustment, debtAdjustment);
+
         _executeOutputAction(outputAction);
     }
 
@@ -135,6 +144,7 @@ contract SwapZap is OdosZapBase {
         OutputAction calldata outputAction
     ) external payable nonReentrant {
         getCollateralOrRevert(market);
+
         _executeInputAction(inputAction);
 
         if (maxDebtAmount > 0) {
@@ -147,6 +157,7 @@ contract SwapZap is OdosZapBase {
             }
         }
         mainController.close_loan(msg.sender, market);
+
         _executeOutputAction(outputAction);
     }
 
@@ -157,6 +168,7 @@ contract SwapZap is OdosZapBase {
             token.safeTransferFrom(msg.sender, address(this), inputAction.tokenAmounts[i].amount);
             approveRouter(token);
         }
+
         if (inputAction.routingData.length > 0) callRouter(inputAction.routingData, msg.value);
         else require(msg.value == 0, "DFM: msg.value > 0");
     }
@@ -170,6 +182,7 @@ contract SwapZap is OdosZapBase {
             uint256 amount = token.balanceOf(address(this));
             if (amount > 0) token.safeTransfer(msg.sender, amount);
         }
+
         if (address(this).balance > 0) {
             (bool success, ) = msg.sender.call{ value: address(this).balance }("");
             require(success, "DFM: Transfer failed");
