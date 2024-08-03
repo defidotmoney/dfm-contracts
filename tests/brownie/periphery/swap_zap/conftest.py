@@ -15,5 +15,5 @@ def router(RouterMock, controller, stable, collateral_list, deployer):
 
 
 @pytest.fixture(scope="module")
-def zap(SwapZapOdosV2, controller, stable, router, deployer):
-    return SwapZapOdosV2.deploy(controller, stable, router, {"from": deployer})
+def zap(SwapZap, controller, stable, router, deployer):
+    return SwapZap.deploy(controller, stable, router, {"from": deployer})
