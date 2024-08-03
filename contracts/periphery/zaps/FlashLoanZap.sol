@@ -3,28 +3,21 @@
 pragma solidity 0.8.25;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC3156FlashBorrower } from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
-import { IMainController } from "../../interfaces/IMainController.sol";
 import { IMarketOperator } from "../../interfaces/IMarketOperator.sol";
-import { IBridgeToken } from "../../interfaces/IBridgeToken.sol";
+import { OdosZapBase } from "./dependencies/OdosZapBase.sol";
 
 /**
-    @title Leverage Zap using Odos V2 Router
+    @title FlashLoan Zap using Odos V2 Router
     @author defidotmoney
-    @notice Creates, adjust, and close loans using flashloans and performing swaps via Odos
+    @notice Create, adjust, and close loans using flashloans and performing swaps via Odos
     @dev Used as a delegate for calls to `MainController`
  */
-contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
+contract FlashLoanZap is OdosZapBase, IERC3156FlashBorrower {
     using SafeERC20 for IERC20;
-    using SafeERC20 for IBridgeToken;
 
     bytes32 private constant _RETURN_VALUE = keccak256("ERC3156FlashBorrower.onFlashLoan");
-
-    IMainController public immutable mainController;
-    IBridgeToken public immutable stableCoin;
-    address public immutable router;
 
     enum Action {
         CreateLoan,
@@ -34,21 +27,19 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         AddColl
     }
 
-    mapping(address market => IERC20 collateral) private marketCollaterals;
-
     /**
         @notice Contract constructor
         @param _mainController MainController contract address
         @param _stable Stablecoin token address
         @param _router Odos router address (available at https://github.com/odos-xyz/odos-router-v2)
      */
-    constructor(IMainController _mainController, IBridgeToken _stable, address _router) {
-        mainController = _mainController;
-        stableCoin = _stable;
-        router = _router;
-
-        _stable.approve(address(_mainController), type(uint256).max);
-        _stable.approve(address(_stable), type(uint256).max);
+    constructor(
+        address _mainController,
+        address _stable,
+        address _router
+    ) OdosZapBase(_mainController, _stable, _router) {
+        IERC20(_stable).approve(_mainController, type(uint256).max);
+        IERC20(_stable).approve(_stable, type(uint256).max);
     }
 
     /**
@@ -69,7 +60,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         uint256 numBands,
         bytes calldata routingData
     ) external nonReentrant {
-        IERC20 collateral = _getCollateralOrRevert(market);
+        IERC20 collateral = getCollateralOrRevert(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
         bytes memory data = abi.encode(Action.CreateLoan, msg.sender, market, collateral, numBands, routingData);
@@ -92,7 +83,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         uint256 debtAmount,
         bytes calldata routingData
     ) external nonReentrant {
-        IERC20 collateral = _getCollateralOrRevert(market);
+        IERC20 collateral = getCollateralOrRevert(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
         bytes memory data = abi.encode(Action.IncreaseLoan, msg.sender, market, collateral, routingData);
@@ -114,7 +105,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         uint256 debtAmount,
         bytes calldata routingData
     ) external nonReentrant {
-        IERC20 collateral = _getCollateralOrRevert(market);
+        IERC20 collateral = getCollateralOrRevert(market);
 
         bytes memory data = abi.encode(Action.DecreaseLoan, msg.sender, market, collateral, collAmount, routingData);
         stableCoin.flashLoan(this, address(stableCoin), debtAmount, data);
@@ -131,7 +122,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         @param routingData Odos router swap calldata
      */
     function closeLoan(address market, uint256 debtAmount, bytes calldata routingData) external nonReentrant {
-        IERC20 collateral = _getCollateralOrRevert(market);
+        IERC20 collateral = getCollateralOrRevert(market);
         if (debtAmount > 0) stableCoin.transferFrom(msg.sender, address(this), debtAmount);
 
         (int256 debtChange, uint256 collReceived) = mainController.get_close_loan_amounts(msg.sender, market);
@@ -164,7 +155,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
         uint256 numBands,
         bytes calldata routingData
     ) external {
-        IERC20 collateral = _getCollateralOrRevert(market);
+        IERC20 collateral = getCollateralOrRevert(market);
         if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
         uint256 debtOwed = IMarketOperator(market).debt(msg.sender);
@@ -215,7 +206,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
             (uint256, address, address, IERC20, uint256, bytes)
         );
 
-        _callRouter(stableCoin, flashloanAmount, routingData);
+        callRouter(routingData, 0);
         uint256 collAmount = collateral.balanceOf(address(this));
         uint256 debtAmount = _calculateDebtAmount(flashloanAmount, 1);
         mainController.create_loan(account, market, collAmount, debtAmount, numBands);
@@ -231,7 +222,7 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
             (uint256, address, address, IERC20, bytes)
         );
 
-        _callRouter(stableCoin, flashloanAmount, routingData);
+        callRouter(routingData, 0);
         int256 collAmount = int256(collateral.balanceOf(address(this)));
         int256 debtAmount = int256(_calculateDebtAmount(flashloanAmount, 0));
         mainController.adjust_loan(account, market, collAmount, debtAmount);
@@ -242,11 +233,11 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
              2. Swaps the withdrawn collateral for the stablecoins required repay the flashloan.
      */
     function _flashDecrease(uint256 flashloanAmount, bytes calldata data) internal {
-        (, address account, address market, IBridgeToken collateral, uint256 collAmount, bytes memory routingData) = abi
-            .decode(data, (uint256, address, address, IBridgeToken, uint256, bytes));
+        (, address account, address market, IERC20 collateral, uint256 collAmount, bytes memory routingData) = abi
+            .decode(data, (uint256, address, address, IERC20, uint256, bytes));
 
         mainController.adjust_loan(account, market, -int256(collAmount), -int256(flashloanAmount));
-        _callRouter(collateral, collAmount, routingData);
+        callRouter(routingData, 0);
     }
 
     /**
@@ -255,13 +246,13 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
              2. Swaps the withdrawn collateral for the stablecoins required repay the flashloan.
      */
     function _flashClose(bytes calldata data) internal {
-        (, address account, address market, IBridgeToken collateral, bytes memory routingData) = abi.decode(
+        (, address account, address market, IERC20 collateral, bytes memory routingData) = abi.decode(
             data,
-            (uint256, address, address, IBridgeToken, bytes)
+            (uint256, address, address, IERC20, bytes)
         );
 
         (, uint256 collReceived) = mainController.close_loan(account, market);
-        _callRouter(collateral, collReceived, routingData);
+        callRouter(routingData, 0);
     }
 
     /**
@@ -272,35 +263,19 @@ contract LeverageZapOdosV2 is ReentrancyGuard, IERC3156FlashBorrower {
                 balance required to repay the flashloan.
      */
     function _flashAddColl(uint256 flashloanAmount, bytes calldata data) internal {
-        (, address account, address market, IBridgeToken collateral, uint256 numBands, bytes memory routingData) = abi
-            .decode(data, (uint256, address, address, IBridgeToken, uint256, bytes));
+        (, address account, address market, IERC20 collateral, uint256 numBands, bytes memory routingData) = abi.decode(
+            data,
+            (uint256, address, address, IERC20, uint256, bytes)
+        );
 
         mainController.close_loan(account, market);
 
         uint256 debtAmount = stableCoin.balanceOf(address(this));
-        _callRouter(stableCoin, debtAmount, routingData);
+        callRouter(routingData, 0);
 
         uint256 collAmount = collateral.balanceOf(address(this));
         debtAmount = _calculateDebtAmount(flashloanAmount, 1);
         mainController.create_loan(account, market, collAmount, debtAmount, numBands);
-    }
-
-    function _getCollateralOrRevert(address market) internal returns (IERC20) {
-        IERC20 collateral = marketCollaterals[market];
-        if (address(collateral) == address(0)) {
-            collateral = IERC20(mainController.get_collateral(market));
-            require(address(collateral) != address(0), "DFM: Market does not exist");
-            collateral.forceApprove(address(mainController), type(uint256).max);
-            marketCollaterals[market] = collateral;
-        }
-        return collateral;
-    }
-
-    function _callRouter(IBridgeToken token, uint256 amount, bytes memory routingData) internal {
-        token.safeApprove(router, amount);
-        (bool success, ) = router.call(routingData);
-        require(success, "DFM: Odos router call failed");
-        token.safeApprove(router, 0);
     }
 
     function _transferTokensToCaller(IERC20 collateral) internal {
