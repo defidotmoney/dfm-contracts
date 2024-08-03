@@ -11,8 +11,22 @@ import { IMarketOperator } from "../../interfaces/IMarketOperator.sol";
 /**
     @title Swap Zap using Odos V2 Router
     @author defidotmoney
-    @notice
     @dev Used as a delegate for calls to `MainController`
+    @notice
+        Each external function executes with the following sequence:
+          1. Tokens and amounts in `InputAction.tokenAmounts` are transferred from the caller to the zap.
+          2. Optionally, one or more tokens are swapped by calling Odos with `InputAction.routingData`
+          3. Function-specific logic executes.
+          4. Optionally, one or more tokens are swapped by calling Odos with `OutputAction.routingData`
+          5. Tokens in `OutputAction.tokens` are transferred from the zap back to the caller.
+
+        Considerations:
+         * Unless otherwise indicated, token balances are not transferred to or from the zap except
+           via `InputAction` and `OutputAction`. It is the responsibility of the caller to include
+           all expected output tokens within `OutputAction.tokens`, including `stableCoin` and the
+           market's collateral.
+         * Native gas sent in the call is included in the call to Odos. Any balance held by the
+           router is sent to the caller after the `OutputAction` swap.
  */
 contract SwapZapOdosV2 is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -54,6 +68,17 @@ contract SwapZapOdosV2 is ReentrancyGuard {
 
     receive() external payable {}
 
+    /**
+        @notice Create a new loan for the caller
+        @param market Address of the market to create a new loan in
+        @param collAmount Collateral amount to deposit
+        @param debtAmount Amount of stablecoins to mint when opening the loan
+        @param numBands Number of bands to use for the loan
+        @param inputAction Array of token balances to transfer from the caller to the zap, and
+            optional Odos router calldata. See the top-level natspec for detailed information.
+        @param outputAction Array of tokens to transfer from the zap to the caller, and optional
+            Odos router calldata. See the top-level natspec for detailed information.
+     */
     function createLoan(
         address market,
         uint256 collAmount,
@@ -69,6 +94,16 @@ contract SwapZapOdosV2 is ReentrancyGuard {
         _executeOutputAction(outputAction);
     }
 
+    /**
+        @notice Adjust the caller's existing loan within a market
+        @param market Address of the market to adjust the loan in
+        @param collAdjustment Collateral adjustment amount. A positive value deposits, negative withdraws.
+        @param debtAdjustment Debt adjustment amount. A positive value mints, negative burns.
+        @param inputAction Array of token balances to transfer from the caller to the zap, and
+            optional Odos router calldata. See the top-level natspec for detailed information.
+        @param outputAction Array of tokens to transfer from the zap to the caller, and optional
+            Odos router calldata. See the top-level natspec for detailed information.
+     */
     function adjustLoan(
         address market,
         int256 collAdjustment,
@@ -92,9 +127,15 @@ contract SwapZapOdosV2 is ReentrancyGuard {
     }
 
     /**
+        @notice Close the caller's open loan within a market
+        @param market Market where the loan is being closed
         @param maxDebtAmount Max stablecoin balance to be transferred from the caller
             to repay the loan. The actual amount is the difference between the owed
             amount and the zap's balance after executing `inputAction` (if any).
+        @param inputAction Array of token balances to transfer from the caller to the zap, and
+            optional Odos router calldata. See the top-level natspec for detailed information.
+        @param outputAction Array of tokens to transfer from the zap to the caller, and optional
+            Odos router calldata. See the top-level natspec for detailed information.
      */
     function closeLoan(
         address market,
