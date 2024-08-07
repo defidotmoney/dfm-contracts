@@ -76,9 +76,12 @@ def get_close_loan_routing_data(zap, account, market, use_account_balance=True, 
     return odos.get_route_calldata(zap, path_id), amount_in, amount_out
 
 
-def get_add_coll_routing_data(zap, account, market, coll_amount, max_slippage=0.003):
+def get_coll_converted_close_and_create_routing_data(
+    zap, account, market, coll_amount, max_slippage=0.003
+):
     """
-    Generates the `routingData` input for use with `LeverageZap.addCollateral`.
+    Generates `routingData` input for use with `LeverageZap.closeAndCreateLoan` in order to
+    add collateral to a coll-converted loan, and return the loan to an unconverted state.
 
     Note that Odos' quotes are valid for 60 seconds, if the generated data is not used within
     that timeframe it will need to be re-queried.
