@@ -24,7 +24,7 @@ contract FlashLoanZap is OdosZapBase, IERC3156FlashBorrower {
         IncreaseLoan,
         DecreaseLoan,
         CloseLoan,
-        AddColl
+        CloseAndCreateLoan
     }
 
     /**
@@ -138,35 +138,63 @@ contract FlashLoanZap is OdosZapBase, IERC3156FlashBorrower {
     }
 
     /**
-        @notice Add collateral to a coll-converted loan to move it out of coll-conversion
-        @dev The router swap should convert the loan's total AMM stablecoin balance, back into collateral.
-             To query the balance call `market.AMM().get_sum_xy(msg.sender)[0]`. No stablecoins or
-             collateral are returned.
+        @notice Use a flashloan to close and recreate a loan
+        @dev * The router swap can trade between collateral and stablecoins in either direction.
+             * The swap executes after closing the existing loan and before opening a new one.
+             * The amounts available to swap are equal to the loan's AMM balances plus any added
+               collateral or minted debt.
+             * The final amounts for the new loan are equal to the zap's balances after the swap,
+               less any withdrawn collateral or repaid debt.
         @param market Address of the market to adjust the loan in
-        @param collAmount Collateral amount provided by the caller and added to the loan
-        @param debtAmount Stablecoin amount provided by the caller, used to repay the loan
-        @param numBands Number of bands to set the loan to
-        @param routingData Odos router swawp calldata
+        @param collChange Collateral adjustment amount. A positive value transfers collateral from
+            the caller to add to the loan. A negative value withdraws collateral from the loan and
+            sends to the caller.
+        @param debtChange Debt adjustment amount. A positive value mints additional debt and sends
+            it to the caller. A negative value transfers debt from the caller and uses it to repay
+            the loan.
+        @param numBands Number of bands to set the loan to.
+        @param routingData Optional odos router swap calldata. Leave empty if no swap is required.
      */
-    function addCollateral(
+    function closeAndCreateLoan(
         address market,
-        uint256 collAmount,
-        uint256 debtAmount,
+        int256 collChange,
+        int256 debtChange,
         uint256 numBands,
         bytes calldata routingData
     ) external {
         IERC20 collateral = getCollateralOrRevert(market);
-        if (collAmount > 0) collateral.safeTransferFrom(msg.sender, address(this), collAmount);
 
-        uint256 debtOwed = IMarketOperator(market).debt(msg.sender);
-        require(debtOwed > debtAmount, "DFM: debtAmount >= debtOwed");
-        if (debtAmount > 0) {
-            stableCoin.transferFrom(msg.sender, address(this), debtAmount);
-            debtOwed -= debtAmount;
+        if (collChange > 0) {
+            collateral.safeTransferFrom(msg.sender, address(this), uint256(collChange));
+            collChange = 0;
         }
 
-        bytes memory data = abi.encode(Action.AddColl, msg.sender, market, collateral, numBands, routingData);
-        stableCoin.flashLoan(this, address(stableCoin), debtOwed, data);
+        uint256 flashloanAmount = IMarketOperator(market).debt(msg.sender);
+
+        if (debtChange < 0) {
+            uint256 debtReduction = uint256(-debtChange);
+            require(flashloanAmount > debtReduction, "DFM: -debtChange > debt");
+            flashloanAmount -= debtReduction;
+            stableCoin.transferFrom(msg.sender, address(this), debtReduction);
+            debtChange = 0;
+        } else {
+            // increase flashloan amount so newly minted debt is available during the router swap
+            flashloanAmount += uint256(debtChange);
+        }
+
+        bytes memory data = abi.encode(
+            Action.CloseAndCreateLoan,
+            msg.sender,
+            market,
+            collateral,
+            -collChange,
+            debtChange,
+            numBands,
+            routingData
+        );
+        stableCoin.flashLoan(this, address(stableCoin), flashloanAmount, data);
+
+        _transferTokensToCaller(collateral);
     }
 
     /**
@@ -190,7 +218,7 @@ contract FlashLoanZap is OdosZapBase, IERC3156FlashBorrower {
         else if (action == Action.IncreaseLoan) _flashIncrease(amount, data);
         else if (action == Action.DecreaseLoan) _flashDecrease(amount, data);
         else if (action == Action.CloseLoan) _flashClose(data);
-        else if (action == Action.AddColl) _flashAddColl(amount, data);
+        else if (action == Action.CloseAndCreateLoan) _flashCloseAndCreate(amount, data);
         else revert("DFM: Invalid flashloan action");
 
         return _RETURN_VALUE;
@@ -256,25 +284,34 @@ contract FlashLoanZap is OdosZapBase, IERC3156FlashBorrower {
     }
 
     /**
-        @dev 1. Uses the available stablecoin balance to close an existing loan, receiving back some
-                mix of stablecoin and collateral.
-             2. Swaps any remaining stablecoins for collateral.
-             3. Uses all available collateral balance to create a new loan, and mints the stablecoin
+        @dev 1. Uses the available stablecoin balance to close an existing loan.
+             2. Optionally performs a swap between collateral and stablecoins (in either direction).
+             3. Uses available collateral balance to create a new loan, and mints the stablecoin
                 balance required to repay the flashloan.
      */
-    function _flashAddColl(uint256 flashloanAmount, bytes calldata data) internal {
-        (, address account, address market, IERC20 collateral, uint256 numBands, bytes memory routingData) = abi.decode(
-            data,
-            (uint256, address, address, IERC20, uint256, bytes)
-        );
+    function _flashCloseAndCreate(uint256 flashloanAmount, bytes calldata data) internal {
+        (
+            ,
+            address account,
+            address market,
+            IERC20 collateral,
+            uint256 collateralOut,
+            uint256 debtOut,
+            uint256 numBands,
+            bytes memory routingData
+        ) = abi.decode(data, (uint256, address, address, IERC20, uint256, uint256, uint256, bytes));
 
         mainController.close_loan(account, market);
 
-        uint256 debtAmount = stableCoin.balanceOf(address(this));
-        callRouter(routingData, 0);
+        // router swap is optional
+        if (routingData.length > 0) callRouter(routingData, 0);
 
         uint256 collAmount = collateral.balanceOf(address(this));
-        debtAmount = _calculateDebtAmount(flashloanAmount, 1);
+        if (collateralOut > 0) {
+            require(collAmount > collateralOut, "DFM: No collateral");
+            collAmount -= collateralOut;
+        }
+        uint256 debtAmount = _calculateDebtAmount(flashloanAmount + debtOut, 1);
         mainController.create_loan(account, market, collAmount, debtAmount, numBands);
     }
 
