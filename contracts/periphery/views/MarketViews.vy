@@ -200,14 +200,12 @@ def get_market_amm_bands(
     """
     @notice Get information on a market's active AMM bands
     @param market Market address
-    @param lower_band Lowest band to return data from. If the given
-                      value is less than the lowest active AMM band,
-                      the returned data will instead start from the
-                      lowest active band.
-    @param num_bands The number of bands to return data from. If
-                     `lower_band + num_bands` is more than the total
-                     active bands, the returned data will stop at
-                     the highest active band.
+    @param lower_band Lowest band to return data from. If the given value is less
+        than the lowest active AMM band,vthe returned data will instead start from
+        the lowest active band.
+    @param num_bands Number of bands to return data from. If `lower_band + num_bands`
+        is more than the total active bands, the returned data will stop at the
+        highest active band.
     @return Dynamic array of band data:
              * band number
              * (band lowest price, band highest price)
