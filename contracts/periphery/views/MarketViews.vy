@@ -195,7 +195,8 @@ def get_market_states(markets: DynArray[MarketOperator, 255]) -> DynArray[Market
 def get_market_amm_bands(
     market: address,
     lower_band: int256=-2**255,
-    num_bands: uint256=5000
+    num_bands: uint256=5000,
+    include_empty_bands: bool=True
 ) -> (DynArray[Band, 5000], int256[2]):
     """
     @notice Get information on a market's active AMM bands
@@ -206,6 +207,8 @@ def get_market_amm_bands(
     @param num_bands Number of bands to return data from. If `lower_band + num_bands`
         is more than the total active bands, the returned data will stop at the
         highest active band.
+    @param include_empty_bands If True, all bands in the given range are returned.
+        If False, results are filtered by bands with a non-zero balance.
     @return Dynamic array of band data:
              * band number
              * (band lowest price, band highest price)
@@ -220,12 +223,13 @@ def get_market_amm_bands(
     n: int256 = max(lower_band, min_band)
     n_final: int256 = min(n + convert(num_bands, int256)-1, max_band)
     bands: DynArray[Band, 5000] = []
+
     for i in range(5000):
         if n > n_final:
             break
         coll_balance: uint256 = amm.bands_y(n)
         debt_balance: uint256 = amm.bands_x(n)
-        if coll_balance != 0 or debt_balance != 0:
+        if include_empty_bands or coll_balance + debt_balance > 0:
             bands.append(Band({
                 band_num: n,
                 price_range: [amm.p_oracle_down(n), amm.p_oracle_up(n)],
@@ -233,6 +237,7 @@ def get_market_amm_bands(
                 debt_balance: debt_balance
             }))
         n = unsafe_add(n, 1)
+
     return bands, [min_band, max_band]
 
 
