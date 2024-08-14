@@ -1,8 +1,6 @@
 import math
-import yaml
-from pathlib import Path
 
-from brownie import accounts, network, Contract, ZERO_ADDRESS
+from brownie import accounts, Contract, ZERO_ADDRESS
 from brownie.convert import to_bytes
 
 # core contracts
@@ -32,16 +30,12 @@ from brownie import (
     WhitelistHook,
 )
 
-# periphery
-from brownie import (
-    MarketViews,
-)
-
-from scripts.utils import deploylog
+from scripts.utils import deployconf, deploylog
 from scripts.utils.connection import ConnectionManager
 from scripts.utils.createx import deploy_deterministic
 from scripts.utils.float2int import to_int
 from scripts.utils.rate0 import apy_to_rate0
+from scripts.deploy.periphery import main as deploy_periphery
 
 
 TEAM_MULTISIG = "0x222d2B30EcD382a058618d9F1ee01F147666E48b"
@@ -49,14 +43,6 @@ TEAM_MULTISIG = "0x222d2B30EcD382a058618d9F1ee01F147666E48b"
 CORE_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da00fd7df6d5c020290265c131"
 STABLECOIN_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da008c17e7bcb0ca2203ff159b"
 CONTROLLER_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da006a506030994eee0392f93b"
-
-
-def _recursive_merge(base_dict, new_dict):
-    for key, value in new_dict.items():
-        if key in base_dict and isinstance(base_dict[key], dict):
-            _recursive_merge(base_dict[key], new_dict[key])
-        else:
-            base_dict[key] = value
 
 
 def main():
@@ -70,20 +56,10 @@ def main():
     # normal deployer should be unique per-chain to avoid overlap in non-deterministic addresses
     deployer = "0xbADbABEFA66BfA6e01C4918229ea65e20BbC79e2"
 
-    network_name = network.show_active()
-    is_forked = network_name.endswith("-fork")
-
-    if is_forked:
-        network_name = network_name[:-5]
-    elif deploylog.load(network_name):
+    config = deployconf.load()
+    is_forked = deployconf.is_forked()
+    if not is_forked and deploylog.load():
         raise Exception("Deploy log exists for this chain! Delete if you wish to continue.")
-
-    # Load deployment config for the target network
-    with Path("deployments/config/default.yaml").open() as fp:
-        config = yaml.safe_load(fp)
-
-    with Path(f"deployments/config/{network_name}.yaml").open() as fp:
-        _recursive_merge(config, yaml.safe_load(fp))
 
     # Initialize required external contracts, in case of a misconfig we fail early
     lz_endpoint = Contract(config["layerzero"]["endpoint"])
@@ -92,7 +68,7 @@ def main():
     lz_eid = lz_endpoint.eid()
 
     # Get remote peers for stablecoin
-    is_primary_network = network_name == config["layerzero"]["primary_network"]
+    is_primary_network = deployconf.active_network() == config["layerzero"]["primary_network"]
     token_peers = {}
 
     if not is_primary_network:
@@ -158,12 +134,9 @@ def main():
         {"from": deployer},
     )
 
-    # Deploy periphery contracts
-    views = MarketViews.deploy(controller, {"from": deployer})
-
     # Write the core deployment addresses to a log file. There are more contracts
     # to deploy, but with this we have enough to plug in our front-end.
-    deploylog.update(core, stable, controller, stable_oracle, regulator, views)
+    deploylog.update(core, stable, controller, stable_oracle, regulator)
 
     # Core contract configuration
     controller.set_peg_keeper_regulator(regulator, False, {"from": deployer})
@@ -293,6 +266,9 @@ def main():
         # Initialize brownie deploy artifacts for the new market
         MarketOperator.at(tx.events["AddMarket"]["market"])
         AMM.at(tx.events["AddMarket"]["amm"])
+
+    # Deploy periphery contracts
+    deploy_periphery(deployer)
 
     print("Deployment complete!")
     print(f" * Core deployment addresses saved at {deploylog.get_path().as_posix()}")

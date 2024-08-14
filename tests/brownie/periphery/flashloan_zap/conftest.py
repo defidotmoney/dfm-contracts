@@ -10,5 +10,5 @@ def router(RouterMock, controller, stable, collateral, deployer):
 
 
 @pytest.fixture(scope="module")
-def zap(LeverageZapOdosV2, controller, stable, router, deployer):
-    return LeverageZapOdosV2.deploy(controller, stable, router, {"from": deployer})
+def zap(FlashLoanZap, controller, stable, router, deployer):
+    return FlashLoanZap.deploy(controller, stable, router, {"from": deployer})

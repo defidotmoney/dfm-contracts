@@ -1,12 +1,7 @@
-import requests
-from web3.main import to_checksum_address
-
 from brownie import Contract, chain
 from scripts.utils.float2int import to_int
+from .utils import odos
 
-# https://docs.odos.xyz/api/endpoints/
-QUOTE_URL = "https://api.odos.xyz/sor/quote/v2"
-ASSEMBLE_URL = "https://api.odos.xyz/sor/assemble"
 
 CONTROLLER = "0x1337F001E280420EcCe9E7B934Fa07D67fdb62CD"
 MONEY = "0x69420f9e38a4e60a62224c489be4bf7a94402496"
@@ -53,32 +48,40 @@ def get_close_loan_routing_data(zap, account, market, use_account_balance=True, 
         int: Expected amount of MONEY received in the swap, as an integer with 1e18 precision
     """
     controller = Contract(CONTROLLER)
-    token = Contract(controller.get_collateral(market))
+    collateral = Contract(controller.get_collateral(market))
 
     amount = Contract(MONEY).balanceOf(account) if use_account_balance else 0
-    (debt, coll) = controller.get_close_loan_amounts(account, market)
+    (debt_amm, coll_amm) = controller.get_close_loan_amounts(account, market)
+    debt_shortfall = -(amount + debt_amm)
 
-    assert debt < 0
-    assert coll > 0
-    shortfall = -(amount + debt)
+    assert debt_amm < 0
+    assert coll_amm > 0
+    assert debt_shortfall > 0
 
-    assert shortfall > 0
+    # need to swap an amount of collateral (`amount_in`) for an exact amount of debt (`debt_shortfall`)
+    # but Odos' API does not provide quotes based on an exact amount out
 
-    amount_out = shortfall / controller.get_oracle_price(token) * (1 + max_slippage)
-    amount_out = to_int(amount, token.decimals())
+    # estimate required `amount_in` based on our exact `amount_out`
+    amount_in = debt_shortfall / controller.get_oracle_price(collateral) * (1 + max_slippage)
+    amount_in = to_int(amount_in, collateral.decimals())
+    amount_out, path_id = odos.get_quote(chain.id, zap, collateral, MONEY, amount_in, max_slippage)
 
-    amount_in, path_id = get_quote(chain.id, zap, token, MONEY, amount_out, max_slippage)
+    # increase `amount_in` until we find a quote that gives sufficient `amount_out`
+    while amount_out < debt_shortfall:
+        amount_in = int(amount_in * debt_shortfall / amount_out)
+        amount_out, path_id = odos.get_quote(
+            chain.id, zap, collateral, MONEY, amount_in, max_slippage
+        )
 
-    while amount_in < shortfall:
-        amount_out = int(amount_out * shortfall / amount_in)
-        amount_in, path_id = get_quote(chain.id, zap, token, MONEY, amount_out, max_slippage)
-
-    return get_route_calldata(zap, path_id), amount_out, amount_in
+    return odos.get_route_calldata(zap, path_id), amount_in, amount_out
 
 
-def get_add_coll_routing_data(zap, account, market, coll_amount, max_slippage=0.003):
+def get_coll_converted_close_and_create_routing_data(
+    zap, account, market, coll_amount, max_slippage=0.003
+):
     """
-    Generates the `routingData` input for use with `LeverageZap.addCollateral`.
+    Generates `routingData` input for use with `LeverageZap.closeAndCreateLoan` in order to
+    add collateral to a coll-converted loan, and return the loan to an unconverted state.
 
     Note that Odos' quotes are valid for 60 seconds, if the generated data is not used within
     that timeframe it will need to be re-queried.
@@ -98,65 +101,13 @@ def get_add_coll_routing_data(zap, account, market, coll_amount, max_slippage=0.
              the same precision used in the token smart contract
     """
     controller = Contract(CONTROLLER)
-    token, amm = controller.market_contracts(market)[:-1]
+    collateral, amm = controller.market_contracts(market)[:-1]
 
     debt_amm, coll_amm = Contract(amm).get_sum_xy(account)
+
     assert debt_amm > 0
 
-    received, path_id = get_quote(chain.id, zap, MONEY, token, debt_amm, max_slippage)
+    # generate quote to swap exactly `debt_amm` of MONEY into an amount of `collateral`
+    received, path_id = odos.get_quote(chain.id, zap, MONEY, collateral, debt_amm, max_slippage)
 
-    return get_route_calldata(zap, path_id), coll_amount + coll_amm + received
-
-
-def get_quote(chain_id, caller, input_token, output_token, amount_in, max_slippage=0.003):
-    """
-    Args:
-        amount_in: Amount of input_token being swapped, as an integer with the same precision
-            used in the token smart contract
-    """
-    quote_request_body = {
-        "chainId": chain_id,
-        "inputTokens": [
-            {"tokenAddress": to_checksum_address(str(input_token)), "amount": str(amount_in)}
-        ],
-        "outputTokens": [{"tokenAddress": to_checksum_address(str(output_token)), "proportion": 1}],
-        "slippageLimitPercent": max_slippage * 100,
-        "userAddr": to_checksum_address(str(caller)),
-        "referralCode": 0,
-        "disableRFQs": True,
-        "compact": True,
-    }
-
-    response = requests.post(
-        QUOTE_URL,
-        headers={"Content-Type": "application/json"},
-        json=quote_request_body,
-    )
-
-    if response.status_code != 200:
-        raise ValueError(f"{response.status_code} error during quote: {response.json()}")
-
-    quote = response.json()
-
-    return int(quote["outAmounts"][0]), quote["pathId"]
-
-
-def get_route_calldata(caller, path_id):
-    assemble_request_body = {
-        "userAddr": to_checksum_address(str(caller)),
-        "pathId": path_id,
-        "simulate": False,
-    }
-
-    response = requests.post(
-        ASSEMBLE_URL,
-        headers={"Content-Type": "application/json"},
-        json=assemble_request_body,
-    )
-
-    if response.status_code != 200:
-        raise ValueError(f"{response.status_code} error during assembly: {response.json()}")
-
-    data = response.json()
-
-    return data["transaction"]["data"]
+    return odos.get_route_calldata(zap, path_id), coll_amount + coll_amm + received
