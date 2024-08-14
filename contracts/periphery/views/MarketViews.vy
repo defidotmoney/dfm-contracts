@@ -71,6 +71,7 @@ interface AMM:
     def rate() -> uint256: view
     def min_band() -> int256: view
     def max_band() -> int256: view
+    def get_xy(account: address) -> DynArray[uint256, MAX_TICKS_UINT][2]: view
 
 interface MonetaryPolicy:
     def rate(market: MarketOperator) -> uint256: view
@@ -140,6 +141,9 @@ struct LiquidationState:
     debt_from_amm: uint256
     coll_received: uint256
     hook_debt_adjustment: int256
+
+
+MAX_TICKS_UINT: constant(uint256) = 50
 
 MAIN_CONTROLLER: public(immutable(MainController))
 
@@ -348,6 +352,36 @@ def get_pending_market_state_for_account(
     state.coll_conversion_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
 
     return state
+
+
+@view
+@external
+def get_market_amm_bands_for_account(account: address, market: address) -> DynArray[Band, MAX_TICKS_UINT]:
+    """
+    @notice Get information on an account's AMM band deposits
+    @return Dynamic array of band data:
+             * band number
+             * (band lowest price, band highest price)
+             * account collateral balance deposited at band (normalized to 1e18)
+             * account debt balance deposited at band
+    """
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
+    amm: AMM = AMM(c.amm)
+    bands: DynArray[Band, MAX_TICKS_UINT] = []
+
+    n: int256 = amm.read_user_tick_numbers(account)[0]
+    account_xy: DynArray[uint256, MAX_TICKS_UINT][2] = amm.get_xy(account)
+    for i in range(MAX_TICKS_UINT):
+        if i == len(account_xy[0]):
+            break
+        bands.append(Band({
+            band_num: n,
+            price_range: [amm.p_oracle_down(n), amm.p_oracle_up(n)],
+            coll_balance: account_xy[1][i],
+            debt_balance: account_xy[0][i]
+        }))
+        n = unsafe_add(n, 1)
+    return bands
 
 
 @view
