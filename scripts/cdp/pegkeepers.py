@@ -53,7 +53,7 @@ def show_pegkeeper_stats(sort_by=None):
     for data in raw_data:
         data["amounts"] = [data["amounts"][0] / 10 ** data["decimals"], data["amounts"][1] / 1e18]
         data["tvl"] = sum(data["amounts"])
-        data["profit"] = data["profit"] / 1e18
+        data["profit"] = (data["profit"] or 0) / 1e18
         data["price"] = data["price"] / 1e18
         data["ceiling"] = data.pop("debt_ceiling")
 
@@ -100,7 +100,7 @@ def update(acct, min_profit=0.25, receiver=None):
 
     in_profit = []
     for pk, profit in estimated_profit.items():
-        if profit > min_profit * 1e18:
+        if (profit or 0) > min_profit * 1e18:
             in_profit.append(pk)
 
     if not in_profit:

@@ -32,7 +32,7 @@ def setup(hooks, collateral, controller, market, amm, stable, policy, alice, bob
     controller.collect_fees([market], {"from": alice})
 
     # hacky mint stables to deployer for amm swap
-    stable.mint(deployer, 10_000 * 10**18, {"from": controller})
+    stable.mint(deployer, 50_000 * 10**18, {"from": controller})
 
 
 @pytest.mark.parametrize("adjustment", [-200 * 10**18, 0, 200 * 10**18])
@@ -109,9 +109,10 @@ def test_close_loan_underwater(
     hooks.set_response(adjustment, {"from": alice})
 
     if swap_coll:
-        amm.exchange(0, 1, 10_000 * 10**18, 0, {"from": deployer})
+        amm.exchange(0, 1, 50_000 * 10**18, 0, {"from": deployer})
 
     actual = views.get_market_states_for_account(alice, [market])[0]
+    actual_bands = views.get_market_amm_bands_for_account(alice, market)
     # (debt repaid, debt burned from owner, debt burned from amm, coll withdrawn, hook adjustment)
     expected = views.get_close_loan_amounts(alice, market)
     # (debt adjustment for caller, coll withdrawn)
@@ -124,8 +125,12 @@ def test_close_loan_underwater(
     debt_amm, coll_amm = amm.get_sum_xy(alice)
     if swap_coll:
         assert debt_amm > 0
+        assert actual_bands[0]["coll_balance"] == 0
+        assert actual_bands[0]["debt_balance"] > 0
     else:
         assert debt_amm == 0
+        assert min(i["coll_balance"] for i in actual_bands) > 0
+        assert sum(i["debt_balance"] for i in actual_bands) == 0
 
     assert actual[2] == coll_amm
     assert expected[3] == expected2[1] == coll_amm

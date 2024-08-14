@@ -1,6 +1,6 @@
 import pytest
 
-from brownie import ZERO_ADDRESS, chain
+from brownie import ZERO_ADDRESS
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -40,12 +40,20 @@ def test_create_loan_adjust(views, market, amm, controller, alice, hooks, adjust
     assert actual[4] == health
     assert abs(health - expected["health"]) / 1e18 < 1e-10
 
-    bands = amm.read_user_tick_numbers(alice)
-    assert actual[5] == bands
-    assert expected["bands"] == bands
+    bands_amm = amm.read_user_tick_numbers(alice)
+    bands_views = views.get_market_amm_bands_for_account(alice, market)
+    assert bands_amm == (bands_views[0]["band_num"], bands_views[-1]["band_num"])
+    assert expected["bands"] == bands_amm
+    assert len(bands_views) == bands_amm[1] - bands_amm[0] + 1
+    assert sum(i["coll_balance"] for i in bands_views) == 50 * 10**18
+    assert sum(i["debt_balance"] for i in bands_views) == 0
 
     coll_conversion_range = market.user_prices(alice)
-    assert actual[6] == coll_conversion_range
+    assert coll_conversion_range == (
+        bands_views[0]["price_range"][1],
+        bands_views[-1]["price_range"][0],
+    )
+    assert actual["coll_conversion_range"] == coll_conversion_range
     assert expected["coll_conversion_range"] == coll_conversion_range
 
 
@@ -76,12 +84,20 @@ def test_adjust_loan_increase_debt(
     assert actual[4] == health
     assert abs(health - expected["health"]) / 1e18 < 1e-10
 
-    bands = amm.read_user_tick_numbers(alice)
-    assert actual[5] == bands
-    assert expected["bands"] == bands
+    bands_amm = amm.read_user_tick_numbers(alice)
+    bands_views = views.get_market_amm_bands_for_account(alice, market)
+    assert bands_amm == (bands_views[0]["band_num"], bands_views[-1]["band_num"])
+    assert expected["bands"] == bands_amm
+    assert len(bands_views) == bands_amm[1] - bands_amm[0] + 1
+    assert sum(i["coll_balance"] for i in bands_views) == 50 * 10**18
+    assert sum(i["debt_balance"] for i in bands_views) == 0
 
     coll_conversion_range = market.user_prices(alice)
-    assert actual[6] == coll_conversion_range
+    assert coll_conversion_range == (
+        bands_views[0]["price_range"][1],
+        bands_views[-1]["price_range"][0],
+    )
+    assert actual["coll_conversion_range"] == coll_conversion_range
     assert expected["coll_conversion_range"] == coll_conversion_range
 
 
@@ -106,12 +122,20 @@ def test_adjust_loan_decrease_debt(views, market, hooks, amm, controller, alice,
     assert actual[4] == health
     assert abs(health - expected["health"]) / 1e18 < 1e-10
 
-    bands = amm.read_user_tick_numbers(alice)
-    assert actual[5] == bands
-    assert expected["bands"] == bands
+    bands_amm = amm.read_user_tick_numbers(alice)
+    bands_views = views.get_market_amm_bands_for_account(alice, market)
+    assert bands_amm == (bands_views[0]["band_num"], bands_views[-1]["band_num"])
+    assert expected["bands"] == bands_amm
+    assert len(bands_views) == bands_amm[1] - bands_amm[0] + 1
+    assert sum(i["coll_balance"] for i in bands_views) == 50 * 10**18
+    assert sum(i["debt_balance"] for i in bands_views) == 0
 
     coll_conversion_range = market.user_prices(alice)
-    assert actual[6] == coll_conversion_range
+    assert coll_conversion_range == (
+        bands_views[0]["price_range"][1],
+        bands_views[-1]["price_range"][0],
+    )
+    assert actual["coll_conversion_range"] == coll_conversion_range
     assert expected["coll_conversion_range"] == coll_conversion_range
 
 

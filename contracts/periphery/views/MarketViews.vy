@@ -71,6 +71,7 @@ interface AMM:
     def rate() -> uint256: view
     def min_band() -> int256: view
     def max_band() -> int256: view
+    def get_xy(account: address) -> DynArray[uint256, MAX_TICKS_UINT][2]: view
 
 interface MonetaryPolicy:
     def rate(market: MarketOperator) -> uint256: view
@@ -141,6 +142,9 @@ struct LiquidationState:
     coll_received: uint256
     hook_debt_adjustment: int256
 
+
+MAX_TICKS_UINT: constant(uint256) = 50
+
 MAIN_CONTROLLER: public(immutable(MainController))
 
 
@@ -195,19 +199,20 @@ def get_market_states(markets: DynArray[MarketOperator, 255]) -> DynArray[Market
 def get_market_amm_bands(
     market: address,
     lower_band: int256=-2**255,
-    num_bands: uint256=5000
+    num_bands: uint256=5000,
+    include_empty_bands: bool=True
 ) -> (DynArray[Band, 5000], int256[2]):
     """
     @notice Get information on a market's active AMM bands
     @param market Market address
-    @param lower_band Lowest band to return data from. If the given
-                      value is less than the lowest active AMM band,
-                      the returned data will instead start from the
-                      lowest active band.
-    @param num_bands The number of bands to return data from. If
-                     `lower_band + num_bands` is more than the total
-                     active bands, the returned data will stop at
-                     the highest active band.
+    @param lower_band Lowest band to return data from. If the given value is less
+        than the lowest active AMM band,vthe returned data will instead start from
+        the lowest active band.
+    @param num_bands Number of bands to return data from. If `lower_band + num_bands`
+        is more than the total active bands, the returned data will stop at the
+        highest active band.
+    @param include_empty_bands If True, all bands in the given range are returned.
+        If False, results are filtered by bands with a non-zero balance.
     @return Dynamic array of band data:
              * band number
              * (band lowest price, band highest price)
@@ -222,12 +227,13 @@ def get_market_amm_bands(
     n: int256 = max(lower_band, min_band)
     n_final: int256 = min(n + convert(num_bands, int256)-1, max_band)
     bands: DynArray[Band, 5000] = []
+
     for i in range(5000):
         if n > n_final:
             break
         coll_balance: uint256 = amm.bands_y(n)
         debt_balance: uint256 = amm.bands_x(n)
-        if coll_balance != 0 or debt_balance != 0:
+        if include_empty_bands or coll_balance + debt_balance > 0:
             bands.append(Band({
                 band_num: n,
                 price_range: [amm.p_oracle_down(n), amm.p_oracle_up(n)],
@@ -235,6 +241,7 @@ def get_market_amm_bands(
                 debt_balance: debt_balance
             }))
         n = unsafe_add(n, 1)
+
     return bands, [min_band, max_band]
 
 
@@ -345,6 +352,36 @@ def get_pending_market_state_for_account(
     state.coll_conversion_range = [amm.p_oracle_up(state.bands[0]), amm.p_oracle_down(state.bands[1])]
 
     return state
+
+
+@view
+@external
+def get_market_amm_bands_for_account(account: address, market: address) -> DynArray[Band, MAX_TICKS_UINT]:
+    """
+    @notice Get information on an account's AMM band deposits
+    @return Dynamic array of band data:
+             * band number
+             * (band lowest price, band highest price)
+             * account collateral balance deposited at band (normalized to 1e18)
+             * account debt balance deposited at band
+    """
+    c: MarketContracts = self._get_market_contracts_or_revert(market)
+    amm: AMM = AMM(c.amm)
+    bands: DynArray[Band, MAX_TICKS_UINT] = []
+
+    n: int256 = amm.read_user_tick_numbers(account)[0]
+    account_xy: DynArray[uint256, MAX_TICKS_UINT][2] = amm.get_xy(account)
+    for i in range(MAX_TICKS_UINT):
+        if i == len(account_xy[0]):
+            break
+        bands.append(Band({
+            band_num: n,
+            price_range: [amm.p_oracle_down(n), amm.p_oracle_up(n)],
+            coll_balance: account_xy[1][i],
+            debt_balance: account_xy[0][i]
+        }))
+        n = unsafe_add(n, 1)
+    return bands
 
 
 @view
