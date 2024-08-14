@@ -41,4 +41,7 @@ layerzero:
 chainlink:
   sequencer_uptime: null
 
+odos:
+  router: null
+
 whitelist: true

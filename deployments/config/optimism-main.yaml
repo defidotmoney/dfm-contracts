@@ -46,3 +46,6 @@ markets:
 
 chainlink:
   sequencer_uptime: "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389"
+
+odos:
+  router: "0xCa423977156BB05b13A2BA3b76Bc5419E2fE9680"
