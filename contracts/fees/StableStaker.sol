@@ -81,6 +81,7 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
         cooldownDuration = _cooldownDuration;
 
         emit FeeAggregatorSet(_feeAggregator);
+        emit RewardRegulatorSet(_rewardRegulator);
         emit CooldownDurationUpdated(_cooldownDuration);
 
         _setNewStream(0, 0, getDay());
