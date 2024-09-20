@@ -20,9 +20,6 @@ import { FeeConverterBase } from "./dependencies/FeeConverterBase.sol";
 contract FeeConverter is FeeConverterBase {
     using SafeERC20 for IERC20Metadata;
 
-    uint16 public bridgeBonusPctBps;
-    uint256 public maxBridgeBonusAmount;
-
     constructor(
         address _core,
         IMainController _mainController,
