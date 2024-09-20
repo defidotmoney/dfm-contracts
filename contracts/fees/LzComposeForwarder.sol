@@ -60,9 +60,9 @@ contract LzComposeForwarder is LocalReceiverBase, TokenRecovery, SystemStart {
 
     // --- external view functions ---
 
-    function quoteNotifyNewFees(uint256) external view override returns (uint256 nativeFee) {
+    function quoteNotifyNewFees(uint256 received) external view override returns (uint256 nativeFee) {
         if (getWeek() % bridgeEpochFrequency == 0) {
-            uint256 amount = stableCoin.balanceOf(address(this));
+            uint256 amount = stableCoin.balanceOf(address(this)) + received;
             if (amount >= MIN_AMOUNT) {
                 SendParam memory params = _getSendParams(amount);
                 return stableCoin.quoteSend(params, false).nativeFee;
