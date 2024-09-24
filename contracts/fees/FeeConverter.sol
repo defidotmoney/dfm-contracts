@@ -71,7 +71,7 @@ contract FeeConverter is FeeConverterBase {
         @dev Also called during `swapDebtForColl`, if the system is functioning
              correctly a direct call to this function is likely not needed.
      */
-    function transferToAggregator() external {
+    function transferToAggregator() external whenEnabled {
         require(!canSwapNativeForDebt(), "DFM: swapNativeForDebt first");
         _transferToAggregator();
     }
