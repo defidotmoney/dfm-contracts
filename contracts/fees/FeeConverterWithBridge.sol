@@ -42,7 +42,6 @@ contract FeeConverterWithBridge is FeeConverterBase {
         address _primaryChainFeeAggregator,
         address _wrappedNativeToken,
         uint16 _swapBonusPctBps,
-        uint256 _swapMaxBonusAmount,
         uint256 _relayMinBalance,
         uint256 _relayMaxSwapDebtAmount,
         uint32 _primaryId,
@@ -56,7 +55,6 @@ contract FeeConverterWithBridge is FeeConverterBase {
             _primaryChainFeeAggregator,
             _wrappedNativeToken,
             _swapBonusPctBps,
-            _swapMaxBonusAmount,
             _relayMinBalance,
             _relayMaxSwapDebtAmount
         )
