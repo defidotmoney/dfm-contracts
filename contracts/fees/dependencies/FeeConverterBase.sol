@@ -79,6 +79,7 @@ abstract contract FeeConverterBase is TokenRecovery {
         IERC20Metadata outputToken,
         uint256 debtAmountIn
     ) public view returns (uint256 collAmountOut) {
+        if (address(outputToken) == address(stableCoin)) return 0;
         uint256 precision = 10 ** outputToken.decimals();
         uint256 price = mainController.get_oracle_price(address(outputToken));
         uint256 bonus = (debtAmountIn * swapBonusPctBps) / MAX_BPS;
@@ -96,6 +97,7 @@ abstract contract FeeConverterBase is TokenRecovery {
         IERC20Metadata outputToken,
         uint256 collAmountOut
     ) external view returns (uint256 debtAmountIn) {
+        if (address(outputToken) == address(stableCoin)) return 0;
         uint256 precision = 10 ** outputToken.decimals();
         uint256 price = mainController.get_oracle_price(address(outputToken));
         uint256 discount = collAmountOut - ((collAmountOut * MAX_BPS) / (MAX_BPS + swapBonusPctBps));
