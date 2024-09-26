@@ -15,19 +15,7 @@ def test_amount_out(price, converter, collateral):
     assert amount_out == 5_000 * 10 ** (18 + collateral.decimals()) * 10100 // 10000 // price
 
 
-def test_amount_out_max_bonus(price, converter, collateral):
-    amount_out = converter.getSwapDebtForCollAmountOut(collateral, 14_000 * 10**18)
-    adjusted_in = 14_000 * 10**18 + converter.swapMaxBonusAmount()
-    assert amount_out == adjusted_in * 10 ** collateral.decimals() // price
-
-
 def test_amount_in(converter, collateral):
     amount_out = converter.getSwapDebtForCollAmountOut(collateral, 5_000 * 10**18)
-    amount_in = converter.getSwapDebtForCollAmountIn(collateral, amount_out)
-    assert abs(converter.getSwapDebtForCollAmountOut(collateral, amount_in) - amount_out) < 100
-
-
-def test_amount_in_max_bonus(converter, collateral):
-    amount_out = converter.getSwapDebtForCollAmountOut(collateral, 50_000 * 10**18)
     amount_in = converter.getSwapDebtForCollAmountIn(collateral, amount_out)
     assert abs(converter.getSwapDebtForCollAmountOut(collateral, amount_in) - amount_out) < 100

@@ -18,11 +18,6 @@ def test_set_swap_bonus_pct(converter, deployer):
     assert converter.swapBonusPctBps() == 5000
 
 
-def test_set_max_swap_bonus_amount(converter, deployer):
-    converter.setSwapMaxBonusAmount(12345, {"from": deployer})
-    assert converter.swapMaxBonusAmount() == 12345
-
-
 def test_set_min_relay_balance(converter, deployer):
     converter.setRelayMinBalance(88888, {"from": deployer})
     assert converter.relayMinBalance() == 88888
@@ -56,11 +51,6 @@ def test_set_primary_chain_fee_agg_onlyowner(converter, alice):
 def test_set_swap_bonus_pct_onlyowner(converter, alice):
     with brownie.reverts("DFM: Only owner"):
         converter.setSwapBonusPctBps(5000, {"from": alice})
-
-
-def test_set_max_swap_bonus_amount_onlyowner(converter, alice):
-    with brownie.reverts("DFM: Only owner"):
-        converter.setSwapMaxBonusAmount(12345, {"from": alice})
 
 
 def test_set_min_relay_balance_onlyowner(converter, alice):

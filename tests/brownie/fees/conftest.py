@@ -2,7 +2,6 @@ import pytest
 from brownie_tokens import ERC20
 
 SWAP_BONUS_PCT = 100
-MAX_SWAP_BONUS = 100 * 10**18
 MIN_RELAY_BALANCE = 10**10
 MAX_RELAY_SWAP_DEBT = 5000 * 10**18
 PRIMARY_ID = 31337
@@ -66,7 +65,6 @@ def converter_primary(FeeConverter, core, controller, stable, weth, fee_agg, dep
         fee_agg,
         weth,
         SWAP_BONUS_PCT,
-        MAX_SWAP_BONUS,
         MIN_RELAY_BALANCE,
         MAX_RELAY_SWAP_DEBT,
         {"from": deployer},
@@ -82,7 +80,6 @@ def converter_bridge(FeeConverterWithBridge, core, controller, stable, weth, fee
         fee_agg,
         weth,
         SWAP_BONUS_PCT,
-        MAX_SWAP_BONUS,
         MIN_RELAY_BALANCE,
         MAX_RELAY_SWAP_DEBT,
         PRIMARY_ID,
