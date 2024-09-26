@@ -28,6 +28,10 @@ contract VotiumMock is IVotium {
         }
     }
 
+    function withdrawUnprocessed(uint256 _round, address _gauge, uint256 _incentive) external {
+        revert("VotiumMock: Unsupported function");
+    }
+
     fallback() external {
         revert("VotiumMock: Call to unmocked function");
     }

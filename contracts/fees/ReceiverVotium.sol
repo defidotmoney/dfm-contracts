@@ -50,4 +50,11 @@ contract VotiumFeeReceiver is LzComposeReceiverBase, GaugeAllocReceiverBase {
         emit IncentivesAdded(gauges, amounts);
         return total;
     }
+
+    /**
+        @dev Retrieve unprocessed incentives in case a gauge has been killed
+     */
+    function withdrawUnprocessed(uint256 _round, address _gauge, uint256 _incentive) external onlyOwner {
+        votium.withdrawUnprocessed(_round, _gauge, _incentive);
+    }
 }

@@ -12,4 +12,6 @@ interface IVotium {
         address[] memory _gauges,
         uint256[] memory _amounts
     ) external;
+
+    function withdrawUnprocessed(uint256 _round, address _gauge, uint256 _incentive) external;
 }
