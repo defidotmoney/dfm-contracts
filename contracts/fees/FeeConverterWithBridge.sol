@@ -60,8 +60,8 @@ contract FeeConverterWithBridge is FeeConverterBase {
         )
     {
         primaryId = _primaryId;
-        bridgeBonusPctBps = _bridgeBonusPctBps;
-        bridgeMaxBonusAmount = _bridgeMaxBonusAmount;
+        _setBridgeBonusPctBps(_bridgeBonusPctBps);
+        _setBridgeMaxBonusAmount(_bridgeMaxBonusAmount);
     }
 
     receive() external payable {}
@@ -128,15 +128,25 @@ contract FeeConverterWithBridge is FeeConverterBase {
                 `bridgeDebt`. Expressed in BPS.
      */
     function setBridgeBonusPctBps(uint16 _bridgeBonusPctBps) external onlyOwner {
-        require(_bridgeBonusPctBps <= MAX_BPS, "DFM: pct > MAX_PCT");
-        bridgeBonusPctBps = _bridgeBonusPctBps;
-        emit SetBridgeBonusPct(_bridgeBonusPctBps);
+        _setBridgeBonusPctBps(_bridgeBonusPctBps);
     }
 
     /**
         @notice Set the max `stableCoin` amount paid as a bonus when calling `bridgeDebt`.
      */
     function setBridgeMaxBonusAmount(uint128 _bridgeMaxBonusAmount) external onlyOwner {
+        _setBridgeMaxBonusAmount(_bridgeMaxBonusAmount);
+    }
+
+    // --- internal functions ---
+
+    function _setBridgeBonusPctBps(uint16 _bridgeBonusPctBps) internal {
+        require(_bridgeBonusPctBps <= MAX_BPS, "DFM: pct > MAX_PCT");
+        bridgeBonusPctBps = _bridgeBonusPctBps;
+        emit SetBridgeBonusPct(_bridgeBonusPctBps);
+    }
+
+    function _setBridgeMaxBonusAmount(uint128 _bridgeMaxBonusAmount) internal {
         bridgeMaxBonusAmount = _bridgeMaxBonusAmount;
         emit SetBridgeMaxBonusAmount(_bridgeMaxBonusAmount);
     }
