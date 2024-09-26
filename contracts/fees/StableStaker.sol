@@ -175,6 +175,8 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
 
     /**
         @notice Redeem assets and start a cooldown to claim the underlying asset.
+        @dev Each account can only have one active cooldown. If a new cooldown is started while
+             another is still pending, the balances are combined and the cooldown period restarts.
         @param assets Amount of assets to start cooldown for.
         @return shares Amount of shares redeemed.
      */
@@ -189,6 +191,8 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
 
     /**
         @notice Redeem shares into assets, and start a cooldown to claim the underlying asset.
+        @dev Each account can only have one active cooldown. If a new cooldown is started while
+             another is still pending, the balances are combined and the cooldown period restarts.
         @param shares Amount of shares to redeem.
         @return assets Amount of assets cooling down.
      */
@@ -242,6 +246,11 @@ contract StableStaker is IFeeReceiver, BridgeTokenBase, SystemStart {
         emit NotifyNewFees(weekAmount);
     }
 
+    /**
+        @notice Set the duration of the asset cooldown prior to withdrawal.
+        @dev Only affects cooldowns that are started or updated after the call.
+             Existing cooldowns are unaffected.
+     */
     function setCooldownDuration(uint32 _cooldownDuration) external onlyOwner {
         require(_cooldownDuration <= MAX_COOLDOWN_DURATION, "sMONEY: Invalid duration");
         cooldownDuration = _cooldownDuration;
