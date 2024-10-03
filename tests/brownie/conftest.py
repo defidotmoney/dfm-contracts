@@ -10,8 +10,15 @@ market_loan_discount = 9 * 10**16  # 9%; +2% from 4x 1% bands = 100% - 11% = 89%
 market_liquidation_discount = 6 * 10**16  # 6%
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _module_base_setup(chain, module_isolation):
+    ts = ((chain.time() // 604800) + 1) * 604800
+    chain.mine(timestamp=ts)
+    pass
+
+
 @pytest.fixture(scope="function", autouse=True)
-def base_setup(fn_isolation):
+def _base_setup(fn_isolation):
     pass
 
 
@@ -48,9 +55,20 @@ def core(DFMProtocolCore, deployer, fee_receiver):
 
 
 @pytest.fixture(scope="module")
-def stable(BridgeToken, LzEndpointMock, core, deployer):
-    mock_endpoint = LzEndpointMock.deploy({"from": deployer})
-    return BridgeToken.deploy(core, "Stablecoin", "SC", mock_endpoint, b"", [], {"from": deployer})
+def mock_endpoint(LzEndpointMock, deployer):
+    return LzEndpointMock.deploy(101, 10**10, {"from": deployer})
+
+
+@pytest.fixture(scope="module")
+def lz_default_opts():
+    return "0x0003010011010000000000000000000000000000ea60"
+
+
+@pytest.fixture(scope="module")
+def stable(BridgeToken, core, mock_endpoint, lz_default_opts, deployer):
+    return BridgeToken.deploy(
+        core, "Stablecoin", "SC", mock_endpoint, lz_default_opts, [], {"from": deployer}
+    )
 
 
 @pytest.fixture(scope="module")

@@ -1,7 +1,6 @@
 stablecoin:
   name: "Defi.Money Stablecoin"
   symbol: "MONEY"
-  default_options: "0x0003010011010000000000000000000000000000ea60"
 
 main_controller:
   global_debt_ceiling: 100_000_000
@@ -37,6 +36,7 @@ layerzero:
   endpoint: "0x1a44076050125825900e736c501f859c50fE728c"
   primary_eid: 30111
   primary_network: "optimism-main"
+  oft_default_options: "0x0003010011010000000000000000000000000000ea60"
 
 chainlink:
   sequencer_uptime: null
@@ -45,3 +45,21 @@ odos:
   router: null
 
 whitelist: true
+
+fees:
+  weth: null
+  fee_converter:
+    swap_bonus_pct: 0.5
+    swap_max_bonus_amount: 1000
+    relay_min_balance: 0.1
+    relay_max_swap_debt_amount: 250
+    bridge_bonus_pct: 0.1
+    bridge_max_bonus_amount: 50
+  fee_agg:
+    caller_incentive: 100
+  stable_staker:
+    cooldown_days: 7
+    min_price: 0.99
+    max_price: 1.01
+    min_pct: 25
+    max_pct: 75

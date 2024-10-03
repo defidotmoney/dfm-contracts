@@ -9,6 +9,7 @@ from brownie import (
     AggMonetaryPolicy,
     AMM,
     BridgeToken,
+    BridgeTokenSimple,
     DFMProtocolCore,
     MainController,
     MarketOperator,
@@ -22,6 +23,15 @@ from brownie import (
     ChainlinkEMA,
     PriceOracleMock,
     Layer2UptimeOracle,
+)
+
+# fees
+from brownie import (
+    PrimaryFeeAggregator,
+    FeeConverter,
+    FeeConverterWithBridge,
+    StableStaker,
+    StakerRewardRegulator,
 )
 
 # hooks
@@ -77,8 +87,11 @@ def main():
         if not deploylog.exists(primary_network_name):
             raise Exception("Missing deploy log for primary chain!")
 
+        primary_log = deploylog.load(primary_network_name)
+        fee_agg = primary_log["fees"]["PrimaryFeeAggregator"]
+
         with ConnectionManager(primary_network_name):
-            for name, addr in deploylog.load(primary_network_name)["tokens"].items():
+            for name, addr in primary_log["tokens"].items():
                 peers = Contract(addr).getGlobalPeers()
 
                 if is_forked:
@@ -106,7 +119,7 @@ def main():
         config["stablecoin"]["name"],
         config["stablecoin"]["symbol"],
         lz_endpoint,
-        config["stablecoin"]["default_options"],
+        config["layerzero"]["oft_default_options"],
         token_peers.get(config["stablecoin"]["symbol"], []),
     )
 
@@ -134,9 +147,90 @@ def main():
         {"from": deployer},
     )
 
+    # deploy fee converters and sMONEY
+    if is_primary_network:
+        fee_agg = PrimaryFeeAggregator.deploy(
+            core, stable, config["fees"]["fee_agg"]["caller_incentive"], {"from": deployer}
+        )
+
+        fee_conf = config["fees"]["fee_converter"]
+        fee_converter = FeeConverter.deploy(
+            core,
+            controller,
+            stable,
+            fee_agg,
+            config["fees"]["weth"],
+            to_int(fee_conf["swap_bonus_pct"], 2),
+            to_int(fee_conf["swap_max_bonus_amount"]),
+            to_int(fee_conf["relay_min_balance"]),
+            to_int(fee_conf["relay_max_swap_debt_amount"]),
+            {"from": deployer},
+        )
+
+        fee_conf = config["fees"]["stable_staker"]
+        staker_reg = StakerRewardRegulator.deploy(
+            core,
+            stable_oracle,
+            to_int(fee_conf["min_price"]),
+            to_int(fee_conf["max_price"]),
+            to_int(fee_conf["min_pct"], 2),
+            to_int(fee_conf["max_pct"], 2),
+            {"from": deployer},
+        )
+
+        symbol = f"s{config['stablecoin']['symbol']}"
+        stable_staker = StableStaker.deploy(
+            core,
+            stable,
+            fee_agg,
+            staker_reg,
+            f"staked {config['stablecoin']['name']}",
+            symbol,
+            int(fee_conf["cooldown_days"] * 7),
+            lz_endpoint,
+            config["layerzero"]["oft_default_options"],
+            token_peers.get(symbol, []),
+            {"from": deployer},
+        )
+
+        fee_agg.setFallbackReceiver(stable_staker, {"from": deployer})
+
+    else:
+        fee_conf = config["fees"]["fee_converter"]
+        fee_converter = FeeConverterWithBridge.deploy(
+            core,
+            controller,
+            stable,
+            fee_agg,
+            config["fees"]["weth"],
+            to_int(fee_conf["swap_bonus_pct"], 2),
+            to_int(fee_conf["swap_max_bonus_amount"]),
+            to_int(fee_conf["relay_min_balance"]),
+            to_int(fee_conf["relay_max_swap_debt_amount"]),
+            config["layerzero"]["primary_eid"],
+            to_int(fee_conf["bridge_bonus_pct"], 2),
+            to_int(fee_conf["bridge_max_bonus_amount"]),
+            {"from": deployer},
+        )
+
+        symbol = f"s{config['stablecoin']['symbol']}"
+        stable_staker = BridgeTokenSimple.deploy(
+            core,
+            f"staked {config['stablecoin']['name']}",
+            symbol,
+            lz_endpoint,
+            config["layerzero"]["oft_default_options"],
+            token_peers[symbol],
+            {"from": deployer},
+        )
+
     # Write the core deployment addresses to a log file. There are more contracts
     # to deploy, but with this we have enough to plug in our front-end.
-    deploylog.update(core, stable, controller, stable_oracle, regulator)
+    deploylog.update(
+        core, stable, controller, stable_oracle, regulator, stable_staker, fee_converter
+    )
+    if is_primary_network:
+        deploylog.update(fee_agg)
 
     # Core contract configuration
     controller.set_peg_keeper_regulator(regulator, False, {"from": deployer})
@@ -277,7 +371,9 @@ def main():
         print(" * Remember to add approved accounts to the whitelist!")
     else:
         print(" * NOTE: No whitelist active, any account can interact with the system.")
-    if not is_primary_network:
+    if is_primary_network:
+        print(" * NOTE: Priority receivers are not deployed")
+    else:
         print(" * Remember to add the stablecoin as a peer on existing deployments:")
-        for token in [stable]:
+        for token in [stable, stable_staker]:
             print(f'     {token.symbol()}.setPeer({lz_eid}, "0x{to_bytes(token.address).hex()}")')
