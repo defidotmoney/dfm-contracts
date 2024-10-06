@@ -44,13 +44,12 @@ chainlink:
 odos:
   router: null
 
-whitelist: true
+whitelist: false
 
 fees:
   weth: null
   fee_converter:
     swap_bonus_pct: 0.5
-    swap_max_bonus_amount: 1000
     relay_min_balance: 0.1
     relay_max_swap_debt_amount: 250
     bridge_bonus_pct: 0.1

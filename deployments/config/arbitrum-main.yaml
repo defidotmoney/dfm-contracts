@@ -43,6 +43,56 @@ markets:
     loan_discount: 0.12
     liquidation_discount: 0.09
     debt_ceiling: 2_000_000
+  # wstETH
+  - collateral: "0x5979D7b546E38E414F7E9822514be443A4800529"
+    oracle:
+      type: "chainlink"
+      address:
+        - "0xb523AE262D20A936BC152e6023996e46FDC2A95D"  # wstETH / ETH
+        - "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612"  # ETH / USD
+    base_apy: 0.15
+    A: 72
+    amm_fee: 0.004
+    amm_admin_fee: 0.5
+    loan_discount: 0.13
+    liquidation_discount: 0.1
+    debt_ceiling: 500_000
+  # GMX
+  - collateral: "0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a"
+    oracle:
+      type: "chainlink"
+      address: "0xDB98056FecFff59D032aB628337A4887110df3dB"
+    base_apy: 0.15
+    A: 60
+    amm_fee: 0.005
+    amm_admin_fee: 0.5
+    loan_discount: 0.17
+    liquidation_discount: 0.14
+    debt_ceiling: 250_000
+  # RDNT
+  - collateral: "0x3082cc23568ea640225c2467653db90e9250aaa0"
+    oracle:
+      type: "chainlink"
+      address: "0x20d0Fcab0ECFD078B036b6CAf1FaC69A6453b352"
+    base_apy: 0.15
+    A: 20
+    amm_fee: 0.002
+    amm_admin_fee: 0.5
+    loan_discount: 0.19
+    liquidation_discount: 0.16
+    debt_ceiling: 50_000
+  # PENDLE
+  - collateral: "0x0c880f6761f1af8d9aa9c466984b80dab9a8c9e8"
+    oracle:
+      type: "chainlink"
+      address: "0x66853E19d73c0F9301fe099c324A1E9726953433"
+    base_apy: 0.15
+    A: 20
+    amm_fee: 0.006
+    amm_admin_fee: 0.5
+    loan_discount: 0.19
+    liquidation_discount: 0.16
+    debt_ceiling: 250_000
 
 chainlink:
   sequencer_uptime: "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"

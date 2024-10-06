@@ -43,6 +43,30 @@ markets:
     loan_discount: 0.07
     liquidation_discount: 0.04
     debt_ceiling: 1_000_000
+  # OP
+  - collateral: "0x4200000000000000000000000000000000000042"
+    oracle:
+      type: "chainlink"
+      address: "0x0D276FC14719f9292D5C1eA2198673d1f4269246"
+    base_apy: 0.15
+    A: 40
+    amm_fee: 0.004
+    amm_admin_fee: 0.5
+    loan_discount: 0.15
+    liquidation_discount: 0.12
+    debt_ceiling: 250_000
+  # VELO
+  - collateral: "0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db"
+    oracle:
+      type: "chainlink"
+      address: "0x0f2Ed59657e391746C1a097BDa98F2aBb94b1120"
+    base_apy: 0.15
+    A: 30
+    amm_fee: 0.005
+    amm_admin_fee: 0.5
+    loan_discount: 0.21
+    liquidation_discount: 0.18
+    debt_ceiling: 100_000
 
 chainlink:
   sequencer_uptime: "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389"
