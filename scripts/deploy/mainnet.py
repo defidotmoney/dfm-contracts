@@ -54,6 +54,7 @@ TEAM_MULTISIG = "0x222d2B30EcD382a058618d9F1ee01F147666E48b"
 CORE_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da00fd7df6d5c020290265c131"
 STABLECOIN_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da008c17e7bcb0ca2203ff159b"
 CONTROLLER_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da006a506030994eee0392f93b"
+SMONEY_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da006c69152ac62ee10102566e"
 
 
 def main():
@@ -151,7 +152,7 @@ def main():
     # deploy fee converters and sMONEY
     if is_primary_network:
         fee_agg = PrimaryFeeAggregator.deploy(
-            core, stable, config["fees"]["fee_agg"]["caller_incentive"], {"from": deployer}
+            core, stable, to_int(config["fees"]["fee_agg"]["caller_incentive"]), {"from": deployer}
         )
 
         fee_conf = config["fees"]["fee_converter"]
@@ -179,18 +180,20 @@ def main():
         )
 
         symbol = f"s{config['stablecoin']['symbol']}"
-        stable_staker = StableStaker.deploy(
+        deploy_deterministic(
+            deterministic_deployer,
+            SMONEY_DEPLOY_SALT,
+            StableStaker,
             core,
             stable,
             fee_agg,
             staker_reg,
             f"staked {config['stablecoin']['name']}",
             symbol,
-            int(fee_conf["cooldown_days"] * 7),
+            int(fee_conf["cooldown_days"] * 86400),
             lz_endpoint,
             config["layerzero"]["oft_default_options"],
-            token_peers.get(symbol, []),
-            {"from": deployer},
+            [],
         )
 
         fee_agg.setFallbackReceiver(stable_staker, {"from": deployer})
@@ -213,14 +216,16 @@ def main():
         )
 
         symbol = f"s{config['stablecoin']['symbol']}"
-        stable_staker = BridgeTokenSimple.deploy(
+        stable_staker = deploy_deterministic(
+            deterministic_deployer,
+            SMONEY_DEPLOY_SALT,
+            BridgeTokenSimple,
             core,
             f"staked {config['stablecoin']['name']}",
             symbol,
             lz_endpoint,
             config["layerzero"]["oft_default_options"],
             token_peers[symbol],
-            {"from": deployer},
         )
 
     core.setAddress(get_address_identifier("FEE_RECEIVER"), fee_converter, {"from": deployer})
@@ -264,7 +269,7 @@ def main():
     if is_primary_network:
         print(" * NOTE: Priority receivers are not deployed")
     else:
-        print(" * Remember to add the stablecoin as a peer on existing deployments:")
+        print(" * Remember to set token peers on existing deployments:")
         for token in [stable, stable_staker]:
             print(f'     {token.symbol()}.setPeer({lz_eid}, "0x{to_bytes(token.address).hex()}")')
 
