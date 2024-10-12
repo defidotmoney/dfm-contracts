@@ -33,8 +33,14 @@ def exists(network_name=None):
 def load(network_name=None, exist_only=False):
     """
     Load data from a deployment log.
+
+    In a forked environment, first attempts to load a `-fork` deploy log
+    and then falls back to the mainnet log.
     """
-    path = get_path(network_name, exist_only, True)
+    path = get_path(network_name, exist_only, False)
+
+    if not path.exists():
+        path = get_path(network_name, exist_only, True)
 
     if not path.exists():
         return {}
