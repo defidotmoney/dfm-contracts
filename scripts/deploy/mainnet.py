@@ -1,6 +1,6 @@
 import math
 
-from brownie import accounts, Contract, ZERO_ADDRESS
+from brownie import Contract, ZERO_ADDRESS
 from brownie.convert import to_bytes
 
 # core contracts
@@ -22,7 +22,6 @@ from brownie import (
     AggregateChainedOracle,
     ChainlinkEMA,
     PriceOracleMock,
-    Layer2UptimeOracle,
 )
 
 # fees
@@ -34,14 +33,7 @@ from brownie import (
     StakerRewardRegulator,
 )
 
-# hooks
-from brownie import (
-    L2SequencerUptimeHook,
-    WhitelistHook,
-)
-
 from scripts.utils import deployconf, deploylog
-from scripts.utils.connection import ConnectionManager
 from scripts.utils.createx import deploy_deterministic
 from scripts.utils.float2int import to_int
 from scripts.utils.rate0 import apy_to_rate0
@@ -49,6 +41,7 @@ from scripts.deploy.periphery import main as deploy_periphery
 from scripts.utils.address_id import get_address_identifier
 
 
+DETERMINISTIC_DEPLOYER = "0xDeF1c4aD4a9C6bcd718C91e6AB79958217FA27DA"
 TEAM_MULTISIG = "0x222d2B30EcD382a058618d9F1ee01F147666E48b"
 
 CORE_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da00fd7df6d5c020290265c131"
@@ -57,55 +50,53 @@ CONTROLLER_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da006a50603099
 SMONEY_DEPLOY_SALT = "0xdef1c4ad4a9c6bcd718c91e6ab79958217fa27da006c69152ac62ee10102566e"
 
 
-def main():
+def main(deployer="0xbADbABEFA66BfA6e01C4918229ea65e20BbC79e2"):
     """
     Deploys core Defi.Money contracts to mainnet.
     """
 
-    # TODO set the actual `account` objects here
-    # deterministic deployer must be consistent between chains
-    deterministic_deployer = "0xDeF1c4aD4a9C6bcd718C91e6AB79958217FA27DA"
-    # normal deployer should be unique per-chain to avoid overlap in non-deterministic addresses
-    deployer = "0xbADbABEFA66BfA6e01C4918229ea65e20BbC79e2"
-
-    config = deployconf.load()
-    is_forked = deployconf.is_forked()
-    if not is_forked and deploylog.load():
+    if deploylog.load():
         raise Exception("Deploy log exists for this chain! Delete if you wish to continue.")
 
-    # Initialize required external contracts, in case of a misconfig we fail early
+    # Deploy core contracts
+    deploy_core(deployer)
+
+    # Deploy and configure fee converters and sMONEY
+    deploy_fees(deployer)
+
+    # Deploy and configure periphery contracts
+    deploy_periphery(deployer)
+
+    # Deploy and configure pegkeepers
+    update_pegkeepers(deployer)
+
+    # Deploy and add monetary policies,
+    # Deploy MarketOperator and AMM implementations,
+    # Add individual markets
+    update_markets(deployer)
+
+    print("Deployment complete!")
+    print(f" * Core deployment addresses saved at {deploylog.get_path().as_posix()}")
+    print(" * Remember to verify source code!")
+    if deployconf.is_primary_network():
+        print(" * NOTE: Priority receivers are not deployed")
+    else:
+        print(" * Remember to set token peers on existing deployments:")
+        for token in deploylog.load()["tokens"].values():
+            token = Contract(token)
+            eid = token.thisId()
+            print(f'     {token.symbol()}.setPeer({eid}, "0x{to_bytes(token.address).hex()}")')
+
+
+def deploy_core(deployer):
+    token_peers = deployconf.get_token_peers()
+    config = deployconf.load()
+
     lz_endpoint = Contract(config["layerzero"]["endpoint"])
-    curve_ap = Contract(config["curve"]["address_provider"])
-    curve_factory = Contract(curve_ap.get_address(12))
-    lz_eid = lz_endpoint.eid()
-
-    # Get remote peers for stablecoin
-    is_primary_network = deployconf.active_network() == config["layerzero"]["primary_network"]
-    token_peers = {}
-
-    if not is_primary_network:
-        primary_network_name = config["layerzero"]["primary_network"]
-
-        if not deploylog.exists(primary_network_name):
-            raise Exception("Missing deploy log for primary chain!")
-
-        primary_log = deploylog.load(primary_network_name)
-        fee_agg = primary_log["fees"]["PrimaryFeeAggregator"]
-
-        with ConnectionManager(primary_network_name):
-            for name, addr in primary_log["tokens"].items():
-                peers = Contract(addr).getGlobalPeers()
-
-                if is_forked:
-                    # remove peers for the active chain, to avoid reverting
-                    # if the real deployment has already occured
-                    peers = [i for i in peers if i[0] != lz_eid]
-
-                token_peers[name] = peers
 
     # Deploy core contracts
     core = deploy_deterministic(
-        deterministic_deployer,
+        DETERMINISTIC_DEPLOYER,
         CORE_DEPLOY_SALT,
         DFMProtocolCore,
         deployer,
@@ -114,7 +105,7 @@ def main():
     )
 
     stable = deploy_deterministic(
-        deterministic_deployer,
+        DETERMINISTIC_DEPLOYER,
         STABLECOIN_DEPLOY_SALT,
         BridgeToken,
         core,
@@ -126,7 +117,7 @@ def main():
     )
 
     controller = deploy_deterministic(
-        deterministic_deployer,
+        DETERMINISTIC_DEPLOYER,
         CONTROLLER_DEPLOY_SALT,
         MainController,
         core,
@@ -149,8 +140,25 @@ def main():
         {"from": deployer},
     )
 
-    # deploy fee converters and sMONEY
-    if is_primary_network:
+    # Core contract configuration
+    controller.set_peg_keeper_regulator(regulator, False, {"from": deployer})
+    stable.setMinter(controller, True, {"from": deployer})
+    stable.setMinter(regulator, True, {"from": deployer})
+
+    deploylog.update(core, stable, controller, stable_oracle, regulator)
+
+
+def deploy_fees(deployer):
+    token_peers = deployconf.get_token_peers()
+    config = deployconf.load()
+    lz_endpoint = Contract(config["layerzero"]["endpoint"])
+
+    core = deploylog.get_deployment(DFMProtocolCore)
+    controller = deploylog.get_deployment(MainController)
+    stable = deploylog.get_deployment("MONEY")
+    stable_oracle = deploylog.get_deployment(AggregateStablePrice)
+
+    if deployconf.is_primary_network():
         fee_agg = PrimaryFeeAggregator.deploy(
             core, stable, to_int(config["fees"]["fee_agg"]["caller_incentive"]), {"from": deployer}
         )
@@ -181,7 +189,7 @@ def main():
 
         symbol = f"s{config['stablecoin']['symbol']}"
         deploy_deterministic(
-            deterministic_deployer,
+            DETERMINISTIC_DEPLOYER,
             SMONEY_DEPLOY_SALT,
             StableStaker,
             core,
@@ -197,9 +205,12 @@ def main():
         )
 
         fee_agg.setFallbackReceiver(stable_staker, {"from": deployer})
+        deploylog.update(fee_agg)
 
     else:
+        fee_agg = deploylog.load(deployconf.primary_network())["fees"]["PrimaryFeeAggregator"]
         fee_conf = config["fees"]["fee_converter"]
+
         fee_converter = FeeConverterWithBridge.deploy(
             core,
             controller,
@@ -217,7 +228,7 @@ def main():
 
         symbol = f"s{config['stablecoin']['symbol']}"
         stable_staker = deploy_deterministic(
-            deterministic_deployer,
+            DETERMINISTIC_DEPLOYER,
             SMONEY_DEPLOY_SALT,
             BridgeTokenSimple,
             core,
@@ -229,49 +240,7 @@ def main():
         )
 
     core.setAddress(get_address_identifier("FEE_RECEIVER"), fee_converter, {"from": deployer})
-
-    # Write the core deployment addresses to a log file. There are more contracts
-    # to deploy, but with this we have enough to plug in our front-end.
-    deploylog.update(
-        core, stable, controller, stable_oracle, regulator, stable_staker, fee_converter
-    )
-    if is_primary_network:
-        deploylog.update(fee_agg)
-
-    # Core contract configuration
-    controller.set_peg_keeper_regulator(regulator, False, {"from": deployer})
-    stable.setMinter(controller, True, {"from": deployer})
-    stable.setMinter(regulator, True, {"from": deployer})
-
-    if config["whitelist"]:
-        hook = WhitelistHook.deploy(deployer, {"from": deployer})
-        controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
-
-    # Deploy and configure pegkeepers
-    update_pegkeepers(deployer)
-
-    # Deploy and add monetary policies,
-    # Deploy MarketOperator and AMM implementations,
-    # Optionally deploy l2 sequencer uptime oracle and hook,
-    # Add individual markets
-    update_markets(deployer)
-
-    # Deploy periphery contracts
-    deploy_periphery(deployer)
-
-    print("Deployment complete!")
-    print(f" * Core deployment addresses saved at {deploylog.get_path().as_posix()}")
-    print(" * Remember to verify source code!")
-    if config["whitelist"]:
-        print(" * Remember to add approved accounts to the whitelist!")
-    else:
-        print(" * NOTE: No whitelist active, any account can interact with the system.")
-    if is_primary_network:
-        print(" * NOTE: Priority receivers are not deployed")
-    else:
-        print(" * Remember to set token peers on existing deployments:")
-        for token in [stable, stable_staker]:
-            print(f'     {token.symbol()}.setPeer({lz_eid}, "0x{to_bytes(token.address).hex()}")')
+    deploylog.update(stable_staker, fee_converter)
 
 
 def update_pegkeepers(deployer):
@@ -279,16 +248,22 @@ def update_pegkeepers(deployer):
     Iterates the list of pegkeepers within the deployment config, and deploys / configures
     necessary pegkeepers that do not yet exist.
     """
+    config = deployconf.load()
+
+    if "peg_keepers" not in config:
+        print("\n *** WARNING: deploy config does not include `peg_keepers` ***\n")
+        return
+
+    curve_ap = Contract(config["curve"]["address_provider"])
+    curve_factory = Contract(curve_ap.get_address(12))
+
     core = deploylog.get_deployment(DFMProtocolCore)
     controller = deploylog.get_deployment(MainController)
     regulator = deploylog.get_deployment(PegKeeperRegulator)
     stable = deploylog.get_deployment("MONEY")
     stable_oracle = deploylog.get_deployment(AggregateStablePrice)
-    price_pairs = [stable_oracle.price_pairs(i)[0] for i in range(8) if i[0] != ZERO_ADDRESS]
-
-    config = deployconf.load()
-    curve_ap = Contract(config["curve"]["address_provider"])
-    curve_factory = Contract(curve_ap.get_address(12))
+    price_pairs = [stable_oracle.price_pairs(i)[0] for i in range(8)]
+    price_pairs = [i for i in price_pairs if i != ZERO_ADDRESS]
 
     # Deploy and configure pegkeepers
     pool_conf = config["peg_keepers"]["pool_config"]
@@ -341,12 +316,19 @@ def update_markets(deployer):
     Iterates the list of markets within the deployment config, and creates the
     markets that do not exist yet.
     """
+    config = deployconf.load()
+    if "markets" not in config:
+        print("\n *** WARNING: deploy config does not include `markets` ***\n")
+        return
+
     core = deploylog.get_deployment(DFMProtocolCore)
     controller = deploylog.get_deployment(MainController)
     stable = deploylog.get_deployment("MONEY")
     stable_oracle = deploylog.get_deployment(AggregateStablePrice)
 
-    config = deployconf.load()
+    uptime_oracle = ZERO_ADDRESS
+    if config["chainlink"]["sequencer_uptime"]:
+        uptime_oracle = deploylog.get_deployment("Layer2UptimeOracle")
 
     # Deploy and add monetary policies
     mp_deployed = {}
@@ -356,7 +338,7 @@ def update_markets(deployer):
         if mp == ZERO_ADDRESS:
             break
 
-        mp = Contract(mp)
+        mp = AggMonetaryPolicy.at(mp)
         mp_deployed[mp.rate0()] = i
 
     for base_apy in set(i["base_apy"] for i in config["markets"]):
@@ -383,19 +365,6 @@ def update_markets(deployer):
         market_impl = MarketOperator.deploy(core, controller, A, {"from": deployer})
         amm_impl = AMM.deploy(controller, stable, A, {"from": deployer})
         controller.set_implementations(A, market_impl, amm_impl, {"from": deployer})
-
-    # Optionally deploy l2 sequencer uptime oracle and hook
-    uptime_oracle = ZERO_ADDRESS
-    if config["chainlink"]["sequencer_uptime"]:
-        try:
-            uptime_oracle = deploylog.get_deployment(Layer2UptimeOracle)
-        except KeyError:
-            uptime_oracle = Layer2UptimeOracle.deploy(
-                config["chainlink"]["sequencer_uptime"], {"from": deployer}
-            )
-            hook = L2SequencerUptimeHook.deploy(uptime_oracle, {"from": deployer})
-            controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
-            deploylog.update(uptime_oracle)
 
     # Add individual markets
     for market_conf in config["markets"]:
