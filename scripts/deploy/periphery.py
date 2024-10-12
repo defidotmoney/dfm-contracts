@@ -1,10 +1,13 @@
-from brownie import Contract
+from brownie import Contract, ZERO_ADDRESS
 
 # periphery
 from brownie import (
     FlashLoanZap,
+    Layer2UptimeOracle,
+    L2SequencerUptimeHook,
     MarketViews,
     SwapZap,
+    WhitelistHook,
 )
 
 from scripts.utils import deployconf, deploylog
@@ -12,15 +15,35 @@ from scripts.utils import deployconf, deploylog
 
 def main(deployer):
     """
-    Deploy all periphery contracts to the active network.
+    Deploy and configure all periphery contracts for the active network.
     """
+    deploy_whitelist(deployer)
+    deploy_uptime_hook(deployer)
     deploy_market_views(deployer)
     deploy_flashloan_zap(deployer)
     deploy_swap_zap(deployer)
 
 
+def deploy_whitelist(deployer):
+    if deployconf.load()["whitelist"]:
+        controller = deploylog.get_deployment("MainController")
+        hook = WhitelistHook.deploy(deployer, {"from": deployer})
+        controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
+        deploylog.update(hook)
+
+
+def deploy_uptime_hook(deployer):
+    cl_oracle = deployconf.load()["chainlink"]["sequencer_uptime"]
+    if cl_oracle:
+        controller = deploylog.get_deployment("MainController")
+        uptime_oracle = Layer2UptimeOracle.deploy(cl_oracle, {"from": deployer})
+        hook = L2SequencerUptimeHook.deploy(uptime_oracle, {"from": deployer})
+        controller.add_market_hook(ZERO_ADDRESS, hook, {"from": deployer})
+        deploylog.update(uptime_oracle)
+
+
 def deploy_market_views(deployer):
-    controller = deploylog.load(exist_only=True)["cdp"]["MainController"]
+    controller = deploylog.get_deployment("MainController")
 
     views = MarketViews.deploy(controller, {"from": deployer})
 
@@ -50,9 +73,8 @@ def deploy_swap_zap(deployer):
 
 
 def _get_odos_zap_inputs():
-    log = deploylog.load(exist_only=True)
-    controller = Contract(log["cdp"]["MainController"])
-    stable = Contract(log["tokens"]["MONEY"])
+    controller = deploylog.get_deployment("MainController")
+    stable = deploylog.get_deployment("MONEY")
 
     try:
         router = Contract(deployconf.load()["odos"]["router"])
